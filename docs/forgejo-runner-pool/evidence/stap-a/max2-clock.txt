@@ -1,0 +1,33 @@
+host	max2
+doel	audit en corroboratie; event_seq blijft de enige voor/na-fencebeslisser (7.7)
+
+## timedatectl
+               Local time: Mon 2026-08-31 22:57:33 CEST
+           Universal time: Mon 2026-08-31 20:57:33 UTC
+                 RTC time: Mon 2026-08-31 20:57:33
+                Time zone: Europe/Amsterdam (CEST, +0200)
+System clock synchronized: yes
+              NTP service: active
+          RTC in local TZ: no
+
+## chrony
+Reference ID    : B97DBE7B (ntp-nts-3.ps5.canonical.com)
+Stratum         : 3
+Ref time (UTC)  : Mon Aug 31 20:40:25 2026
+System time     : 0.000002255 seconds fast of NTP time
+Last offset     : -0.000021329 seconds
+RMS offset      : 0.000149208 seconds
+Frequency       : 36.629 ppm slow
+Residual freq   : -0.000 ppm
+Skew            : 0.026 ppm
+Root delay      : 0.023750396 seconds
+Root dispersion : 0.001650609 seconds
+Update interval : 1029.9 seconds
+Leap status     : Normal
+
+## skew tegen de Forgejo Date-header
+remote_date	mon, 31 aug 2026 20:57:33 gmt
+lokaal_midden_ms	1788209853277
+rondreis_ms	80
+skew_ms	277
+let_op	de Date-header heeft secondeprecisie; een skew onder 1000 ms is niet betekenisvol
