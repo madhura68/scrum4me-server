@@ -92,3 +92,11 @@ raakt:
 Wat het **niet** oplost: het FetchTask-ambiguïteitsvenster bij een drain blijft bestaan.
 Het assignment-nulbewijs uit §7.9 en de schedulingfence uit §7.7 blijven dus onverkort
 nodig, ephemeral of niet.
+
+## Besluit (JP, 2026-08-31)
+
+Ephemeral wordt **niet** opgenomen: het GO'de ontwerp met persistente records en de
+client-side fence blijft leidend. Deze spike blijft als bewijs bewaard en kan later
+heropend worden als de server-side token-leak-garantie dat waard blijkt. Er komt niets
+ephemeral-gerelateerds in de bundel. (Besluit vastgelegd na de meting; de afweging
+hierboven bleef bewust zonder aanbeveling.)
