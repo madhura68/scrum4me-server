@@ -2299,3 +2299,1028 @@ git commit -m "feat(stap-a): preflight-gate met de vier harde drempels uit 7.8"
 ```
 
 ---
+
+## De cyclecontroller
+
+§7.9 belegt de hele runnerlevenscyclus bij één hostcontroller. Na delta-review R12 is dat expliciet `scripts/forgejo_runner_cycle.py` in Python en niet in shell: signal handling, de race tussen childexit en readinessprobe, monotone deadlines en atomaire statepersistentie zijn in shell niet betrouwbaar uit te drukken.
+
+De unittestsuite van deze module is tevens het **stub- en testharnas dat §8 stap A eist**. De stap-A-gates zijn pas groen als deze suite groen is; daarom staan de controllertaken in dit plan na de meettaken maar vóór de bundelassemblage.
+
+Ontwerpprincipes die de tests afdwingen:
+
+- **Geen echte tijd, geen echt netwerk, geen echte processen.** Klok, probe en childproces worden ingespoten. Een test die `sleep` gebruikt is fout.
+- **`event_seq` is de enige vóór/na-fencebeslisser.** Wandklok en Forgejo-tijdlijn zijn audit en corroboratie, nooit beslissend (§7.7).
+- **Fail-closed.** Elke onbekende uitkomst gaat naar de zwaarste passende toestand, nooit naar `WAITING`.
+
+### Task 11: Readinessclassificatie en bevestigingsregel
+
+§7.7 eist een uitputtende vierwegclassificatie zonder default-gat, en dezelfde tweewaarnemingendrempel voor alle drie foutklassen.
+
+**Files:**
+- Create: `forgejo-runner/scripts/forgejo_runner_cycle.py`
+- Test: `forgejo-runner/tests/test_cycle_readiness.py`
+
+**Interfaces:**
+- Consumes: niets
+- Produces:
+  - `ReadinessClass` met de leden `READY`, `SOURCE_WAIT`, `CREDENTIAL_ERROR`, `PROTOCOL`
+  - `classify_probe(probe) -> ReadinessClass` waarbij `probe` een dict is met `kind` (`"general"` of `"auth"`), en óf `error` óf `status` plus `schema_ok`
+  - `SEVERITY: dict[ReadinessClass, int]` met `PROTOCOL > CREDENTIAL_ERROR > SOURCE_WAIT`
+  - `Confirmation` met `observe(klasse, now) -> ReadinessClass | None`, die pas een klasse teruggeeft bij twee opeenvolgende gelijke waarnemingen met minimaal `CONFIRM_SECONDS` ertussen
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```python
+# forgejo-runner/tests/test_cycle_readiness.py
+import unittest, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+import forgejo_runner_cycle as c
+
+R = c.ReadinessClass
+
+
+class TestVierwegclassificatie(unittest.TestCase):
+    def test_transportfout_is_source_wait(self):
+        for fout in ("timeout", "connection refused", "dns failure"):
+            self.assertEqual(c.classify_probe({"kind": "general", "error": fout}), R.SOURCE_WAIT)
+
+    def test_5xx_is_source_wait(self):
+        for status in (500, 502, 503, 504):
+            self.assertEqual(
+                c.classify_probe({"kind": "general", "status": status, "schema_ok": False}),
+                R.SOURCE_WAIT)
+
+    def test_401_en_403_op_de_authprobe_is_credential_error(self):
+        for status in (401, 403):
+            self.assertEqual(
+                c.classify_probe({"kind": "auth", "status": status, "schema_ok": False}),
+                R.CREDENTIAL_ERROR)
+
+    def test_401_op_de_algemene_probe_is_protocol(self):
+        # De algemene probe hoort geen auth te vereisen; 401 daar is een protocolfout.
+        self.assertEqual(
+            c.classify_probe({"kind": "general", "status": 401, "schema_ok": False}),
+            R.PROTOCOL)
+
+    def test_overige_status_is_protocol(self):
+        for status in (301, 404, 418):
+            self.assertEqual(
+                c.classify_probe({"kind": "auth", "status": status, "schema_ok": False}),
+                R.PROTOCOL)
+
+    def test_2xx_met_verkeerd_schema_is_protocol(self):
+        self.assertEqual(
+            c.classify_probe({"kind": "auth", "status": 200, "schema_ok": False}),
+            R.PROTOCOL)
+
+    def test_2xx_met_geldig_schema_is_ready(self):
+        self.assertEqual(
+            c.classify_probe({"kind": "auth", "status": 200, "schema_ok": True}),
+            R.READY)
+
+    def test_er_is_geen_default_gat(self):
+        # Iedere combinatie valt in precies een van de vier klassen.
+        for kind in ("general", "auth"):
+            for status in (200, 201, 301, 400, 401, 403, 404, 418, 500, 503):
+                for schema in (True, False):
+                    uitkomst = c.classify_probe(
+                        {"kind": kind, "status": status, "schema_ok": schema})
+                    self.assertIn(uitkomst, (R.READY, R.SOURCE_WAIT, R.CREDENTIAL_ERROR, R.PROTOCOL))
+
+
+class TestSeverity(unittest.TestCase):
+    def test_protocol_is_zwaarder_dan_credential_dan_availability(self):
+        self.assertGreater(c.SEVERITY[R.PROTOCOL], c.SEVERITY[R.CREDENTIAL_ERROR])
+        self.assertGreater(c.SEVERITY[R.CREDENTIAL_ERROR], c.SEVERITY[R.SOURCE_WAIT])
+
+
+class TestBevestiging(unittest.TestCase):
+    def test_een_waarneming_bevestigt_niets(self):
+        conf = c.Confirmation()
+        self.assertIsNone(conf.observe(R.SOURCE_WAIT, now=0.0))
+
+    def test_twee_gelijke_waarnemingen_bevestigen(self):
+        conf = c.Confirmation()
+        conf.observe(R.SOURCE_WAIT, now=0.0)
+        self.assertEqual(conf.observe(R.SOURCE_WAIT, now=5.0), R.SOURCE_WAIT)
+
+    def test_te_snel_herhalen_bevestigt_nog_niet(self):
+        conf = c.Confirmation()
+        conf.observe(R.SOURCE_WAIT, now=0.0)
+        self.assertIsNone(conf.observe(R.SOURCE_WAIT, now=1.0))
+
+    def test_klassesprong_herstart_de_bevestiging(self):
+        conf = c.Confirmation()
+        conf.observe(R.SOURCE_WAIT, now=0.0)
+        self.assertIsNone(conf.observe(R.CREDENTIAL_ERROR, now=5.0))
+        self.assertEqual(conf.observe(R.CREDENTIAL_ERROR, now=10.0), R.CREDENTIAL_ERROR)
+
+    def test_geldige_probe_bevestigt_ready_pas_bij_de_tweede(self):
+        conf = c.Confirmation()
+        self.assertIsNone(conf.observe(R.READY, now=0.0))
+        self.assertEqual(conf.observe(R.READY, now=5.0), R.READY)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_readiness.py' -v`
+Expected: FAIL — module bestaat nog niet.
+
+- [ ] **Step 3: Schrijf de implementatie**
+
+```python
+# forgejo-runner/scripts/forgejo_runner_cycle.py
+"""Cyclecontroller van de Forgejo-Runner-tweemachinepool.
+
+Implementeert 7.7 en 7.9 van het migratieontwerp: readinessclassificatie,
+bevestigingsregel, schedulingfence, deadlinewatchdog, maintenance-record en de
+per-job levenscyclus rond `one-job --wait`.
+
+Ontwerpregels die hier hard in zitten:
+- event_seq is de enige voor/na-fencebeslisser; klokken zijn audit.
+- Monotone tijd voor deadlines, wandklok alleen voor logging.
+- Fail-closed: onbekend gaat nooit naar WAITING.
+"""
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+CONFIRM_SECONDS = 5.0
+FENCE_MAX_AGE_SECONDS = 60.0
+RETRY_INTERVAL_SECONDS = 30.0
+
+
+class ReadinessClass(str, Enum):
+    READY = "READY"
+    SOURCE_WAIT = "SOURCE_WAIT"
+    CREDENTIAL_ERROR = "CREDENTIAL_ERROR"
+    PROTOCOL = "PROTOCOL"
+
+
+SEVERITY = {
+    ReadinessClass.SOURCE_WAIT: 1,
+    ReadinessClass.CREDENTIAL_ERROR: 2,
+    ReadinessClass.PROTOCOL: 3,
+}
+
+
+def classify_probe(probe):
+    """Vierwegclassificatie zonder default-gat (7.7).
+
+    Tak 1 transportfout, timeout, connection refused of 5xx -> SOURCE_WAIT.
+    Tak 2 401/403 op de geauthenticeerde probe -> CREDENTIAL_ERROR.
+    Tak 3 iedere andere status, malformed antwoord of verkeerd schema -> PROTOCOL.
+    Tak 4 2xx met het verwachte schema -> READY.
+    """
+    if probe.get("error"):
+        return ReadinessClass.SOURCE_WAIT
+
+    status = probe.get("status")
+    if status is None:
+        return ReadinessClass.PROTOCOL
+    if 500 <= status <= 599:
+        return ReadinessClass.SOURCE_WAIT
+    if status in (401, 403):
+        # Alleen op de geauthenticeerde probe is dit een credentialoordeel. De
+        # algemene probe hoort geen auth te vereisen; daar is het een protocolfout.
+        return (ReadinessClass.CREDENTIAL_ERROR if probe.get("kind") == "auth"
+                else ReadinessClass.PROTOCOL)
+    if 200 <= status <= 299:
+        return ReadinessClass.READY if probe.get("schema_ok") else ReadinessClass.PROTOCOL
+    return ReadinessClass.PROTOCOL
+
+
+@dataclass
+class Confirmation:
+    """Tweewaarnemingendrempel: pas twee opeenvolgende gelijke uitkomsten,
+    minimaal CONFIRM_SECONDS uit elkaar, bevestigen een klasse. Een klassesprong
+    herstart de bevestiging (7.7)."""
+
+    laatste: object = None
+    laatste_tijd: float = None
+
+    def observe(self, klasse, now):
+        if self.laatste == klasse and self.laatste_tijd is not None \
+                and (now - self.laatste_tijd) >= CONFIRM_SECONDS:
+            self.laatste, self.laatste_tijd = None, None
+            return klasse
+        if self.laatste != klasse:
+            self.laatste, self.laatste_tijd = klasse, now
+        return None
+
+    def reset(self):
+        self.laatste, self.laatste_tijd = None, None
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_readiness.py' -v`
+Expected: PASS — 13 tests, 0 failures.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add forgejo-runner/scripts/forgejo_runner_cycle.py \
+        forgejo-runner/tests/test_cycle_readiness.py
+git commit -m "feat(controller): vierwegclassificatie en tweewaarnemingendrempel"
+```
+
+---
+
+### Task 12: Geserialiseerde eventloop en toestandsmachine
+
+§7.7 eist één geserialiseerde eventloop die readinessresultaten, childstatus en lokaal ontvangen runnerlog- of taskacceptatie-events verwerkt. Ieder event krijgt op ontvangst één oplopend lokaal `event_seq`, een monotone tijd voor deadlines en daarnaast wandkloktijd voor audit.
+
+**Files:**
+- Modify: `forgejo-runner/scripts/forgejo_runner_cycle.py`
+- Test: `forgejo-runner/tests/test_cycle_eventloop.py`
+
+**Interfaces:**
+- Consumes: `ReadinessClass`, `Confirmation` uit Task 11
+- Produces:
+  - `State` met `SOURCE_WAIT`, `CREDENTIAL_ERROR`, `WAITING`, `RUNNING`, `DRAINING`, `SCRUBBING`, `QUARANTINED`
+  - `Event(kind, payload, event_seq, mono, wall)`
+  - `EventLoop(clock)` met `submit(kind, payload) -> Event` en `events -> list[Event]`; `clock` levert `(mono, wall)`
+  - `Controller(loop, state=State.SOURCE_WAIT)` met attribuut `state` en methode `on_event(event)`
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```python
+# forgejo-runner/tests/test_cycle_eventloop.py
+import unittest, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+import forgejo_runner_cycle as c
+
+S = c.State
+
+
+class NepKlok:
+    """Monotone tijd en wandklok apart, allebei handmatig bestuurd.
+
+    De wandklok loopt bewust achteruit in een test, om te bewijzen dat de
+    controller hem nooit voor een beslissing gebruikt.
+    """
+
+    def __init__(self):
+        self.mono = 0.0
+        self.wall = 1000.0
+
+    def __call__(self):
+        return (self.mono, self.wall)
+
+    def tik(self, seconden, wall_delta=None):
+        self.mono += seconden
+        self.wall += seconden if wall_delta is None else wall_delta
+
+
+class TestEventSeq(unittest.TestCase):
+    def test_event_seq_loopt_strikt_op(self):
+        loop = c.EventLoop(NepKlok())
+        seqs = [loop.submit("probe", {}).event_seq for _ in range(5)]
+        self.assertEqual(seqs, sorted(seqs))
+        self.assertEqual(len(set(seqs)), 5)
+
+    def test_event_seq_loopt_op_ook_als_de_wandklok_terugspringt(self):
+        klok = NepKlok()
+        loop = c.EventLoop(klok)
+        eerste = loop.submit("probe", {})
+        klok.tik(1.0, wall_delta=-500.0)
+        tweede = loop.submit("probe", {})
+        self.assertGreater(tweede.event_seq, eerste.event_seq)
+        self.assertLess(tweede.wall, eerste.wall)
+        self.assertGreater(tweede.mono, eerste.mono)
+
+    def test_event_draagt_beide_tijden(self):
+        loop = c.EventLoop(NepKlok())
+        ev = loop.submit("probe", {"x": 1})
+        self.assertIsNotNone(ev.mono)
+        self.assertIsNotNone(ev.wall)
+        self.assertEqual(ev.payload, {"x": 1})
+
+
+class TestToestandsmachine(unittest.TestCase):
+    def setUp(self):
+        self.klok = NepKlok()
+        self.loop = c.EventLoop(self.klok)
+        self.ctrl = c.Controller(self.loop)
+
+    def test_begint_in_source_wait(self):
+        self.assertEqual(self.ctrl.state, S.SOURCE_WAIT)
+
+    def test_waiting_pas_na_twee_ready_probes_en_groene_gates(self):
+        self.ctrl.on_event(self.loop.submit("readiness", {"klasse": c.ReadinessClass.READY}))
+        self.assertEqual(self.ctrl.state, S.SOURCE_WAIT)
+        self.klok.tik(5.0)
+        self.ctrl.gates_groen = True
+        self.ctrl.on_event(self.loop.submit("readiness", {"klasse": c.ReadinessClass.READY}))
+        self.assertEqual(self.ctrl.state, S.WAITING)
+
+    def test_rode_gates_houden_de_controller_uit_waiting(self):
+        self.ctrl.gates_groen = False
+        for _ in range(2):
+            self.ctrl.on_event(self.loop.submit("readiness", {"klasse": c.ReadinessClass.READY}))
+            self.klok.tik(5.0)
+        self.assertNotEqual(self.ctrl.state, S.WAITING)
+
+    def test_job_accepted_brengt_waiting_naar_running(self):
+        self.ctrl.state = S.WAITING
+        self.ctrl.on_event(self.loop.submit("job_accepted", {}))
+        self.assertEqual(self.ctrl.state, S.RUNNING)
+
+    def test_childexit_na_running_gaat_naar_scrubbing(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.on_event(self.loop.submit("child_exit", {"code": 0}))
+        self.assertEqual(self.ctrl.state, S.SCRUBBING)
+
+    def test_non_zero_childexit_quarantaint_na_scrub(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.on_event(self.loop.submit("child_exit", {"code": 1}))
+        self.assertEqual(self.ctrl.state, S.SCRUBBING)
+        self.ctrl.on_event(self.loop.submit("scrub_done", {"ok": True}))
+        self.assertEqual(self.ctrl.state, S.QUARANTINED)
+
+    def test_groene_scrub_na_nette_exit_gaat_terug_naar_waiting(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.gates_groen = True
+        self.ctrl.on_event(self.loop.submit("child_exit", {"code": 0}))
+        self.ctrl.on_event(self.loop.submit("scrub_done", {"ok": True}))
+        self.assertEqual(self.ctrl.state, S.WAITING)
+
+    def test_mislukte_scrub_quarantaint_altijd(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.gates_groen = True
+        self.ctrl.on_event(self.loop.submit("child_exit", {"code": 0}))
+        self.ctrl.on_event(self.loop.submit("scrub_done", {"ok": False}))
+        self.assertEqual(self.ctrl.state, S.QUARANTINED)
+
+    def test_onbekend_event_verandert_de_toestand_niet(self):
+        self.ctrl.state = S.WAITING
+        self.ctrl.on_event(self.loop.submit("iets_onbekends", {}))
+        self.assertEqual(self.ctrl.state, S.WAITING)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_eventloop.py' -v`
+Expected: FAIL — `State`, `EventLoop` en `Controller` bestaan nog niet.
+
+- [ ] **Step 3: Breid de module uit**
+
+Voeg onderaan `forgejo_runner_cycle.py` toe:
+
+```python
+class State(str, Enum):
+    SOURCE_WAIT = "SOURCE_WAIT"
+    CREDENTIAL_ERROR = "CREDENTIAL_ERROR"
+    WAITING = "WAITING"
+    RUNNING = "RUNNING"
+    DRAINING = "DRAINING"
+    SCRUBBING = "SCRUBBING"
+    QUARANTINED = "QUARANTINED"
+
+
+@dataclass(frozen=True)
+class Event:
+    kind: str
+    payload: dict
+    event_seq: int
+    mono: float
+    wall: float
+
+
+class EventLoop:
+    """Eén geserialiseerde bron van event_seq (7.7).
+
+    De klok levert (monotoon, wandklok). Monotone tijd stuurt deadlines; de
+    wandklok gaat alleen mee in het auditspoor en beslist nooit iets.
+    """
+
+    def __init__(self, clock):
+        self._clock = clock
+        self._seq = 0
+        self.events = []
+
+    def submit(self, kind, payload=None):
+        self._seq += 1
+        mono, wall = self._clock()
+        event = Event(kind=kind, payload=payload or {}, event_seq=self._seq,
+                      mono=mono, wall=wall)
+        self.events.append(event)
+        return event
+
+
+class Controller:
+    """Toestandsmachine van 7.9. Start altijd in SOURCE_WAIT: bij boot bestaat
+    er nog geen runnerproces en is de bron nog niet bewezen ready."""
+
+    def __init__(self, loop, state=State.SOURCE_WAIT):
+        self.loop = loop
+        self.state = state
+        self.gates_groen = False
+        self.readiness = Confirmation()
+        self._laatste_exitcode = None
+
+    def on_event(self, event):
+        handler = getattr(self, f"_on_{event.kind}", None)
+        if handler is not None:
+            handler(event)
+
+    def _on_readiness(self, event):
+        bevestigd = self.readiness.observe(event.payload["klasse"], now=event.mono)
+        if bevestigd is None:
+            return
+        if bevestigd is ReadinessClass.READY:
+            # Alleen na twee geldige probes EN groene gates mag er een runner komen.
+            if self.gates_groen and self.state in (State.SOURCE_WAIT,
+                                                   State.CREDENTIAL_ERROR,
+                                                   State.QUARANTINED):
+                self.state = State.WAITING
+            return
+        if bevestigd is ReadinessClass.SOURCE_WAIT:
+            self.state = State.SOURCE_WAIT
+        elif bevestigd is ReadinessClass.CREDENTIAL_ERROR:
+            self.state = State.CREDENTIAL_ERROR
+        else:
+            self.state = State.QUARANTINED
+
+    def _on_job_accepted(self, event):
+        if self.state is State.WAITING:
+            self.state = State.RUNNING
+
+    def _on_child_exit(self, event):
+        self._laatste_exitcode = event.payload.get("code")
+        # Na iedere exit wordt geschrobd, ook na een fout: containment eerst.
+        self.state = State.SCRUBBING
+
+    def _on_scrub_done(self, event):
+        if not event.payload.get("ok"):
+            self.state = State.QUARANTINED
+            return
+        if self._laatste_exitcode not in (0, None):
+            # Non-zero bij --wait duidt op config-, initialisatie-, poller- of
+            # runtimefalen; heropenen mag dan niet (7.9).
+            self.state = State.QUARANTINED
+            return
+        self.state = State.WAITING if self.gates_groen else State.SOURCE_WAIT
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_eventloop.py' -v`
+Expected: PASS — 12 tests, 0 failures.
+
+- [ ] **Step 5: Draai de hele suite**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_*.py' -v`
+Expected: PASS — alle tests uit Task 11 en 12 samen, 0 failures.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add forgejo-runner/scripts/forgejo_runner_cycle.py \
+        forgejo-runner/tests/test_cycle_eventloop.py
+git commit -m "feat(controller): geserialiseerde eventloop en toestandsmachine"
+```
+
+---
+
+### Task 13: Schedulingfence, latch-classificatie en deadlinewatchdog
+
+Het scherpst geformuleerde deel van het ontwerp, en het resultaat van reviewrondes 8 tot en met 10. §7.7 en §7.9 eisen:
+
+- de **eerste** afwijkende probe zet een schedulingfence met `fence_seq`, logt een informatief `FENCE_SET`-event en blokkeert iedere childstart; dit is nog geen alarm;
+- staat de host in `WAITING`, dan gaat hij direct naar `DRAINING` en stopt het wachtende child, zodat het niet nog vijf seconden online blijft pollen;
+- alleen een lokaal `JOB_ACCEPTED`- of `RUNNING`-event met `event_seq < fence_seq` geldt als **vóór-latch** en mag gecontroleerd eindigen;
+- ieder ander, onbekend of pas later ontvangen jobevent wordt fail-closed als op/na-latch behandeld: child stoppen, job cancel of requeue, daarna scrub en nulbewijs;
+- de fence heeft een harde maximale leeftijd van zestig seconden; is hij dan noch bevestigd noch veilig gewist, dan commit de controller deterministisch naar de **zwaarste sinds latch waargenomen klasse**.
+
+**Files:**
+- Modify: `forgejo-runner/scripts/forgejo_runner_cycle.py`
+- Test: `forgejo-runner/tests/test_cycle_fence.py`
+
+**Interfaces:**
+- Consumes: `EventLoop`, `Controller`, `SEVERITY` uit Task 11 en 12
+- Produces:
+  - `Fence(fence_seq, gezet_op_mono, eerste_klasse)` met `zwaarste_klasse`, `observe(klasse)`, `verlopen(now) -> bool`
+  - `Controller.fence: Fence | None`
+  - `Controller.latch_verdict(event) -> "voor" | "op-of-na"`
+  - `Controller.mag_child_starten -> bool`
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```python
+# forgejo-runner/tests/test_cycle_fence.py
+import unittest, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+import forgejo_runner_cycle as c
+
+S, R = c.State, c.ReadinessClass
+
+
+class NepKlok:
+    def __init__(self):
+        self.mono, self.wall = 0.0, 1000.0
+
+    def __call__(self):
+        return (self.mono, self.wall)
+
+    def tik(self, seconden):
+        self.mono += seconden
+        self.wall += seconden
+
+
+class FenceBasis(unittest.TestCase):
+    def setUp(self):
+        self.klok = NepKlok()
+        self.loop = c.EventLoop(self.klok)
+        self.ctrl = c.Controller(self.loop)
+        self.ctrl.gates_groen = True
+        self.ctrl.state = S.WAITING
+
+    def wijk_af(self, klasse=R.SOURCE_WAIT):
+        return self.ctrl.on_event(self.loop.submit("readiness", {"klasse": klasse}))
+
+
+class TestFenceZetten(FenceBasis):
+    def test_eerste_afwijking_zet_een_fence(self):
+        self.assertIsNone(self.ctrl.fence)
+        self.wijk_af()
+        self.assertIsNotNone(self.ctrl.fence)
+
+    def test_eerste_afwijking_haalt_waiting_direct_uit_de_lucht(self):
+        self.wijk_af()
+        self.assertEqual(self.ctrl.state, S.DRAINING)
+
+    def test_eerste_afwijking_blokkeert_een_nieuwe_child(self):
+        self.wijk_af()
+        self.assertFalse(self.ctrl.mag_child_starten)
+
+    def test_eerste_afwijking_logt_fence_set_en_alarmeert_niet(self):
+        self.wijk_af()
+        soorten = [e.kind for e in self.loop.events]
+        self.assertIn("fence_set", soorten)
+        self.assertNotIn("alarm", soorten)
+
+    def test_fence_seq_is_het_event_seq_van_de_afwijking(self):
+        ev = self.loop.submit("readiness", {"klasse": R.SOURCE_WAIT})
+        self.ctrl.on_event(ev)
+        self.assertEqual(self.ctrl.fence.fence_seq, ev.event_seq)
+
+
+class TestLatchclassificatie(FenceBasis):
+    def test_job_voor_de_fence_is_voor_latch(self):
+        job = self.loop.submit("job_accepted", {})
+        self.wijk_af()
+        self.assertEqual(self.ctrl.latch_verdict(job), "voor")
+
+    def test_job_na_de_fence_is_op_of_na_latch(self):
+        self.wijk_af()
+        job = self.loop.submit("job_accepted", {})
+        self.assertEqual(self.ctrl.latch_verdict(job), "op-of-na")
+
+    def test_gelijk_seq_telt_als_op_of_na(self):
+        self.wijk_af()
+        nep = c.Event(kind="job_accepted", payload={},
+                      event_seq=self.ctrl.fence.fence_seq, mono=0.0, wall=0.0)
+        self.assertEqual(self.ctrl.latch_verdict(nep), "op-of-na")
+
+    def test_late_wandklok_verandert_het_oordeel_niet(self):
+        # Een event met een oudere wandklok maar hoger event_seq blijft op/na-latch.
+        self.wijk_af()
+        laat = c.Event(kind="job_accepted", payload={},
+                       event_seq=self.ctrl.fence.fence_seq + 5, mono=0.0, wall=-9999.0)
+        self.assertEqual(self.ctrl.latch_verdict(laat), "op-of-na")
+
+    def test_onbekend_event_zonder_fence_is_fail_closed(self):
+        nep = c.Event(kind="job_accepted", payload={}, event_seq=1, mono=0.0, wall=0.0)
+        self.assertEqual(self.ctrl.latch_verdict(nep), "op-of-na")
+
+
+class TestDeadlinewatchdog(FenceBasis):
+    def test_fence_verloopt_na_zestig_seconden(self):
+        self.wijk_af()
+        self.klok.tik(59.0)
+        self.assertFalse(self.ctrl.fence.verlopen(self.klok.mono))
+        self.klok.tik(2.0)
+        self.assertTrue(self.ctrl.fence.verlopen(self.klok.mono))
+
+    def test_zwaarste_klasse_wint_bij_een_blijvende_klassesprong(self):
+        self.wijk_af(R.SOURCE_WAIT)
+        self.klok.tik(1.0); self.wijk_af(R.PROTOCOL)
+        self.klok.tik(1.0); self.wijk_af(R.CREDENTIAL_ERROR)
+        self.assertEqual(self.ctrl.fence.zwaarste_klasse, R.PROTOCOL)
+
+    def test_deadline_commit_gaat_naar_de_zwaarste_klasse(self):
+        self.wijk_af(R.SOURCE_WAIT)
+        self.klok.tik(1.0); self.wijk_af(R.CREDENTIAL_ERROR)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.CREDENTIAL_ERROR)
+
+    def test_deadline_commit_alarmeert(self):
+        self.wijk_af(R.SOURCE_WAIT)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertIn("alarm", [e.kind for e in self.loop.events])
+
+    def test_valid_error_flap_bereikt_alsnog_de_deadline(self):
+        self.wijk_af(R.SOURCE_WAIT)
+        for _ in range(6):
+            self.klok.tik(5.0); self.wijk_af(R.READY)
+            self.klok.tik(5.0); self.wijk_af(R.SOURCE_WAIT)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.SOURCE_WAIT)
+        self.assertIsNone(self.ctrl.fence)
+
+
+class TestFenceWissen(FenceBasis):
+    def test_een_geldige_probe_wist_de_fence_niet(self):
+        self.wijk_af()
+        self.klok.tik(5.0)
+        self.ctrl.on_event(self.loop.submit("readiness", {"klasse": R.READY}))
+        self.assertIsNotNone(self.ctrl.fence)
+
+    def test_twee_geldige_probes_zonder_nulbewijs_wissen_de_fence_niet(self):
+        self.wijk_af()
+        self.ctrl.nulbewijs_ok = False
+        for _ in range(2):
+            self.klok.tik(5.0)
+            self.ctrl.on_event(self.loop.submit("readiness", {"klasse": R.READY}))
+        self.assertIsNotNone(self.ctrl.fence)
+
+    def test_twee_geldige_probes_met_nulbewijs_en_groene_gates_wissen_de_fence(self):
+        self.wijk_af()
+        self.ctrl.nulbewijs_ok = True
+        self.ctrl.gates_groen = True
+        for _ in range(2):
+            self.klok.tik(5.0)
+            self.ctrl.on_event(self.loop.submit("readiness", {"klasse": R.READY}))
+        self.assertIsNone(self.ctrl.fence)
+        self.assertTrue(self.ctrl.mag_child_starten)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_fence.py' -v`
+Expected: FAIL — `Fence`, `latch_verdict`, `tick` en `mag_child_starten` bestaan nog niet.
+
+- [ ] **Step 3: Breid de module uit**
+
+```python
+@dataclass
+class Fence:
+    """Schedulingfence (7.7). Gezet op de eerste afwijkende probe; blokkeert
+    iedere childstart tot hij bevestigd of veilig gewist is."""
+
+    fence_seq: int
+    gezet_op_mono: float
+    eerste_klasse: object
+    zwaarste_klasse: object = None
+
+    def __post_init__(self):
+        self.zwaarste_klasse = self.eerste_klasse
+
+    def observe(self, klasse):
+        if klasse is ReadinessClass.READY:
+            return
+        if SEVERITY[klasse] > SEVERITY[self.zwaarste_klasse]:
+            self.zwaarste_klasse = klasse
+
+    def verlopen(self, now):
+        return (now - self.gezet_op_mono) >= FENCE_MAX_AGE_SECONDS
+
+
+_KLASSE_NAAR_STATE = {
+    ReadinessClass.SOURCE_WAIT: State.SOURCE_WAIT,
+    ReadinessClass.CREDENTIAL_ERROR: State.CREDENTIAL_ERROR,
+    ReadinessClass.PROTOCOL: State.QUARANTINED,
+}
+```
+
+Vervang daarna `Controller.__init__` en `_on_readiness` door onderstaande versie en voeg de nieuwe methoden toe:
+
+```python
+    def __init__(self, loop, state=State.SOURCE_WAIT):
+        self.loop = loop
+        self.state = state
+        self.gates_groen = False
+        self.nulbewijs_ok = False
+        self.readiness = Confirmation()
+        self.fence = None
+        self._laatste_exitcode = None
+
+    @property
+    def mag_child_starten(self):
+        """Een fence blokkeert onvoorwaardelijk; een unit-restart omzeilt hem nooit."""
+        return self.fence is None and self.gates_groen and self.state in (
+            State.WAITING, State.SOURCE_WAIT)
+
+    def latch_verdict(self, event):
+        """Alleen een lokaal event met event_seq strikt kleiner dan fence_seq is
+        vóór-latch. Alles daarbuiten is fail-closed op/na-latch (7.7)."""
+        if self.fence is None:
+            return "op-of-na"
+        return "voor" if event.event_seq < self.fence.fence_seq else "op-of-na"
+
+    def _on_readiness(self, event):
+        klasse = event.payload["klasse"]
+
+        if klasse is not ReadinessClass.READY:
+            if self.fence is None:
+                self.fence = Fence(fence_seq=event.event_seq,
+                                   gezet_op_mono=event.mono,
+                                   eerste_klasse=klasse)
+                # Informatief, geen alarm: reviewronde 8 wilde de fence direct
+                # maar de ruis niet.
+                self.loop.submit("fence_set", {"fence_seq": self.fence.fence_seq,
+                                               "klasse": klasse})
+                if self.state is State.WAITING:
+                    self.state = State.DRAINING
+            else:
+                self.fence.observe(klasse)
+        elif self.fence is not None:
+            self.fence.observe(klasse)
+
+        bevestigd = self.readiness.observe(klasse, now=event.mono)
+        if bevestigd is None:
+            return
+
+        if bevestigd is ReadinessClass.READY:
+            if self.nulbewijs_ok and self.gates_groen:
+                self.fence = None
+                self.state = State.WAITING
+            return
+
+        self.state = _KLASSE_NAAR_STATE[bevestigd]
+        self.fence = None
+        self.loop.submit("alarm", {"klasse": bevestigd, "reden": "bevestigde fouttoestand"})
+
+    def tick(self, now):
+        """Deadlinewatchdog: een onopgeloste fence ouder dan zestig seconden
+        commit deterministisch naar de zwaarste sinds latch waargenomen klasse."""
+        if self.fence is None or not self.fence.verlopen(now):
+            return
+        klasse = self.fence.zwaarste_klasse
+        self.state = _KLASSE_NAAR_STATE[klasse]
+        self.loop.submit("alarm", {"klasse": klasse, "reden": "fence-deadline bereikt"})
+        self.fence = None
+        self.readiness.reset()
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_fence.py' -v`
+Expected: PASS — 16 tests, 0 failures.
+
+- [ ] **Step 5: Draai de hele controllersuite**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_*.py' -v`
+Expected: PASS. Faalt er nu een test uit Task 12, dan heeft de herschreven `_on_readiness` iets gebroken; repareer dat vóór de commit in plaats van de oude test aan te passen.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add forgejo-runner/scripts/forgejo_runner_cycle.py forgejo-runner/tests/test_cycle_fence.py
+git commit -m "feat(controller): schedulingfence, latch-classificatie en deadlinewatchdog"
+```
+
+---
+
+### Task 14: Maintenance-record
+
+§7.7 kent precies één uitzondering op de zestigsecondenwatchdog: een vooraf gearmd control-plane-onderhoudsvenster. Het record bevat `maintenance_id`, UTC-start en een harde UTC-eindtijd van maximaal dertig minuten, is op beide hosts identiek gearmd, en kan niet automatisch worden aangemaakt of verlengd.
+
+Zolang de **algemene** readiness binnen dat venster nog niet tweemaal geldig is geweest, worden alle startuptransport-, status- en schema-uitkomsten voor de watchdog als `SOURCE_WAIT` behandeld. Zodra de algemene readiness tweemaal geldig is, vervalt die uitzondering direct en geldt de normale vierwegclassificatie, zodat een bevestigde 401/403 ook binnen het venster correct wordt gemeld. Bij de harde eindtijd vervalt iedere uitzondering.
+
+Let op het klokonderscheid: de **geldigheid van het venster** is een wandklokinterval, want het is een menselijk geplande afspraak. De **fencedeadline** blijft monotoon. Die twee mogen niet door elkaar lopen; de tests dwingen dat af.
+
+**Files:**
+- Modify: `forgejo-runner/scripts/forgejo_runner_cycle.py`
+- Test: `forgejo-runner/tests/test_cycle_maintenance.py`
+
+**Interfaces:**
+- Consumes: `Fence`, `Controller` uit Task 13
+- Produces: `MaintenanceRecord(maintenance_id, start_utc, eind_utc)` met `geldig_op(wall) -> bool` en `MAX_DUUR_SECONDS = 1800`; `MaintenanceRecord.parse(dict)` die weigert bij een ontbrekend veld of een duur boven het maximum; `Controller.maintenance` en `Controller.algemene_readiness_bevestigd`
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```python
+# forgejo-runner/tests/test_cycle_maintenance.py
+import unittest, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+import forgejo_runner_cycle as c
+
+S, R = c.State, c.ReadinessClass
+
+
+class NepKlok:
+    def __init__(self):
+        self.mono, self.wall = 0.0, 1_000_000.0
+
+    def __call__(self):
+        return (self.mono, self.wall)
+
+    def tik(self, seconden):
+        self.mono += seconden
+        self.wall += seconden
+
+
+def record(start=1_000_000.0, duur=1800.0):
+    return c.MaintenanceRecord(maintenance_id="mnt-1", start_utc=start, eind_utc=start + duur)
+
+
+class TestRecordvalidatie(unittest.TestCase):
+    def test_duur_boven_dertig_minuten_wordt_geweigerd(self):
+        with self.assertRaises(ValueError):
+            c.MaintenanceRecord.parse({"maintenance_id": "x", "start_utc": 0, "eind_utc": 1801})
+
+    def test_precies_dertig_minuten_mag(self):
+        rec = c.MaintenanceRecord.parse({"maintenance_id": "x", "start_utc": 0, "eind_utc": 1800})
+        self.assertEqual(rec.maintenance_id, "x")
+
+    def test_ontbrekend_veld_wordt_geweigerd(self):
+        with self.assertRaises(ValueError):
+            c.MaintenanceRecord.parse({"start_utc": 0, "eind_utc": 60})
+
+    def test_lege_id_wordt_geweigerd(self):
+        with self.assertRaises(ValueError):
+            c.MaintenanceRecord.parse({"maintenance_id": "", "start_utc": 0, "eind_utc": 60})
+
+    def test_geldigheid_is_een_wandklokinterval(self):
+        rec = record(start=100.0, duur=60.0)
+        self.assertFalse(rec.geldig_op(99.0))
+        self.assertTrue(rec.geldig_op(100.0))
+        self.assertTrue(rec.geldig_op(159.0))
+        self.assertFalse(rec.geldig_op(160.0))
+
+
+class TestVensterGedrag(unittest.TestCase):
+    def setUp(self):
+        self.klok = NepKlok()
+        self.loop = c.EventLoop(self.klok)
+        self.ctrl = c.Controller(self.loop)
+        self.ctrl.maintenance = record()
+
+    def wijk_af(self, klasse):
+        self.ctrl.on_event(self.loop.submit("readiness", {"klasse": klasse}))
+
+    def test_gemengde_startupklassen_committen_alleen_source_wait(self):
+        self.wijk_af(R.PROTOCOL)
+        self.klok.tik(1.0)
+        self.wijk_af(R.CREDENTIAL_ERROR)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.SOURCE_WAIT)
+
+    def test_deadline_binnen_het_venster_alarmeert_niet_als_security(self):
+        self.wijk_af(R.PROTOCOL)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        alarmen = [e for e in self.loop.events if e.kind == "alarm"]
+        self.assertTrue(all(e.payload.get("verwacht") for e in alarmen))
+
+    def test_na_tweemaal_geldige_algemene_readiness_vervalt_de_uitzondering(self):
+        self.ctrl.algemene_readiness_bevestigd = True
+        self.wijk_af(R.PROTOCOL)
+        self.klok.tik(1.0)
+        self.wijk_af(R.CREDENTIAL_ERROR)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.QUARANTINED)
+
+    def test_na_de_harde_eindtijd_geldt_de_normale_regel(self):
+        self.ctrl.maintenance = record(start=1_000_000.0, duur=60.0)
+        self.klok.tik(120.0)          # buiten het venster
+        self.wijk_af(R.PROTOCOL)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.QUARANTINED)
+
+    def test_zonder_record_geldt_de_normale_regel(self):
+        self.ctrl.maintenance = None
+        self.wijk_af(R.PROTOCOL)
+        self.klok.tik(61.0)
+        self.ctrl.tick(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.QUARANTINED)
+
+    def test_het_venster_verlengt_zichzelf_niet(self):
+        rec = record(start=1_000_000.0, duur=60.0)
+        self.ctrl.maintenance = rec
+        self.klok.tik(30.0)
+        self.wijk_af(R.SOURCE_WAIT)
+        self.assertEqual(rec.eind_utc, 1_000_060.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_maintenance.py' -v`
+Expected: FAIL — `MaintenanceRecord` bestaat nog niet.
+
+- [ ] **Step 3: Breid de module uit**
+
+```python
+MAINTENANCE_MAX_DUUR_SECONDS = 1800.0
+
+
+@dataclass(frozen=True)
+class MaintenanceRecord:
+    """Vooraf gearmd control-plane-onderhoudsvenster (7.7).
+
+    Geldigheid is bewust een wandklokinterval: het is een menselijk geplande
+    afspraak die op beide hosts identiek wordt gearmd. Fencedeadlines blijven
+    monotoon; die twee klokken worden nooit door elkaar gebruikt.
+    """
+
+    maintenance_id: str
+    start_utc: float
+    eind_utc: float
+
+    @classmethod
+    def parse(cls, data):
+        for veld in ("maintenance_id", "start_utc", "eind_utc"):
+            if veld not in data:
+                raise ValueError(f"maintenance-record mist {veld}")
+        if not str(data["maintenance_id"]).strip():
+            raise ValueError("maintenance_id mag niet leeg zijn")
+        duur = float(data["eind_utc"]) - float(data["start_utc"])
+        if duur <= 0:
+            raise ValueError("maintenance-record heeft geen positieve duur")
+        if duur > MAINTENANCE_MAX_DUUR_SECONDS:
+            raise ValueError(
+                f"maintenance-record duurt {duur}s, maximaal {MAINTENANCE_MAX_DUUR_SECONDS}s")
+        return cls(maintenance_id=str(data["maintenance_id"]),
+                   start_utc=float(data["start_utc"]),
+                   eind_utc=float(data["eind_utc"]))
+
+    def geldig_op(self, wall):
+        return self.start_utc <= wall < self.eind_utc
+```
+
+Voeg aan `Controller.__init__` toe: `self.maintenance = None` en `self.algemene_readiness_bevestigd = False`. Vervang `tick` door:
+
+```python
+    def _startupuitzondering_actief(self, wall):
+        """Binnen een geldig gearmd venster en zolang de algemene readiness nog
+        niet tweemaal geldig is, committeert de watchdog uitsluitend SOURCE_WAIT."""
+        return (self.maintenance is not None
+                and self.maintenance.geldig_op(wall)
+                and not self.algemene_readiness_bevestigd)
+
+    def tick(self, now, wall=None):
+        if self.fence is None or not self.fence.verlopen(now):
+            return
+        if wall is None:
+            wall = self.loop.events[-1].wall if self.loop.events else 0.0
+
+        if self._startupuitzondering_actief(wall):
+            klasse = ReadinessClass.SOURCE_WAIT
+            verwacht = True
+        else:
+            klasse = self.fence.zwaarste_klasse
+            verwacht = False
+
+        self.state = _KLASSE_NAAR_STATE[klasse]
+        self.loop.submit("alarm", {"klasse": klasse,
+                                   "reden": "fence-deadline bereikt",
+                                   "verwacht": verwacht,
+                                   "maintenance_id": (self.maintenance.maintenance_id
+                                                      if self.maintenance else None)})
+        self.fence = None
+        self.readiness.reset()
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_maintenance.py' -v`
+Expected: PASS — 11 tests, 0 failures.
+
+- [ ] **Step 5: Draai de hele controllersuite**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_*.py' -v`
+Expected: PASS. De testen uit Task 13 die `tick(now)` aanroepen moeten blijven werken: `wall` is optioneel en valt terug op de wandklok van het laatste event.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add forgejo-runner/scripts/forgejo_runner_cycle.py \
+        forgejo-runner/tests/test_cycle_maintenance.py
+git commit -m "feat(controller): maintenance-record met harde eindtijd en startupuitzondering"
+```
+
+---
