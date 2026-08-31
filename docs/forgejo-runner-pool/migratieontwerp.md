@@ -122,21 +122,26 @@ De gekozen vorm is rechtstreeks ondersteund door de [Forgejo Runner 12.10.1-conf
 
 De bundel is niet alleen "versiebeheerd" maar heeft één benoemde canonieke bron. Twee losse kopieën zouden twee bronnen van waarheid zijn en maken de byte-identiek-eis uit §4 en §9 onbewijsbaar.
 
-| Repository | Rol | Inhoud |
-|---|---|---|
-| `scrum4me-server` | canonieke bron | `docs/forgejo-runner-pool/` met dit ontwerp, de reviewrapporten en het runbook; `forgejo-runner/` met de volledige gedeelde bundel; `hosts/scrum4me-server/` met host-overlay en bewijs |
-| `max2` | host-overlay | `hosts/max2/` met `runner-config.yml` zonder secretwaarden, preflight-uitkomsten en inventarisatie; `evidence/` met metingen, testbewijs en maintenance-records |
+Beide repo's bestaan al op de Forgejo-instance, maar zijn gebootstrapt met uitsluitend `README.md`, `CLAUDE.md`, `.gitignore` en — in `scrum4me-server` — `docs/forgejo-runner-pool/`. De onderstaande tabel is daarom een **doelstructuur en geen beschrijving van de huidige boom**; de kolom "bestaat nu" scheidt belofte van werkelijkheid.
 
-`max2` bevat bewust geen kopie van de bundel. Beide hosts rollen uit vanaf exact dezelfde commit-SHA van de canonieke repo.
+| Repository | Rol | Doelinhoud | Bestaat nu | Ontstaat in |
+|---|---|---|---|---|
+| `scrum4me-server` | canonieke bron | `docs/forgejo-runner-pool/` met dit ontwerp, de reviewrapporten en het runbook | ja | — |
+| `scrum4me-server` | canonieke bron | `forgejo-runner/` met de volledige gedeelde bundel | nee | stap B |
+| `scrum4me-server` | canonieke bron | `hosts/scrum4me-server/` met host-overlay en bewijs | nee | stap G |
+| `max2` | host-overlay | `hosts/max2/` met `runner-config.yml` zonder secretwaarden, preflight-uitkomsten en inventarisatie | nee | stap D |
+| `max2` | host-overlay | `evidence/` met metingen, testbewijs en maintenance-records | nee | stap A en E |
 
-Bindend:
+`max2` krijgt bewust geen kopie van de bundel. Beide hosts rollen uit vanaf exact dezelfde commit-SHA van de canonieke repo.
 
-- iedere host houdt de uitgerolde bundelcommit-SHA vast in `/opt/forgejo-runner/BUNDLE_COMMIT`; `verify-stack.sh` faalt als die ontbreekt, niet in de canonieke repo bestaat of afwijkt van de andere host;
-- `verify-stack.sh` berekent daarnaast een canonieke hash over de uitgerolde bundelbestanden en vergelijkt die met de hash van die commit; dit is de mechanische invulling van "byte-identiek" waarnaar §9 verwijst;
+Bindend, met per regel de stap die het bewijst:
+
+- iedere host houdt de uitgerolde bundelcommit-SHA vast in `/opt/forgejo-runner/BUNDLE_COMMIT`; `verify-stack.sh` faalt als die ontbreekt, niet in de canonieke repo bestaat of afwijkt van de andere host (stap D en G);
+- `verify-stack.sh` berekent daarnaast een canonieke hash over de uitgerolde bundelbestanden en vergelijkt die met de hash van die commit; dit is de mechanische invulling van "byte-identiek" waarnaar §9 verwijst; stap B levert het script, stap D en G bewijzen de vergelijking;
 - beide waarden staan in de monitoring van §10;
-- secrets komen niet in Git: naast de eenmalige scan in stap B draait op beide repo's een pre-commit secret-scan, en `/opt/forgejo-runner/credentials/` staat in `.gitignore`;
+- secrets komen niet in Git. Vandaag bestaat alleen de eenmalige scan van stap B, en negeren de `.gitignore`-bestanden van beide repo's `credentials/`, `forgejo-token`, `*.token`, `*.key`, `*.pem`, `.env` en `.env.*`, met `.env.example` expliciet toegestaan. Een doorlopende scan is er nog niet: stap B levert `scripts/secret-scan.sh` plus `scripts/install-git-hooks.sh` in de canonieke repo, installeert die als pre-commit hook in beide werkbomen en bewijst met een wegwerptestbestand dat een commit met een tokenpatroon daadwerkelijk wordt geblokkeerd. Pas na dat bewijs mag dit ontwerp beweren dat de scan draait. Het actieve token leeft op de host in `/opt/forgejo-runner/credentials/` en bevindt zich dus nooit binnen een repo-werkboom;
 - deployment gebeurt handmatig of via SSH vanaf `mac`, nooit via een Forgejo Actions-workflow. Jobcontainers draaien in DinD zonder host-Docker-socket en zonder hostpadvolumes (§7.6) en kunnen de hoststack fysiek niet wijzigen. Een deployworkflow op deze runners is per ontwerp onmogelijk en mag niet worden gebouwd;
-- beide repo's zijn nieuwe Actions-enabled repositories op dezelfde Forgejo-instance en vallen dus binnen de trustgrens van §7.7. Stap A neemt ze op in `trusted-actions-scope.yml` vóór de eerste trustgate-run; anders alarmeert de eerste dagelijkse controle op deze repo's zelf als zachte trustafwijking.
+- beide repo's staan op dezelfde Forgejo-instance en vallen daarmee binnen de trustgrens van §7.7. Stap A stelt per repo vast óf Actions is ingeschakeld en neemt beide op in `trusted-actions-scope.yml` vóór de eerste trustgate-run; anders alarmeert de eerste dagelijkse controle op deze repo's zelf als zachte trustafwijking.
 
 ## 7. Wijzigingen aan de bestaande installatie
 
@@ -667,6 +672,19 @@ Na de dubbele GO van R11 zijn zes post-GO-wijzigingen aangebracht. Zij wijzigen 
 4. **Quarantaine is convergent, niet gecommandeerd (§6, §7.7).** De tekst impliceerde op één plek een quarantaineopdracht van host naar host terwijl geen kanaal, authenticatie of faalmodus was beschreven. Vastgelegd is nu dat er geen kanaal bestaat en er ook geen komt: beide controllers oordelen onafhankelijk over dezelfde bron. Het resterende gevolg — een instancebrede trustbevinding is een gemeenschappelijke faalmodus die de hele pool stilzet — is expliciet aanvaard.
 5. **Eerlijke variabelentelling en cacheregressie (§2, §7.8, §9, §10, stap A).** De claim dat fase 1 "slechts één hoofdeigenschap" verandert klopte niet: registratiemodel, levenscyclus, stateretentie, caps, digest-pinning en trustgate wijzigen tegelijk. De onderbouwing verwijst nu naar de gefaseerde volgorde van §8. Omdat de scrub de cache verwijdert waarop de huidige circa 121 GB DinD-state wijst, is jobduur toegevoegd als baselinemeting in stap A, als stabiliteitscriterium in §9 en als monitoringmeetpunt in §10.
 6. **Redactioneel.** De dubbele kop `## 14. Acceptatie van dit ontwerp` is opgelost; delta-review R11 staat nu waar hij hoort, in het Review record. `T_requeue` wordt in stap A expliciet als eerste bepaald omdat de uitkomst een hele tak in §7.9 aan- of uitzet.
+
+### Delta-review R12 — ronde 1 van maximaal 5 — 31 augustus 2026
+
+**Reviewer:** `mac:codex` — enige reviewer; de delta-variant gebruikt één reviewer uit de modelfamilie die de wijzigingen niet schreef.
+**Request:** `7cce63dd-de1a-4264-bf0e-3bbfbf17716c` — **Reply:** `7fe0bed9-8e07-4a27-96fa-08ec512cd2cf`
+**Beoordeelde revisie:** 677 regels, commit `d718f6a`, SHA-256 `610d0daaf30d64b2823e67f3f6f76f02bd26c993541dd0e8a95fe2edee9df529`
+**Verdict:** NO-GO — 0 BLOCKER / 1 MAJOR / 0 MINOR
+
+Wijziging 2 tot en met 6 hielden stand: headroomgate op beide hosts, Python-controller, convergente quarantaine, eerlijke variabelentelling met jobduurbaseline, en de redactionele fixes inclusief `T_requeue`.
+
+**MAJOR, geaccepteerd en nagemeten tegen de boom:** §6.1 verwarde doelstructuur met de as-built repo's. De tabel beschreef in tegenwoordige tijd een `forgejo-runner/`, `hosts/scrum4me-server/`, `hosts/max2/` en `evidence/` die op respectievelijk commit `d718f6a` en `922e84c` niet bestaan, en de bullets claimden een draaiende pre-commit secret-scan plus een `.gitignore`-regel `/opt/forgejo-runner/credentials/`. Zelf nagemeten met `git ls-tree -r --name-only HEAD` en `ls .git/hooks`: beide repo's bevatten alleen `README.md`, `CLAUDE.md`, `.gitignore` en in `scrum4me-server` de documenten; in geen van beide staat een geïnstalleerde hook, alleen `pre-commit.sample`; de `.gitignore` negeert `credentials/` en niet het genoemde hostpad, dat in een repo-`.gitignore` ook niet thuishoort.
+
+Verwerkt in revisie 12b: §6.1 is nu expliciet een doelstructuur met een kolom "bestaat nu" en de stap waarin ieder onderdeel ontstaat. De doorlopende secret-scan is een stap-B-gate geworden met een verplicht blokkeringsbewijs, en het ontwerp mag pas ná dat bewijs beweren dat de scan draait. De niet-geverifieerde bewering dat beide repo's Actions-enabled zijn is vervangen door een stap-A-vaststelling.
 
 ## 14. Acceptatie van dit ontwerp
 
