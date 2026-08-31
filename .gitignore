@@ -1,0 +1,13 @@
+# Secrets — nooit in Git (zie CLAUDE.md)
+credentials/
+*.token
+forgejo-token
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Lokale werkbestanden
+.DS_Store
+.claude/worktrees/
