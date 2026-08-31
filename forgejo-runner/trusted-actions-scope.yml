@@ -1,12 +1,89 @@
-# forgejo-runner/trusted-actions-scope.yml
-# Expliciete allowlist voor de global-scope runners (7.7 van het migratieontwerp).
-# Een identiteit is alleen trusted als JP haar bij naam heeft goedgekeurd.
-# Dit bestand wordt in Task 6 step 7 gevuld met de gemeten toestand en daarna
-# door JP goedgekeurd. Zolang approved_by leeg is, faalt de gate fail-closed.
 version: 1
-approved_by: ""
-approved_at: ""
+approved_by: "janpeter"
+approved_at: "2026-08-31T21:56:04Z"
 
-identities: []
+identities:
+  - name: janpeter
+  - name: s4m-codex-reviewer
 
-repositories: []
+repositories:
+  - full_name: janpeter/DigiPlein
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/ImageInventory
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Media-Organizer
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Ops-dashboard
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scraper
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scrum4Me
+    actions_enabled: true
+    workflow_source: .github/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scrum4Us
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/SiteScraper
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Video-editor
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/inspannings-monitor
+    actions_enabled: true
+    workflow_source: .github/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/jp-visser
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/max2
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/private-mcp
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/s4m-queue
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-copilot
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-docker
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-mcp
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-server
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/scrum4me-shared
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-workers
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
