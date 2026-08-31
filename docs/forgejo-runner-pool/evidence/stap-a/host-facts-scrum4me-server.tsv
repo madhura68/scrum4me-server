@@ -1,0 +1,7 @@
+vcpu	8
+mem_total_bytes	16122056704
+mem_available_bytes	10592337920
+docker_root_dir	/var/lib/docker
+docker_root_free_bytes	139233034240
+docker_root_free_pct	29
+docker_root_free_inodes_pct	75
