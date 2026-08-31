@@ -1,7 +1,7 @@
 # Migratieontwerp — bestaande Forgejo Runner uitbreiden naar een tweemachinepool
 
 **Datum:** 31 augustus 2026  
-**Status:** delta-review R11 GO; post-GO-wijzigingen (repo-tracking en vier bevindingen) staan in delta-review R12 — uitvoering nog niet gestart  
+**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; uitvoering nog niet gestart  
 **Doelhosts:** `scrum4me-server` en `max2`  
 **Fase 1:** stabiele pool met Forgejo Runner 12.10.1  
 **Fase 2:** afzonderlijke rolling upgrade naar Forgejo Runner 13
@@ -698,10 +698,20 @@ Verwerkt in revisie 12b: §6.1 is nu expliciet een doelstructuur met een kolom "
 
 Verwerkt in revisie 12c: §6.1 en stap A gebruiken nu dezelfde regel. Stap A stelt per repo vast óf Actions is ingeschakeld; alleen een aantoonbaar Actions-enabled repo komt als trusted scope in `trusted-actions-scope.yml`, en een repo met Actions uit wordt daar expliciet als bekende niet-Actions-repo vastgelegd zodat later inschakelen als drift zichtbaar wordt. Stap A verbiedt expliciet het ongetoetst aannemen van Actions-enabled.
 
+### Delta-review R12 — ronde 3 van maximaal 5 — 31 augustus 2026
+
+**Reviewer:** `mac:codex`
+**Request:** `c61d0e45-548f-4e72-8097-3e076aab5199` — **Reply:** `f6ca262c-6fae-40c9-88b3-88ca2d435b4c`
+**Beoordeelde revisie:** 707 regels, commit `182de44`, SHA-256 `12e44b67e6be938cc67ef944d7f5c96d62826f905a31f3e3feef45f319dc4e13`
+**Verdict:** GO — 0 BLOCKER / 0 MAJOR / 0 MINOR
+**Oordeel over de ronde-2-MAJOR:** held.
+
+Geen resterende bevindingen. De reviewer bevestigde dat §6.1 en stap A dezelfde Actions-regel hanteren en vond geen derde normatieve plek waar de oude aanname voortleeft. Daarmee is delta-review R12 gesloten met GO in ronde 3 van maximaal 5; beide MAJORs uit ronde 1 en 2 waren volledig geaccepteerd en er is in deze loop geen bevinding afgewezen.
+
 ## 14. Acceptatie van dit ontwerp
 
-Dit ontwerp heeft dubbele GO gekregen voor de delta-review na rondecap 10 (R11). De route zelf is daarmee goedgekeurd: eerst een stabiele Forgejo Runner 12.10.1-tweemachinepool op `scrum4me-server` en `max2`, daarna pas een afzonderlijke rolling Runner 13-fase.
+Dit ontwerp kreeg dubbele GO voor de delta-review na rondecap 10 (R11). De route is daarmee goedgekeurd: eerst een stabiele Forgejo Runner 12.10.1-tweemachinepool op `scrum4me-server` en `max2`, daarna pas een afzonderlijke rolling Runner 13-fase.
 
-De zes post-GO-wijzigingen uit "Revisie na R11" zijn nog niet beoordeeld. Zolang delta-review R12 geen GO heeft, geldt R11 als de laatst goedgekeurde revisie en zijn die wijzigingen voorgesteld, niet vastgesteld.
+De zes post-GO-wijzigingen uit "Revisie na R11" — repo-tracking en versiebeheer, headroomgate op beide hosts, Python-controller, convergente quarantaine, eerlijke variabelentelling met jobduurbaseline, en redactionele fixes — zijn beoordeeld in delta-review R12 en kregen GO in ronde 3. Commit `182de44` van de canonieke repo is daarmee de goedgekeurde revisie.
 
 Productie-uitvoering zelf is nog niet gestart. De volgende stap is een uitvoerbaar implementatieplan met exacte read-only inventarisatiecommando's, bestandsinhoud, deploymentcommando's, gates, testworkflows en rollbackcommando's.
