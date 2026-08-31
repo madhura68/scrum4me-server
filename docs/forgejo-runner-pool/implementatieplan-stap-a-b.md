@@ -1425,6 +1425,77 @@ class TestVierenveertigVierNulVier(unittest.TestCase):
             trust_scope_cli.urllib.request.urlopen = origineel
 
 
+class TestVerplichteVelden(unittest.TestCase):
+    """Een ontbrekend veld binnen een gemeten object is een onvolledige meting,
+    nooit een stilzwijgende "nee" (7.7 fail-closed)."""
+
+    def _verdict(self, client):
+        return trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+
+    def _rood(self, verdict, fragment):
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any(fragment in u for u in verdict.unreadable),
+                        f"{fragment!r} niet gevonden in {verdict.unreadable}")
+
+    def test_repo_zonder_has_actions_is_fail_closed(self):
+        repo = {k: v for k, v in REPO_ACTIONS.items() if k != "has_actions"}
+        self._rood(self._verdict(FakeClient([repo])), "has_actions")
+
+    def test_has_actions_als_null_is_fail_closed(self):
+        repo = dict(REPO_ACTIONS, has_actions=None)
+        self._rood(self._verdict(FakeClient([repo])), "has_actions")
+
+    def test_repo_zonder_owner_login_is_fail_closed(self):
+        repo = dict(REPO_ACTIONS, owner={})
+        self._rood(self._verdict(FakeClient([repo])), "owner.login")
+
+    def test_repo_zonder_default_branch_is_fail_closed(self):
+        repo = {k: v for k, v in REPO_ACTIONS.items() if k != "default_branch"}
+        self._rood(self._verdict(FakeClient([repo])), "default_branch")
+
+    def test_collaborator_zonder_login_is_fail_closed(self):
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            collaborators={"janpeter/app": [{"avatar_url": "x"}]})
+        self._rood(self._verdict(client), "collaborator zonder login")
+
+    def test_team_zonder_permission_is_fail_closed(self):
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            teams={"janpeter/app": [{"id": 7, "name": "devs"}]})
+        self._rood(self._verdict(client), "geen uitleesbare permission")
+
+    def test_teamlid_zonder_login_is_fail_closed(self):
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            teams={"janpeter/app": [{"id": 7, "name": "devs", "permission": "write"}]},
+            team_members={7: [{"full_name": "Zonder Login"}]})
+        self._rood(self._verdict(client), "teamlid zonder login")
+
+    def test_workflowbestand_zonder_encoding_is_fail_closed(self):
+        bestand = {"content": "b24gcHVzaAo=", "path": "ci.yml", "type": "file", "name": "ci.yml"}
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): MAP,
+            ("janpeter/app", ".forgejo/workflows/ci.yml"): bestand,
+        })
+        self._rood(self._verdict(client), "encoding-veld ontbreekt")
+
+    def test_volledig_object_blijft_gewoon_groen(self):
+        # De strengheid mag een correcte meting niet rood maken.
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            collaborators={"janpeter/app": [{"login": "eva"}]},
+            permissions={("janpeter/app", "eva"): {"permission": "read"}},
+            teams={"janpeter/app": [{"id": 7, "name": "kijkers", "permission": "read"}]},
+            protections={"janpeter/app": [{"branch_name": "main"}]})
+        verdict = self._verdict(client)
+        self.assertTrue(verdict.ok, f"onverwacht rood: {verdict.hard} {verdict.unreadable}")
+
+
 class TestClassificatie(unittest.TestCase):
     def _inv(self, **overrides):
         repo = {
@@ -1543,6 +1614,28 @@ def _workflow_source(client, full_name):
     return None, []
 
 
+BEKENDE_TEAMROLLEN = ("none", "read", "write", "admin", "owner")
+
+
+def _valideer_repo(repo):
+    """Fail-closed validatie van de repository-objectvorm.
+
+    Een ontbrekend veld is geen "nee" maar een onvolledige meting. Zonder deze
+    check zou een ontbrekende `has_actions` de hele inspectie overslaan en een
+    ontbrekende `owner.login` de meest bevoorrechte identiteit onzichtbaar maken.
+    """
+    naam = repo.get("full_name")
+    if not naam:
+        raise Unreadable("repository zonder full_name in de zoekrespons")
+    if not isinstance(repo.get("has_actions"), bool):
+        raise Unreadable(f"{naam}: has_actions ontbreekt of is geen boolean")
+    if not (repo.get("owner") or {}).get("login"):
+        raise Unreadable(f"{naam}: owner.login ontbreekt")
+    if not repo.get("default_branch"):
+        raise Unreadable(f"{naam}: default_branch ontbreekt")
+    return naam
+
+
 def _decodeer(entry):
     """Leest de inhoud van een ContentsResponse. Alles wat niet ondubbelzinnig
     te decoderen is, is onleesbaar en dus fail-closed."""
@@ -1550,6 +1643,12 @@ def _decodeer(entry):
     inhoud = entry.get("content")
     if inhoud is None:
         raise Unreadable(f"{entry.get('path')}: geen content in de respons")
+    if "encoding" not in entry:
+        # Een ontbrekend veld is iets anders dan "ondubbelzinnig platte tekst".
+        # Base64 die als platte tekst wordt gescand bevat geen triggernamen en
+        # zou de repository ten onrechte schoon verklaren — onder-detectie is
+        # precies de gevaarlijke faalrichting.
+        raise Unreadable(f"{entry.get('path')}: encoding-veld ontbreekt")
     codering = (entry.get("encoding") or "").lower()
     if codering == "base64":
         try:
@@ -1598,8 +1697,11 @@ def _schrijvers(client, full_name, owner_login=None):
     """
     schrijvers = set()
 
-    if owner_login:
-        schrijvers.add(owner_login)
+    if not owner_login:
+        # De aanroepplek geeft entry["owner"] altijd mee en _valideer_repo heeft
+        # die al gecontroleerd; een lege waarde betekent dus een onvolledige meting.
+        raise Unreadable(f"{full_name}: eigenaar niet vastgesteld")
+    schrijvers.add(owner_login)
 
     collabs = client.collaborators(full_name)
     if collabs is None:
@@ -1607,7 +1709,7 @@ def _schrijvers(client, full_name, owner_login=None):
     for collab in collabs:
         login = collab.get("login")
         if not login:
-            continue
+            raise Unreadable(f"{full_name}: collaborator zonder login in de respons")
         perm = client.collaborator_permission(full_name, login)
         # De permissierespons is de beslissende meting voor deze identiteit.
         # Ontbreekt hij of mist hij beide rolvelden, dan is dat onleesbaar en
@@ -1624,15 +1726,24 @@ def _schrijvers(client, full_name, owner_login=None):
     if teams is None:
         raise Unreadable(f"{full_name}: teamlijst niet uitleesbaar")
     for team in teams:
-        if str(team.get("permission", "")).lower() not in ROLLEN_MET_SCHRIJFRECHT:
+        team_id = team.get("id")
+        rol = str(team.get("permission") or "").lower()
+        if team_id is None:
+            raise Unreadable(f"{full_name}: team zonder id in de respons")
+        if rol not in BEKENDE_TEAMROLLEN:
+            # Ontbrekend of onbekend: geen meting, dus geen "geen schrijver".
+            raise Unreadable(
+                f"{full_name}: team {team_id} heeft geen uitleesbare permission")
+        if rol not in ROLLEN_MET_SCHRIJFRECHT:
             continue
-        leden = client.team_members(team.get("id"))
+        leden = client.team_members(team_id)
         if leden is None:
-            raise Unreadable(f"{full_name}: leden van team {team.get('id')} niet uitleesbaar")
+            raise Unreadable(f"{full_name}: leden van team {team_id} niet uitleesbaar")
         for lid in leden:
             login = lid.get("login")
-            if login:
-                schrijvers.add(login)
+            if not login:
+                raise Unreadable(f"{full_name}: teamlid zonder login in team {team_id}")
+            schrijvers.add(login)
 
     return sorted(schrijvers)
 
@@ -1642,7 +1753,13 @@ def inventory(client, shared_labels=()):
     unreadable = []
 
     for repo in client.repos():
-        full_name = repo["full_name"]
+        try:
+            full_name = _valideer_repo(repo)
+        except Unreadable as exc:
+            # Fail-closed: het oordeel wordt hierdoor rood, en de overige
+            # repositories worden nog wel gemeten zodat het beeld compleet is.
+            unreadable.append(str(exc))
+            continue
         entry = {
             "full_name": full_name,
             "has_actions": bool(repo.get("has_actions")),
@@ -1764,7 +1881,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 33 tests, 0 failures.
+Expected: PASS — 42 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -5425,6 +5542,32 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 5 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `90247e57-71ac-439a-9380-21f3388344e4`, `83a6f717-cd3c-4dd7-b075-b44663443834`
+**Replies:** `75fb9d0a-9670-4972-8424-00ba5ae349a7`, `3738d457-dd30-4faf-b700-57dfb410dead`
+**Beoordeelde revisie:** 5515 regels, commit `8909ae0`, SHA-256 `5146655392ab5b65a86f525e5fd6746642dacee2d048669fd4654b6f2653fc96`
+**Verdicts:** Codex NO-GO; Claude **GO**
+**Tellingen:** Codex 0 BLOCKER / 1 MAJOR / 0 MINOR; Claude 0 BLOCKER / 0 MAJOR / 2 MINOR
+
+Beide reviewers bevestigden dat de twee wijzigingen uit ronde 4 standhouden, inclusief dat `repos()` niet te streng is geworden: `{"data": []}` van een lege instance slaagt gewoon.
+
+**De drie bevindingen komen uit dezelfde familie en zijn samen verwerkt.** Codex generaliseerde het patroon een niveau dieper — niet de respons als geheel, maar **verplichte velden binnen de gemeten objecten** werden nog als `False`, leeg of overslaan geïnterpreteerd: `bool(repo.get("has_actions"))` maakt een ontbrekend veld `False` en slaat daarmee de hele inspectie over, een ontbrekende `owner.login` liet de eigenaar wegvallen, een collaborator of teamlid zonder `login` werd stil overgeslagen, en een team zonder `permission` gold als niet-schrijvend. Claude's twee MINORs waren twee exemplaren van precies dat: de ontbrekende eigenaar, en `_decodeer` dat een respons zónder `encoding`-veld als platte tekst leest — waardoor base64 zou worden gescand, geen triggernaam zou opleveren en de repository ten onrechte schoon zou heten.
+
+Claude mat beide MINOR-paden tegen de live instance en stelde vast dat ze vandaag niet bereikbaar zijn: alle 23 repositories in `/repos/search` hebben `owner.login`, en `contents`-responses dragen `encoding: base64`. Daarom MINOR en geen MAJOR — maar de faalrichting was in beide gevallen de verkeerde.
+
+Verwerkt:
+
+- `_valideer_repo()` eist `full_name`, een echte boolean `has_actions`, `owner.login` en `default_branch`; een repository die dat niet levert wordt als onleesbaar vastgelegd en overgeslagen, zodat de overige repositories nog wel worden gemeten en het oordeel toch rood wordt.
+- Een collaborator of teamlid zonder `login` werpt `Unreadable` in plaats van te worden overgeslagen.
+- Een team moet een `id` hebben en een `permission` uit `BEKENDE_TEAMROLLEN`; ontbrekend of onbekend is onleesbaar en niet "geen schrijver".
+- `_schrijvers()` werpt `Unreadable` als de eigenaar leeg is, in plaats van de toevoeging over te slaan.
+- `_decodeer()` eist dat de sleutel `encoding` aanwezig is; een leeg-maar-aanwezig veld blijft platte tekst.
+- Negen tests erbij, Task 6 van 33 naar 42, inclusief een positieve tegenhanger die bewijst dat een volledig object gewoon groen blijft — de strengheid mag een correcte meting niet rood maken.
+
+**Claude's zelfreflectie is de moeite van het vastleggen waard.** Het merkte op dat het in ronde 4 de keten verticaal had getraceerd — van HTTP-status via `Unreadable` naar aggregatie, `Verdict.ok` en exitcode — en op grond daarvan concludeerde dat de andere methoden "de strenge stand erven", terwijl juist een consument tussen die uiteinden het gat bevatte. Een verticale trace door één pad bewijst niets over de andere aanroepplekken. In ronde 5 zocht het daarom mechanisch op de vórm (`or {}`, `or []`, `or ""`, brede `except`-clausules) in plaats van op het verhaal.
 
 ### Plan-review ronde 4 — 31 augustus 2026
 
