@@ -57,7 +57,7 @@ De volgende onderdelen komen uit één gedeelde, versiebeheerde bundel en moeten
 | Connections | exact één `server.connections`-verbinding per runnerconfig; harde `one-job`-randvoorwaarde |
 | Capaciteit | `capacity: 1` per runner |
 | Jobpolicy | geen hostjobs, geen host-Docker-socket en geen privileged jobcontainers |
-| Resourceprofiel | dezelfde caps op beide hosts: geheugen uit de gemeten piek (harde grens), CPU op het host-affordable budget (throttlebaar), jobduur als prestatie-gate (§7.8) |
+| Resourceprofiel | dezelfde uit gemeten piekgebruik afgeleide caps op beide hosts |
 | Verificatie | dezelfde health-, isolatie-, verdelings- en failoverchecks |
 
 De huidige live images worden vóór het maken van de bundel via `docker image inspect` en `RepoDigests` vastgelegd. Iedere kandidaatpin moet daarna vanaf de registry slagen voor `docker manifest inspect <image>@<digest>`. Alleen een lokale image-ID of een tag zoals `runner:12` is niet voldoende reproduceerbaar.
@@ -279,15 +279,12 @@ Een **zachte trustafwijking** is een nieuwe repository waarop Actions uitstaat, 
 
 Voor het vaststellen van caps draait vóór de uitrol op de bestaande runner minimaal één representatieve zwaarste workflow terwijl iedere vijf seconden CPU, geheugengebruik en PID-aantal van runner en DinD worden gemeten. Een enkele inventarisatiemomentopname is niet voldoende.
 
-De limieten worden per service afgeleid, waarbij geheugen en CPU **bewust verschillend** worden behandeld omdat ze fysiek verschillen: geheugen is een harde grens — overschrijding is een OOM-kill — terwijl CPU throttlebaar is: overschrijding vertraagt de job maar breekt hem niet af. De oorspronkelijke regel — 150% van de gemeten piek voor beide — behandelde ze gelijk en leverde daardoor voor parallelle-test-CI een CPU-limiet groter dan de host: een representatieve `vitest run` (of `jest`) opent standaard een worker-pool ter grootte van alle cores en piekte op `scrum4me-server` gemeten 742% (7,4 van 8 cores), waardoor 150% × piek ≈ 11,5 vCPU de acht fysieke cores overschreed en de headroomgate structureel faalde. De meting staat in `docs/forgejo-runner-pool/evidence/stap-a/caps.md`; de herziening is delta-review R13 in het Review record.
+De initiële limiet per service is de hoogste van:
 
-Tijdens de representatieve workflow wordt iedere vijf seconden ook `MemAvailable` vastgelegd. De limieten volgen dan uit drie regels:
+- de ondergrens — runner: 1 vCPU, 1 GiB, 256 PID; DinD: 2 vCPU, 4 GiB, 2048 PID;
+- 150% van de gemeten piek, naar boven afgerond op 0,5 vCPU, 256 MiB en 128 PID.
 
-- **Geheugen — harde grens.** De DinD-geheugenlimiet is `max(4 GiB ondergrens, gemeten piek + 512 MiB variantiemarge)`, de runnerlimiet `max(1 GiB ondergrens, gemeten piek + 256 MiB)`. De som van beide mag op `scrum4me-server` niet meer bedragen dan 50% van de laagste tijdens de representatieve run gemeten `MemAvailable`. Overschrijdt de gemeten geheugenpiek plus marge zelf al die affordable helft, dan is dat een **echte NO-GO**: de job past niet zonder OOM-risico of headroomoverschrijding, en geen enkele cap-instelling lost dat op.
-- **CPU — throttlebaar.** De CPU-limieten worden niet uit de piek afgeleid maar op het **host-affordable budget** gezet: de som van de runner- en DinD-CPU-limiet is ten hoogste 50% van de laagste over de pool aanwezige vCPU's, naar beneden afgerond op 0,5 vCPU. De runner krijgt zijn ondergrens (1 vCPU); DinD krijgt de rest van dat budget. Draait de job boven de DinD-CPU-limiet, dan knijpt de kernel hem af en draait hij langzamer, niet stuk. De cap is dus expliciet kleiner dan de onbegrensde piek — dat is de bedoeling. De DinD-CPU-limiet moet ten minste zijn ondergrens (2 vCPU) halen; is het affordable budget lager, dan is de host te klein en is dat een echte NO-GO.
-- **PID's** volgen de oude regel: `max(ondergrens, 150% × gemeten piek)`, naar boven afgerond op 128; PID's zijn goedkoop en vormen geen knelpunt. Ondergrenzen: runner 256 PID, DinD 2048 PID.
-
-**Jobduur vervangt de CPU-piek-gate.** Omdat de CPU bewust wordt afgeknepen, kan de CPU-piek geen NO-GO meer zijn — anders zou elke parallelle-test-CI de pool blokkeren. In plaats daarvan is de jobduur de prestatie-gate: in stap D en E draait dezelfde representatieve workflow met de gecapte DinD, en de gemeten wandkloktijd moet binnen 200% van de warme-cachebaseline uit stap A blijven (§9). Een structurele overschrijding is de echte prestatie-NO-GO — de host is dan te traag voor aanvaardbare uitvoering — en vereist een beperktere workload of een nieuw hardware- of architectuurbesluit. Een momentane CPU-piek boven de limiet is dat niet.
+Tijdens de representatieve workflow wordt ook iedere vijf seconden `MemAvailable` vastgelegd. De som van runner- en DinD-geheugenlimiet mag op `scrum4me-server` niet meer bedragen dan 50% van de laagste gemeten `MemAvailable`; de som van de CPU-limieten niet meer dan 50% van de acht vCPU. Overschrijding is een NO-GO voor dit directe co-locatieontwerp en vereist eerst een beperktere workload of een nieuw architectuurbesluit.
 
 `capacity: 1` voorkomt meerdere gelijktijdige jobs binnen één DinD. De afgeleide limieten worden op beide hosts gelijk gehouden zodat hetzelfde label dezelfde minimale uitvoeromgeving betekent. Iedere latere wijziging geldt voor beide runners en reset de zevendaagse stabiliteitsperiode.
 
@@ -421,7 +418,7 @@ De pool is stabiel wanneer zeven aaneengesloten dagen aan alle criteria is volda
 - vrije ruimte op het Docker-datafilesystem blijft minimaal 20%;
 - de productiecontainers op beide hosts ondervinden geen runnergerelateerde uitval;
 - labels en gemeenschappelijke configuratie zijn byte- of canoniek-identiek: beide hosts draaien aantoonbaar dezelfde bundelcommit-SHA en dezelfde canonieke bundelhash volgens §6.1;
-- de gemeten jobduur van de representatieve workflow blijft binnen 200% van de warme-cachebaseline uit stap A; een structurele overschrijding is geen storing, maar vereist vóór het stabiel verklaren van de pool een expliciet besluit over het cache- of CPU-throttlebeleid. Sinds delta-review R13 de CPU-limiet op het affordable budget zet in plaats van op 150% × piek (§7.8), is deze jobduurgrens tevens de prestatie-gate die bewijst dat de bewust afgeknepen CPU de job niet onaanvaardbaar vertraagt; die meting hoort daarom bij de max2-canary in stap D en E.
+- de gemeten jobduur van de representatieve workflow blijft binnen 200% van de warme-cachebaseline uit stap A; een structurele overschrijding is geen storing, maar vereist vóór het stabiel verklaren van de pool een expliciet besluit over het cachebeleid.
 
 ## 10. Monitoring
 
@@ -496,7 +493,7 @@ Geaccepteerd en verwerkt:
 - Endpointgebruik is per netwerknamespace vastgelegd.
 - De legacy `.runner`, zijn mode `0644`, zijn labelrol en de credentialblootstelling zijn expliciet opgenomen.
 - De huidige volledige labels worden uit legacy `.runner` gehaald; het Forgejo-record met alleen bare labelnamen is geen imagebron.
-- Resourcecaps volgen pas na representatieve piekmeting: geheugen als harde grens uit de gemeten piek plus marge, CPU op het host-affordable budget (throttlebaar) met de jobduur als prestatie-gate (§7.8, delta-review R13).
+- Resourcecaps worden pas na representatieve piekmeting met een vaste marge vastgesteld.
 - Global scope is als bewust instancebreed besluit vastgelegd.
 - Registry-digests worden vóór gebruik vanaf de registry gevalideerd.
 
@@ -711,17 +708,15 @@ Verwerkt in revisie 12c: §6.1 en stap A gebruiken nu dezelfde regel. Stap A ste
 
 Geen resterende bevindingen. De reviewer bevestigde dat §6.1 en stap A dezelfde Actions-regel hanteren en vond geen derde normatieve plek waar de oude aanname voortleeft. Daarmee is delta-review R12 gesloten met GO in ronde 3 van maximaal 5; beide MAJORs uit ronde 1 en 2 waren volledig geaccepteerd en er is in deze loop geen bevinding afgewezen.
 
-### Delta-review R13 — caps-methodiek (§7.8, §9) — 1 september 2026
+### Delta-review R13 — caps-methodiek — GESLOTEN, teruggedraaid, leidde tot een architectuurbesluit — 1 september 2026
 
-**Reviewer:** `mac:codex` (delta-variant: één reviewer, cross-model naar de auteur; de wijziging is claude-authored).
-**Aanleiding:** de stap-A-meting (Task 7–9 van het implementatieplan) toonde dat §7.8's regel "150% van de gemeten piek" voor CPU structureel faalt bij parallelle-test-CI. Een representatieve `vitest run` (scrum4me-workers `ci.yml`, run 2521) piekte gemeten 742% (7,4 van 8 cores) op `scrum4me-server`, waardoor 150% × piek ≈ 11,5 vCPU de acht fysieke cores overschreed en de headroomgate op **beide** hosts ROOD ging. Bewijs: `docs/forgejo-runner-pool/evidence/stap-a/caps.md`, `caps.env`, `workload-scrum4me-server.tsv`, `host-facts-*.tsv`.
-**Wijziging:** §7.8 behandelt geheugen en CPU voortaan gescheiden — geheugen is een harde grens (limiet = piek + marge, som binnen 50% van de laagste `MemAvailable`), CPU is throttlebaar (limiet op het host-affordable budget van 50% van de laagste vCPU's, niet 150% × piek). De jobduur (§9, binnen 200% van de warme baseline, gemeten in stap D/E met de gecapte DinD) wordt de CPU-prestatie-gate in plaats van de CPU-piek. PID's houden de 150%-regel. De samenvattingstabel (§Resourceprofiel) en de ontwerpbeslissing over resourcecaps zijn meegetrokken.
-**Ronde 1 (`mac:codex`, request `3de16a33-6884-4b2d-bd50-3cdefc7a7140`, reply `0ec4e6b5-b1f9-4982-9b01-ac82d461364e`): NO-GO — 1 BLOCKER / 1 MAJOR / 0 MINOR.** Beide bevindingen zelf tegen de boom nagemeten en **bevestigd**:
+**Aanleiding:** de stap-A-meting (implementatieplan Task 7–9) toonde dat de headroomgate ROOD ging op beide hosts. De representatieve `vitest run` (scrum4me-workers `ci.yml`, run 2521) piekte 742% CPU (7,4 van 8 cores) op `scrum4me-server`. Bewijs: `docs/forgejo-runner-pool/evidence/stap-a/caps.md`, `caps.env`, `workload-scrum4me-server.tsv`, `host-facts-*.tsv`.
 
-- **BLOCKER — de nieuwe formule blijft ROOD op de eigen meting.** De ondergrenzen alléén overschrijden de headroom: DinD-mem = max(4 GiB floor, 3,174 GiB piek + 512 MiB) = 4 GiB (floor wint); runner-mem = max(1 GiB floor, 28,6 MiB + 256 MiB) = 1 GiB (floor wint); som = 5,000 GiB > 50% × 8,644 GiB = 4,322 GiB, over met 0,678 GiB. De CPU-throttle-delta lost de CPU-false-negative op, maar het echte knelpunt is **geheugen**, en dat blijft een NO-GO. De reviewer eist: markeer R13 als echte NO-GO die een hardware-/headroom-/workloadbesluit vergt, óf wijzig de geheugensemantiek (DinD-floor vs 50%-`MemAvailable`) met JP-akkoord — niet accepteren zolang de formule ROOD rekent.
-- **MAJOR — het uitvoerpad codeert nog de oude 150%-regel.** `compute_caps.py`, `test_compute_caps.py`, `caps.md` en `caps.env` implementeren/exporteren nog `max(floor, 150% × piek)` (DIND_CPU=11,5, DIND_MEM=5 GiB); de reviewer draaide de 7 tests groen als bewijs dat de oude regel het actieve contract is. Zonder bijwerken óf een expliciete R13-hardstop dat die artefacten verouderd zijn, regenereert de volgende worker de oude rode caps (execution hazard voor Task 9/10/16).
+**Poging:** een delta die §7.8 herzag — CPU throttlebaar op het host-affordable budget met de jobduur als prestatie-gate, geheugen als harde grens. Ronde 1 naar `mac:codex` (request `3de16a33-6884-4b2d-bd50-3cdefc7a7140`, reply `0ec4e6b5-b1f9-4982-9b01-ac82d461364e`): **NO-GO, 1 BLOCKER + 1 MAJOR, beide zelf tegen de boom bevestigd.** De BLOCKER: de nieuwe formule blijft ROOD op scrum4me-server omdat de ondergrenzen alléén (DinD 4 GiB + runner 1 GiB = 5 GiB) de 50%-headroom (4,322 GiB van de onder-last gemeten 8,644 GiB `MemAvailable`) met 0,678 GiB overschrijden — het knelpunt is geheugen, niet CPU. De MAJOR: `compute_caps.py`/`caps.env`/de tests codeerden nog de oude 150%-regel.
 
-**Uitkomst:** geëscaleerd naar JP. De BLOCKER-fix is een besluit (hardware/headroom/workload/geheugensemantiek), geen doc-edit; ronde 2 wacht op JP's richting. Deze delta is **niet** geaccepteerd; §7.8 blijft tot een besluit in de herziene-maar-nog-niet-goedgekeurde staat.
+**Besluit (JP, 1 september 2026):** de pool draait **alleen op `max2`**; `scrum4me-server` valt af als runnerhost (te belast: 22 productiecontainers, ~8,6 GiB vrij). Op `max2` alléén (28 vCPU, ~19,6 GiB `MemAvailable`) slaagt zelfs de **oorspronkelijke** methodiek: caps runner 1,0 vCPU/1 GiB + DinD 11,5 vCPU/5 GiB, CPU-som 12,5 ≤ 14, mem-som 6,0 GiB ≤ 9,79 GiB — GROEN. De caps-methodiek-delta is daarmee **overbodig en teruggedraaid**; §7.8 staat weer in de GO'de R12-staat.
+
+**Gevolg (open):** "pool alleen op `max2`" wijkt af van het tweemachine-redundantiedoel uit §1 en §5 en raakt §4, §5, §7.4, §7.8 (headroom alleen op `max2`, caps tegen `max2`-resources), §8 (stap F/pooltests en stap G/`scrum4me-server`-normalisatie vervallen of wijzigen) en §9. Dat is een **zelfstandige ontwerprevisie met eigen review**, nog te plannen; deze R13-entry legt alleen het besluit en de sluiting van de caps-delta vast.
 
 ## 14. Acceptatie van dit ontwerp
 
