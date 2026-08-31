@@ -619,6 +619,8 @@ bash forgejo-runner/scripts/capture-forgejo-records.sh --scope global \
 cat docs/forgejo-runner-pool/evidence/stap-a/forgejo/runners-summary.tsv
 ```
 
+Leg in hetzelfde bewijs per repository vast of hij eigendom is van een organisatie of van een gebruiker. Dat verschil is zichtbaar in de praktijk: `/repos/{owner}/{repo}/teams` geeft voor een repository van een gebruiker een gedocumenteerde **HTTP 405** met `repo is not owned by an organization`. Gemeten op 2026-08-31 geldt dat voor `janpeter/scrum4me-server` en `janpeter/max2` allebei. Zonder die notitie oogt de 405 later als een storing terwijl het het normale antwoord is.
+
 Expected: minstens één record met `status: online` en `version` beginnend met `12.`. Krijg je HTTP 403, dan mist `FORGEJO_TOKEN` adminrechten — dat is een bevinding voor JP en geen reden om een ander token te zoeken. Noteer het en stop deze taak.
 
 - [ ] **Step 7: Bevestig de scope-aanname uit §7.4**
@@ -1425,6 +1427,125 @@ class TestVierenveertigVierNulVier(unittest.TestCase):
             trust_scope_cli.urllib.request.urlopen = origineel
 
 
+class TestClientResponsvormen(unittest.TestCase):
+    """Gedrag van de netwerkclient bij statuscodes en paginering.
+
+    Gebruikt een nep-`urlopen`; er gaat geen verkeer naar een echte instance.
+    """
+
+    class NepRespons:
+        def __init__(self, payload):
+            import json as _json
+            self._payload = _json.dumps(payload).encode()
+
+        def read(self):
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _met_urlopen(self, vervanger, functie):
+        import trust_scope_cli
+        origineel = trust_scope_cli.urllib.request.urlopen
+        trust_scope_cli.urllib.request.urlopen = vervanger
+        try:
+            return functie(trust_scope_cli)
+        finally:
+            trust_scope_cli.urllib.request.urlopen = origineel
+
+    def _status(self, code):
+        import urllib.error
+
+        def vervanger(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, code, "x", {}, None)
+        return vervanger
+
+    def test_405_op_teams_is_niet_van_toepassing(self):
+        # Forgejo antwoordt zo voor iedere repository van een gebruiker.
+        # Gemeten op deze instance voor janpeter/scrum4me-server en janpeter/max2.
+        def doe(mod):
+            client = mod.ForgejoClient("https://voorbeeld.invalid", "x")
+            return client.teams("janpeter/app")
+        self.assertEqual(self._met_urlopen(self._status(405), doe), [])
+
+    def test_403_op_teams_blijft_onleesbaar(self):
+        def doe(mod):
+            client = mod.ForgejoClient("https://voorbeeld.invalid", "x")
+            with self.assertRaises(trust_scope.Unreadable):
+                client.teams("janpeter/app")
+        self._met_urlopen(self._status(403), doe)
+
+    def test_500_op_teams_blijft_onleesbaar(self):
+        def doe(mod):
+            client = mod.ForgejoClient("https://voorbeeld.invalid", "x")
+            with self.assertRaises(trust_scope.Unreadable):
+                client.teams("janpeter/app")
+        self._met_urlopen(self._status(500), doe)
+
+    def test_collaborators_worden_volledig_gepagineerd(self):
+        paginas = {1: [{"login": f"u{i}"} for i in range(50)],
+                   2: [{"login": "laatste"}]}
+
+        def vervanger(req, timeout=None):
+            nummer = 2 if "page=2" in req.full_url else 1
+            return self.NepRespons(paginas[nummer])
+
+        def doe(mod):
+            client = mod.ForgejoClient("https://voorbeeld.invalid", "x")
+            return client.collaborators("janpeter/app")
+
+        resultaat = self._met_urlopen(vervanger, doe)
+        self.assertEqual(len(resultaat), 51)
+        self.assertEqual(resultaat[-1]["login"], "laatste")
+
+    def test_gepagineerd_endpoint_dat_geen_lijst_geeft_is_onleesbaar(self):
+        def vervanger(req, timeout=None):
+            return self.NepRespons({"onverwacht": True})
+
+        def doe(mod):
+            client = mod.ForgejoClient("https://voorbeeld.invalid", "x")
+            with self.assertRaises(trust_scope.Unreadable):
+                client.collaborators("janpeter/app")
+        self._met_urlopen(vervanger, doe)
+
+
+class TestGenesteVormen(unittest.TestCase):
+    """Een 200 met de verkeerde container- of itemvorm is onleesbaar, geen leegte."""
+
+    def _verdict(self, client):
+        return trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+
+    def _rood(self, verdict, fragment):
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any(fragment in u for u in verdict.unreadable),
+                        f"{fragment!r} niet gevonden in {verdict.unreadable}")
+
+    def test_workflowmap_als_dict_is_fail_closed(self):
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): {"onverwacht": True}})
+        self._rood(self._verdict(client), "geen lijst")
+
+    def test_workflowitem_dat_geen_object_is_is_fail_closed(self):
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): ["ci.yml"]})
+        self._rood(self._verdict(client), "geen object")
+
+    def test_collaborators_als_dict_is_fail_closed(self):
+        client = FakeClient([REPO_ACTIONS],
+                            contents={("janpeter/app", ".forgejo/workflows"): []},
+                            collaborators={"janpeter/app": {"login": "eva"}})
+        self._rood(self._verdict(client), "collaborators: geen lijst")
+
+    def test_branch_protections_als_dict_is_fail_closed(self):
+        client = FakeClient([REPO_ACTIONS],
+                            contents={("janpeter/app", ".forgejo/workflows"): []},
+                            protections={"janpeter/app": {"branch_name": "main"}})
+        self._rood(self._verdict(client), "branch_protections: geen lijst")
+
+
 class TestVerplichteVelden(unittest.TestCase):
     """Een ontbrekend veld binnen een gemeten object is een onvolledige meting,
     nooit een stilzwijgende "nee" (7.7 fail-closed)."""
@@ -1609,12 +1730,31 @@ def _workflow_source(client, full_name):
     """Forgejo gebruikt .forgejo/workflows en valt anders terug op .github/workflows."""
     for path in (FORGEJO_WORKFLOWS, GITHUB_WORKFLOWS):
         listing = client.contents(full_name, path)
+        if listing is None:
+            continue    # map bestaat niet; probeer de fallback
+        _eis_lijst_van_dicts(listing, f"{full_name}:{path}")
         if listing:
             return path, listing
     return None, []
 
 
 BEKENDE_TEAMROLLEN = ("none", "read", "write", "admin", "owner")
+
+
+def _eis_lijst_van_dicts(waarde, context):
+    """Valideert de vorm van een externe responscollectie vóór iteratie.
+
+    Zonder deze check levert een dict waar een lijst wordt verwacht een
+    `AttributeError` op in plaats van een auditeerbare `Unreadable`, en een
+    lege dict voor een workflowmap zou als "map afwezig" worden gelezen en de
+    fallback aansturen in plaats van het ongeldige schema rood te maken.
+    """
+    if not isinstance(waarde, list):
+        raise Unreadable(f"{context}: geen lijst maar {type(waarde).__name__}")
+    for item in waarde:
+        if not isinstance(item, dict):
+            raise Unreadable(f"{context}: item is geen object maar {type(item).__name__}")
+    return waarde
 
 
 def _valideer_repo(repo):
@@ -1706,6 +1846,7 @@ def _schrijvers(client, full_name, owner_login=None):
     collabs = client.collaborators(full_name)
     if collabs is None:
         raise Unreadable(f"{full_name}: collaboratorlijst niet uitleesbaar")
+    _eis_lijst_van_dicts(collabs, f"{full_name}: collaborators")
     for collab in collabs:
         login = collab.get("login")
         if not login:
@@ -1725,6 +1866,7 @@ def _schrijvers(client, full_name, owner_login=None):
     teams = client.teams(full_name)
     if teams is None:
         raise Unreadable(f"{full_name}: teamlijst niet uitleesbaar")
+    _eis_lijst_van_dicts(teams, f"{full_name}: teams")
     for team in teams:
         team_id = team.get("id")
         rol = str(team.get("permission") or "").lower()
@@ -1739,6 +1881,7 @@ def _schrijvers(client, full_name, owner_login=None):
         leden = client.team_members(team_id)
         if leden is None:
             raise Unreadable(f"{full_name}: leden van team {team_id} niet uitleesbaar")
+        _eis_lijst_van_dicts(leden, f"{full_name}: leden van team {team_id}")
         for lid in leden:
             login = lid.get("login")
             if not login:
@@ -1784,7 +1927,7 @@ def inventory(client, shared_labels=()):
             except Unreadable as exc:
                 entry["unreadable"].append(str(exc))
 
-            for item in listing or []:
+            for item in listing:
                 naam = item.get("name", "")
                 if item.get("type") != "file" or not naam.endswith(WORKFLOW_SUFFIXEN):
                     continue
@@ -1812,6 +1955,7 @@ def inventory(client, shared_labels=()):
                 regels = client.branch_protections(full_name)
                 if regels is None:
                     raise Unreadable(f"{full_name}: branch-protection niet uitleesbaar")
+                _eis_lijst_van_dicts(regels, f"{full_name}: branch_protections")
                 entry["branch_protection"] = [
                     r for r in regels
                     if r.get("branch_name") == entry["default_branch"]
@@ -1881,7 +2025,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 42 tests, 0 failures.
+Expected: PASS — 51 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -1910,14 +2054,22 @@ class ForgejoClient:
         self.base = base_url.rstrip("/")
         self.token = token
 
-    def _get(self, path, params=None, *, missing_ok=False):
-        """Haalt een API-pad op. Een 404 is standaard NIET normaal.
+    def _get(self, path, params=None, *, missing_ok=False, not_applicable=()):
+        """Haalt een API-pad op. Een foutstatus is standaard NIET normaal.
 
-        Alleen bij het aftasten van de twee workflowmappen is afwezigheid een
-        geldige uitkomst; daar geldt `missing_ok=True`. Overal elders zou een
-        404 stil "geen collaborators", "geen teams" of "geen branch-protection"
-        betekenen, en dat is fail-open in een gate die volgens 7.7 fail-closed
-        moet zijn.
+        Twee uitzonderingen, allebei gedocumenteerd in de OpenAPI-spec van deze
+        instance en allebei expliciet per aanroep:
+
+        - `missing_ok=True` bij het aftasten van de twee workflowmappen: een 404
+          betekent daar "map bestaat niet" en stuurt de fallback aan.
+        - `not_applicable=(405,)` bij `/repos/{owner}/{repo}/teams`: Forgejo
+          antwoordt daar met "repo is not owned by an organization" voor iedere
+          repository van een gebruiker. Dat is geen onleesbare meting maar een
+          endpoint dat niet van toepassing is.
+
+        Overal elders zou een foutstatus stil "geen collaborators", "geen teams"
+        of "geen branch-protection" betekenen, en dat is fail-open in een gate
+        die volgens 7.7 fail-closed moet zijn.
         """
         url = f"{self.base}/api/v1{path}"
         if params:
@@ -1929,9 +2081,30 @@ class ForgejoClient:
         except urllib.error.HTTPError as exc:
             if exc.code == 404 and missing_ok:
                 return None
+            if exc.code in not_applicable:
+                return None
             raise Unreadable(f"{path}: HTTP {exc.code}") from exc
         except (urllib.error.URLError, ValueError) as exc:
             raise Unreadable(f"{path}: {exc}") from exc
+
+    def _gepagineerd(self, path):
+        """Haalt een gepagineerd lijstendpoint volledig op.
+
+        `/repos/{owner}/{repo}/collaborators` en `/teams/{id}/members` kennen
+        blijkens de spec `page` en `limit`. Zonder paginering levert de instance
+        haar eigen default, en een afgekapte schrijversverzameling maakt de gate
+        stil groen: een schrijver die nooit in de lijst verschijnt kan per
+        definitie geen harde afwijking opleveren.
+        """
+        out, page = [], 1
+        while True:
+            items = self._get(path, {"limit": 50, "page": page})
+            if not isinstance(items, list):
+                raise Unreadable(f"{path} pagina {page}: geen lijst")
+            out.extend(items)
+            if len(items) < 50:
+                return out
+            page += 1
 
     def repos(self):
         """Alle zichtbare repositories, gepagineerd.
@@ -1959,16 +2132,21 @@ class ForgejoClient:
     # Hieronder is een 404 nooit normaal: die maakt de meting onvolledig en
     # moet de gate rood maken in plaats van een lege verzameling te leveren.
     def collaborators(self, full_name):
-        return self._get(f"/repos/{full_name}/collaborators")
+        return self._gepagineerd(f"/repos/{full_name}/collaborators")
 
     def collaborator_permission(self, full_name, login):
         return self._get(f"/repos/{full_name}/collaborators/{login}/permission")
 
     def teams(self, full_name):
-        return self._get(f"/repos/{full_name}/teams")
+        # Een repository van een gebruiker heeft geen teams; Forgejo meldt dat
+        # met een gedocumenteerde 405. Dat is "niet van toepassing", geen
+        # onleesbare meting - anders kan de gate voor zulke repo's nooit groen
+        # worden. /teams kent geen page/limit en wordt dus niet gepagineerd.
+        resultaat = self._get(f"/repos/{full_name}/teams", not_applicable=(405,))
+        return [] if resultaat is None else resultaat
 
     def team_members(self, team_id):
-        return self._get(f"/teams/{team_id}/members")
+        return self._gepagineerd(f"/teams/{team_id}/members")
 
     def branch_protections(self, full_name):
         return self._get(f"/repos/{full_name}/branch_protections")
@@ -2049,6 +2227,12 @@ def main():
         inv = trust_scope.inventory(client, shared_labels)
     except Unreadable as exc:
         print(f"fail-closed: {exc}", file=sys.stderr)
+        return 30
+    except Exception as exc:                      # noqa: BLE001 - bewust breed
+        # Een onverwachte fout is geen groen oordeel. Zonder deze vangst zou de
+        # gate met een traceback eindigen en een niet-nul exitcode geven die
+        # niet als fail-closed te onderscheiden is van een crash.
+        print(f"fail-closed: onverwachte fout: {exc!r}", file=sys.stderr)
         return 30
 
     if args.emit_allowlist:
@@ -5542,6 +5726,25 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 6 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `786da021-6a12-48cd-ae6c-2247ff61e745`, `6f35fb5f-19c6-46aa-aeeb-8615881e749b`
+**Replies:** `4beddf6b-0c87-426a-a805-0d752b93035e`, `e6e2f72a-e126-4b90-a183-e53dbe229c0b`
+**Beoordeelde revisie:** 5658 regels, commit `61c9fc3`, SHA-256 `7ac70caac2afdfad25c002d12df0158c39702ffd76e26d9acc595dfe25225c7a`
+**Verdicts:** beide NO-GO
+**Tellingen:** Codex 0 BLOCKER / 1 MAJOR / 0 MINOR; Claude 1 BLOCKER / 1 MAJOR / 0 MINOR
+
+Beide reviewers vonden een vierde niveau van het fail-openpatroon, elk langs een andere as, en beide bevindingen zijn zelf nagemeten en geaccepteerd.
+
+**BLOCKER (claude): de gate kon op deze instance nooit groen worden.** `/repos/{owner}/{repo}/teams` antwoordt met **HTTP 405** `repo is not owned by an organization` voor iedere repository van een gebruiker, en beide repo's in scope zijn dat. `_get()` maakte van elke non-404-status een `Unreadable`, dus `trust_scope_cli` eindigde voor precies de twee doelrepo's altijd op exitcode 30. Zelf geverifieerd: beide repo's geven 405, en de OpenAPI-spec noemt voor dat pad expliciet de responses `200`, `404` én `405`. Dit was de keerzijde van de verscherping uit ronde 3 tot en met 5: vóór ronde 3 was de 405 stil ingeslikt, daarna blokkeerde hij alles. Verwerkt: `_get()` heeft nu naast `missing_ok` een `not_applicable`-parameter; `teams()` geeft `not_applicable=(405,)` mee en levert dan een lege lijst. Een 403 of 500 op datzelfde endpoint blijft onleesbaar, en drie tests leggen dat verschil vast. Stap A legt voortaan per repository vast of hij org- of gebruikerseigendom is, zodat de 405 later niet als storing wordt gelezen.
+
+**MAJOR (claude): twee gepagineerde endpoints werden ongepagineerd opgehaald.** `/repos/{owner}/{repo}/collaborators` en `/teams/{id}/members` kennen blijkens de spec `page` en `limit`; de client gaf geen van beide mee en kreeg de instance-default. Een afgekapte schrijversverzameling maakt de gate stil groen, want een schrijver die nooit in de lijst verschijnt kan per definitie geen harde afwijking opleveren. Zelf geverifieerd dat die twee paden `page`/`limit` accepteren en dat `/teams` en `/branch_protections` dat niet doen — die zijn dus terecht ongepagineerd. Verwerkt: `_gepagineerd()` haalt beide endpoints volledig op, met vormvalidatie per pagina; twee tests dekken een tweepagina-antwoord en een niet-lijstrespons af.
+
+**MAJOR (codex): de vorm van geneste collecties en items werd niet gevalideerd.** `_workflow_source()` toetste alleen truthiness, en `inventory()` en `_schrijvers()` itereerden daarna met `.get()` over items die geen dict hoefden te zijn. Een dict waar een lijst wordt verwacht gaf daardoor een `AttributeError` in plaats van een auditeerbare `Unreadable`, en een lege dict voor een workflowmap werd als "map afwezig" gelezen en stuurde de fallback aan in plaats van het ongeldige schema rood te maken. Verwerkt: `_eis_lijst_van_dicts()` valideert vóór iedere iteratie over een externe collectie — workflowmap, workflowitems, collaborators, teams, teamleden en branch-protectionregels. `main()` vangt daarnaast iedere onverwachte fout af en geeft exit 30 in plaats van een traceback: een onverwachte fout is nooit een groen oordeel. Vier tests erbij voor dict-in-plaats-van-lijst en niet-object-items.
+
+Negen tests erbij, Task 6 van 42 naar 51.
 
 ### Plan-review ronde 5 — 31 augustus 2026
 
