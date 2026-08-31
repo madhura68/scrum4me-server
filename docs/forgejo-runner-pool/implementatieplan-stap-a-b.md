@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** GO — dubbele GO in plan-review ronde 7 van maximaal 10 (`mac:codex` en `scrum4me-server:claude`, beide 0 BLOCKER / 0 MAJOR / 0 MINOR). Uitvoering nog niet gestart; ceremonie en executie wachten op JP.
+
 **Goal:** Stap A (alles meten en bewijzen zonder de live runner aan te raken) en stap B (de gedeelde, digest-gepinde bundel bouwen en valideren) volledig uitvoerbaar maken, zodat stap C tot en met H daarna op echte meetwaarden kunnen worden gepland.
 
 **Architecture:** Stap A is uitsluitend read-only: scripts draaien via SSH op `scrum4me-srv` en `max2`, schrijven hun uitvoer naar bewijsbestanden in de repo, en muteren niets aan de draaiende stack. Stap B bouwt daaruit de gedeelde bundel: Compose, labels, policy, de Python-cyclecontroller met zijn unittestsuite, de scrubroutine, de systemd-unit en de verificatiescripts. Beide stappen leveren gates die groen moeten zijn voordat stap C mag beginnen.
@@ -5726,6 +5728,27 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 7 (afsluitend) — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `3f163c00-d79b-4eba-ba2f-73eaaed6162d`, `23962ae1-4d5b-4802-bad7-3460f92bbf16`
+**Replies:** `25e59282-6ca2-4dda-8926-ad48eba8fcb7`, `d1ad99cc-0878-412a-a304-977940790bcf`
+**Beoordeelde revisie:** 5861 regels, commit `0352d49`, SHA-256 `fb9aefe5e511c716f6fafbf94f73a4cbdbe8482a06fa737ba652ab519c2cfbb7`
+**Verdicts:** Codex **GO**; Claude **GO**
+**Tellingen:** beide 0 BLOCKER / 0 MAJOR / 0 MINOR
+
+Beide reviewers oordeelden alle drie de fixes uit ronde 6 als *held*, en beiden weerlegden zelf de zorg dat de gate inmiddels te streng zou zijn geworden.
+
+- Codex mat het paginagedrag op `/repos/search` met `limit` 1, 10, 50 en 100 en vond geen aanwijzing voor stille truncatie bij `limit=50`; daarmee is de afbreekvoorwaarde `len(items) < 50` van `_gepagineerd()` verantwoord op deze instance.
+- Claude maakte de live-endpointmethode af: élk van de zeven endpoints die de client aanroept is nu voor **beide** doelrepo's daadwerkelijk aangeroepen. Uitkomst: `/branch_protections` geeft HTTP 200 met `[]`, beide workflowmappen geven 404, en `has_actions` is bij beide `true`.
+- Die laatste combinatie — Actions aan zonder workflowmap — trok claude door tot de exitcode. `classify()` maakt er een zachte afwijking van en `main()` geeft dan exit 10. Claude controleerde daarom of ergens exit 0 van de trustgate wordt geëist, wat dezelfde onbereikbare verwachting zou zijn als de ronde-6-BLOCKER in zachtere vorm. Dat is niet zo: de echte run in Task 6 step 9 staat achter `|| true`, step 10 toetst uitsluitend dat de fail-closed paden `exit=30` geven, en de afsluitgate in Task 22 noemt de trust-artefacten wel in de bewijstabel maar eist er geen exitcode van.
+
+**Daarmee is de planloop gesloten met dubbele GO in ronde 7 van maximaal 10.**
+
+Terugblik op de loop: 1 BLOCKER en 2 MAJOR in ronde 1, aflopend tot nul in ronde 7. Vanaf ronde 3 zaten álle bevindingen in één artefact, de trustscope-gate van Task 6; de overige 21 taken zijn na ronde 1 niet meer geraakt. Die concentratie is geen toeval: de gate is het enige onderdeel van stap A en B dat een externe, niet door ons beheerste API interpreteert, en elke ronde legde een dieper niveau van dezelfde fail-openfamilie bloot — respons aanwezig, respons van de juiste vorm, velden aanwezig, geneste collectie- en itemvorm. De ronde-6-BLOCKER liet de keerzijde zien: fail-closed doorvoeren zonder de gedocumenteerde uitzonderingen te kennen maakte de gate onhaalbaar op precies de repo's in scope. Alleen het daadwerkelijk aanroepen van de endpoints bracht dat aan het licht; statische analyse deed dat in drie rondes niet.
+
+Eén bevinding is in deze loop deels verworpen, in ronde 2, en die verwerping is in ronde 3 door beide reviewers als terecht geadjudiceerd.
 
 ### Plan-review ronde 6 — 31 augustus 2026
 
