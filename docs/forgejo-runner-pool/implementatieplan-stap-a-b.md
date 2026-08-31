@@ -881,7 +881,7 @@ printf 'spike afgerond, bewijs in %s\n' "$DOC"
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `bats forgejo-runner/tests/test_spike_ephemeral.bats`
-Expected: PASS — 3 tests, 0 failures.
+Expected: PASS — 5 tests, 0 failures.
 
 - [ ] **Step 5: Draai de spike echt, met vóór- en nameting**
 
@@ -1286,25 +1286,52 @@ class TestSchrijvers(unittest.TestCase):
         client = self._client(
             collaborators={"janpeter/app": [{"login": "eva"}]},
             permissions={("janpeter/app", "eva"): {"permission": "write"}})
-        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], ["eva"])
+        # De eigenaar janpeter hoort er per definitie bij.
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"],
+                         ["eva", "janpeter"])
 
     def test_collaborator_met_alleen_pull_is_geen_schrijver(self):
         client = self._client(
             collaborators={"janpeter/app": [{"login": "lezer"}]},
             permissions={("janpeter/app", "lezer"): {"permission": "read"}})
-        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], [])
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"],
+                         ["janpeter"])
 
     def test_teamlid_met_write_telt_ook_als_schrijver(self):
         client = self._client(
             teams={"janpeter/app": [{"id": 7, "name": "devs", "permission": "write"}]},
             team_members={7: [{"login": "sam"}]})
-        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], ["sam"])
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"],
+                         ["janpeter", "sam"])
 
     def test_teamlid_met_alleen_read_telt_niet(self):
         client = self._client(
             teams={"janpeter/app": [{"id": 8, "name": "kijkers", "permission": "read"}]},
             team_members={8: [{"login": "kim"}]})
-        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], [])
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"],
+                         ["janpeter"])
+
+    def test_eigenaar_is_altijd_schrijver_ook_zonder_collaborators(self):
+        # Forgejo neemt de eigenaar niet op in /collaborators; zonder deze regel
+        # zou de meest bevoorrechte identiteit onzichtbaar blijven.
+        client = self._client()
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"],
+                         ["janpeter"])
+
+    def test_permissierespons_is_de_echte_RepoCollaboratorPermission_vorm(self):
+        # /collaborators/{c}/permission levert permission, role_name en user —
+        # geen booleanmap. Deze test pint die vorm vast.
+        client = self._client(
+            collaborators={"janpeter/app": [{"login": "eva"}]},
+            permissions={("janpeter/app", "eva"): {
+                "permission": "write", "role_name": "write", "user": {"login": "eva"}}})
+        self.assertIn("eva", trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"])
+
+    def test_rol_owner_telt_als_schrijver(self):
+        client = self._client(
+            collaborators={"janpeter/app": [{"login": "baas"}]},
+            permissions={("janpeter/app", "baas"): {"permission": "owner"}})
+        self.assertIn("baas", trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"])
 
     def test_onbekend_teamlid_is_een_harde_afwijking(self):
         client = self._client(
@@ -1471,23 +1498,37 @@ def scan_workflow(tekst, shared_labels):
     return gevonden, gebruikt_label
 
 
-def _schrijvers(client, full_name):
-    """Iedere identiteit met write of admin op deze repository, via collaborators
-    en via teams. Een teamlid is net zo goed een workflow-schrijver."""
+ROLLEN_MET_SCHRIJFRECHT = ("owner", "admin", "write")
+
+
+def _schrijvers(client, full_name, owner_login=None):
+    """Iedere identiteit met schrijfrecht op de workflowbestanden van deze
+    repository: de eigenaar, collaborators en teamleden.
+
+    De eigenaar staat er expliciet bij omdat Forgejo hem niet in de
+    collaboratorlijst opneemt. Zonder die regel zou juist de meest bevoorrechte
+    identiteit onzichtbaar blijven voor de allowlist.
+
+    `/repos/{owner}/{repo}/collaborators/{c}/permission` levert
+    `RepoCollaboratorPermission`: `permission` (string), `role_name` (string) en
+    `user`. Het is dus geen booleanmap; de rol wordt als string vergeleken.
+    """
     schrijvers = set()
+
+    if owner_login:
+        schrijvers.add(owner_login)
 
     for collab in client.collaborators(full_name):
         login = collab.get("login")
         if not login:
             continue
         perm = client.collaborator_permission(full_name, login) or {}
-        rol = str(perm.get("permission", "")).lower()
-        rechten = perm.get("permissions") or collab.get("permissions") or {}
-        if rol in ("admin", "write") or rechten.get("admin") or rechten.get("push"):
+        rol = str(perm.get("permission") or perm.get("role_name") or "").lower()
+        if rol in ROLLEN_MET_SCHRIJFRECHT:
             schrijvers.add(login)
 
     for team in client.teams(full_name):
-        if str(team.get("permission", "")).lower() not in ("admin", "write", "owner"):
+        if str(team.get("permission", "")).lower() not in ROLLEN_MET_SCHRIJFRECHT:
             continue
         for lid in client.team_members(team.get("id")):
             login = lid.get("login")
@@ -1547,7 +1588,7 @@ def inventory(client, shared_labels=()):
                 entry["gebruikt_gedeeld_label"] = entry["gebruikt_gedeeld_label"] or gebruikt
 
             try:
-                entry["writers"] = _schrijvers(client, full_name)
+                entry["writers"] = _schrijvers(client, full_name, entry["owner"])
             except Unreadable as exc:
                 entry["unreadable"].append(str(exc))
 
@@ -1622,7 +1663,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 24 tests, 0 failures.
+Expected: PASS — 27 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -2513,7 +2554,7 @@ PY
 cat "$EV/caps.env"
 ```
 
-Expected: elf regels, elke waarde niet-leeg. Controleer daarna dat `preflight.sh` dit bestand daadwerkelijk kan sourcen:
+Expected: dertien regels — drie commentaarregels en tien toewijzingen — met elke waarde niet-leeg. Controleer daarna dat `preflight.sh` dit bestand daadwerkelijk kan sourcen:
 
 ```bash
 bash -c 'set -euo pipefail; source docs/forgejo-runner-pool/evidence/stap-a/caps.env; \
@@ -2939,7 +2980,7 @@ class Confirmation:
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_readiness.py' -v`
-Expected: PASS — 13 tests, 0 failures.
+Expected: PASS — 14 tests, 0 failures.
 
 - [ ] **Step 5: Commit**
 
@@ -3502,7 +3543,7 @@ Vervang daarna `Controller.__init__` en `_on_readiness` door onderstaande versie
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_fence.py' -v`
-Expected: PASS — 16 tests, 0 failures.
+Expected: PASS — 18 tests, 0 failures.
 
 - [ ] **Step 5: Draai de hele controllersuite**
 
@@ -5169,6 +5210,28 @@ shellcheck -x forgejo-runner/scripts/*.sh
 
 Expected: alles groen, geen shellcheck-bevindingen. Dit is de gate: is er ook maar één test rood, dan zijn stap A en B niet af.
 
+Controleer daarna mechanisch dat geen enkele `Expected: PASS — N tests`-regel in dit plan is achtergelopen op de tests eronder. Die tellers zijn de enige plek waar een stil weggevallen test wordt betrapt, en ze lopen precies achter wanneer een reviewbevinding tests toevoegt:
+
+```bash
+python3 - <<'PY'
+import re
+regels = open("docs/forgejo-runner-pool/implementatieplan-stap-a-b.md", encoding="utf-8").read().split("\n")
+koppen = [i for i, r in enumerate(regels) if r.startswith("### Task ")] + [len(regels)]
+fout = 0
+for k in range(len(koppen) - 1):
+    blok = "\n".join(regels[koppen[k]:koppen[k + 1]])
+    n = len(re.findall(r"^@test ", blok, re.M)) + len(re.findall(r"^\s+def test_", blok, re.M))
+    for verwacht in re.findall(r"Expected: PASS — (\d+) tests", blok):
+        if int(verwacht) != n:
+            print(f"AFWIJKING in {regels[koppen[k]].strip()}: verwacht {verwacht}, geteld {n}")
+            fout = 1
+print("tellers kloppen" if not fout else "tellers lopen achter")
+raise SystemExit(fout)
+PY
+```
+
+Expected: `tellers kloppen`, exit 0. Wijkt er één af, werk dan de verwachting bij vóórdat je stap A en B afgerond verklaart.
+
 - [ ] **Step 3: Schrijf het afsluitrapport**
 
 Maak `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` met een tabel die iedere eis uit §8 stap A en stap B koppelt aan het bewijsbestand of de test die haar afdekt:
@@ -5241,6 +5304,36 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 2 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `32010477-c0b0-4eab-a34e-0ba8cfded29a`, `476f9370-6d91-4f52-8aae-3032cd060ab6`
+**Replies:** `3ca7cd8c-bb14-4da7-bb42-ec9d347f03c6`, `c3223bfd-a56e-4097-b8ef-a9738cb6539b`
+**Beoordeelde revisie:** 5263 regels, commit `b959789`, SHA-256 `df57ee46ec2c9aeb5f961540715bf06a1974dde139f3d358f24390fd7cb253dd`
+**Verdicts:** Codex NO-GO; Claude NO-GO
+**Tellingen:** Codex 1 BLOCKER / 0 MAJOR / 1 MINOR; Claude 0 BLOCKER / 1 MAJOR / 1 MINOR
+
+Beide reviewers oordeelden dat de zes fixes uit ronde 1 standhouden; codex noemde fix 1 "partially held". Beiden verifieerden de nieuwe feitelijke beweringen zelf: `docker ps -a` geeft 19 op `max2` en `shasum` bestaat op beide hosts.
+
+**Convergent (beide reviewers, geaccepteerd):** drie `Expected: PASS — N tests`-regels waren achtergelopen op de tests eronder. Task 4 stond op 3 met vijf tests, Task 11 op 13 met veertien, Task 13 op 16 met achttien. Task 4 was een regressie uit ronde 1: de fixes voegden twee tests toe zonder de verwachting bij te werken. Zelf nageteld over alle 22 taken: achttien klopten, drie niet. Verwerkt: de drie getallen zijn gecorrigeerd, en Task 22 step 2 heeft een mechanische controle gekregen die iedere `Expected: PASS — N tests`-regel aftelt tegen de tests in diezelfde taak. Die controle draait groen op de huidige revisie. Claude's structurele voorstel is daarmee overgenomen: de teller kan niet meer stil achterlopen op een reviewfix.
+
+**MINOR (claude, geaccepteerd):** de verwachting bij `caps.env` noemde elf regels terwijl het genererende blok er dertien produceert — drie commentaarregels en tien toewijzingen. Nageteld en gecorrigeerd.
+
+**BLOCKER (codex): deels verworpen, met verwerking van de valide kern.**
+
+Codex stelde dat `_schrijvers()` de verkeerde vorm interpreteert: het endpoint `/repos/{owner}/{repo}/collaborators/{collaborator}/permission` zou het `Permission`-schema met de booleans `admin`, `pull` en `push` teruggeven, waardoor schrijvers gemist worden.
+
+*Bronbewijs tegen die stelling.* De OpenAPI-spec van de draaiende instance koppelt dat endpoint aan de response `RepoCollaboratorPermission`, en die response verwijst naar de gelijknamige definitie met exact drie properties: `permission` (string), `role_name` (string) en `user`. Het `Permission`-schema met booleans bestaat wél in de spec, maar hangt aan `Repository.permissions` en niet aan dit endpoint. Codex heeft twee losse feiten uit de spec aan elkaar geplakt. De bestaande stringvergelijking was dus juist en de voorgestelde fix — `rechten = perm.get("permissions") or perm or …` gevolgd door `rechten["admin"]` — zou op de echte respons niets opleveren.
+
+*De valide kern is wel verwerkt,* want de onderliggende zorg — een schrijver kan onzichtbaar blijven — klopte, alleen langs een ander mechanisme:
+
+- De rollenlijst was onvolledig. `permission` kan ook `owner` teruggeven; die rol ontbrak. Nu vastgelegd als `ROLLEN_MET_SCHRIJFRECHT = ("owner", "admin", "write")`, ook gebruikt voor teampermissies.
+- **De repository-eigenaar zat helemaal niet in `writers`.** Forgejo neemt de eigenaar niet op in `/collaborators`, dus de meest bevoorrechte identiteit van elke repository was onzichtbaar voor de allowlist. Dat is het echte gat van de klasse die codex beschreef. `_schrijvers()` krijgt nu `owner_login` mee en neemt die altijd op.
+- De dode fallback `collab.get("permissions")` is verwijderd: `User` heeft geen `permissions`-veld, dus die tak kon nooit iets opleveren en suggereerde dekking die er niet was.
+- Drie tests erbij die dit vastpinnen: de echte `RepoCollaboratorPermission`-vorm met `permission`, `role_name` en `user`; de rol `owner`; en de eigenaar als schrijver zonder enige collaborator. Task 6 gaat van 24 naar 27 tests.
+
+Ronde 3 moet dit bronbewijs adjudiceren: klopt de vaststelling dat het endpoint `RepoCollaboratorPermission` levert en niet `Permission`?
 
 ### Plan-review ronde 1 — 31 augustus 2026
 
