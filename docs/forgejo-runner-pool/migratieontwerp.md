@@ -1,7 +1,7 @@
 # Migratieontwerp — bestaande Forgejo Runner uitbreiden naar een tweemachinepool
 
 **Datum:** 31 augustus 2026  
-**Status:** delta-review na rondecap 10 goedgekeurd — ontwerp GO, uitvoering nog niet gestart  
+**Status:** delta-review R11 GO; post-GO-wijzigingen (repo-tracking en vier bevindingen) staan in delta-review R12 — uitvoering nog niet gestart  
 **Doelhosts:** `scrum4me-server` en `max2`  
 **Fase 1:** stabiele pool met Forgejo Runner 12.10.1  
 **Fase 2:** afzonderlijke rolling upgrade naar Forgejo Runner 13
@@ -14,7 +14,11 @@ Tijdens de poolmigratie blijven Runner 12.10.1, de DinD-versie, labelnamen en jo
 
 ## 2. Waarom deze volgorde
 
-De migratie verandert in fase 1 slechts één hoofdeigenschap: van één runner naar twee uitwisselbare runners. Daardoor zijn problemen toe te schrijven aan poolvorming, registratie, labels of hostverschillen en niet tegelijk aan breaking changes in Runner 13.
+Fase 1 houdt de Runnerversie vast op 12.10.1 en stelt Runner 13 uit. Dat isoleert de breaking changes van Runner 13 van alle overige wijzigingen.
+
+Fase 1 is echter géén enkelvoudige wijziging. Naast poolvorming veranderen tegelijk: het registratiemodel (legacy `.runner` → `server.connections`), de levenscyclus (permanente `daemon` → `one-job --wait` onder een systemd-cyclecontroller), de stateretentie (bestaande DinD-cache → volledige scrub na iedere job), de resourcecaps, de digest-pinning van de jobimage en de trustgate. Foutlokalisatie berust daarom niet op "één variabele" maar op de gefaseerde volgorde uit §8: `max2` wordt afzonderlijk bewezen in stap D en E vóór poolgedrag in stap F, en pas daarna wordt `scrum4me-server` in stap G genormaliseerd. Iedere stap is afzonderlijk terug te draaien.
+
+Eén van die gelijktijdige wijzigingen heeft een voorspelbaar prestatie-effect. De huidige installatie draagt circa 121 GB inner-DinD-data en leunt dus zwaar op layer- en buildcache; de scrub uit §7.9 verwijdert die cache na iedere job. Jobduur is daarom een expliciet meetpunt in stap A en §7.8 en een expliciet stabiliteitscriterium in §9, zodat een onaanvaardbare regressie een zichtbare beslissing wordt in plaats van een sluipend gevolg.
 
 De route heeft bovendien een eenvoudige rollback: zolang de huidige runner op `scrum4me-server` niet is gewijzigd, kan de nieuwe runner op `max2` worden gestopt en is de beginsituatie direct terug.
 
@@ -92,7 +96,7 @@ forgejo-runner/
 │   ├── preflight.sh             stopt vóór mutaties als de host niet past
 │   ├── verify-stack.sh          health, poorten, config, labels en isolatie
 │   ├── verify-trust-scope.sh    controleert repos, schrijvers en PR/fork-policy
-│   ├── forgejo-runner-cycle.sh  lifecycle incl. drain, scrub en quarantaine
+│   ├── forgejo_runner_cycle.py  lifecycle incl. drain, scrub en quarantaine
 │   └── scrub-dind.sh            fenced cleanup terwijl geen runnerproces bestaat
 └── README.md                    uitrol-, rollback- en upgradeprocedure
 
@@ -108,11 +112,31 @@ Compose geeft het DinD-datavolume expliciet de naam `forgejo-runner-dind-data` v
 
 `forgejo-runner-cycle.service` wordt op iedere host met `systemctl enable --now` geactiveerd en bevat minimaal `Requires=docker.service`, `After=docker.service network-online.target`, `Wants=network-online.target` en `WantedBy=multi-user.target`. Bij boot start de unit eerst alleen DinD, wacht tot de healthcheck groen is en gaat daarna naar `SOURCE_WAIT`: er bestaat nog geen runnerproces. De controller toetst met begrensde exponential backoff — 2, 4, 8, 16 en daarna 30 seconden — zowel een algemene Forgejo-health/API-probe als een geauthenticeerde read-only trust-preflight. Pas wanneer beide bronnen aantoonbaar ready zijn, voert hij trust-, volume-, image- en scrubgates uit en mag hij een runner in `WAITING` zetten.
 
-De boot-SLA is maximaal vijf minuten vanaf `docker.service=active` tot `WAITING`. Buiten een geldig, identiek op beide hosts gearmd maintenance-record alarmeert overschrijding en reset zij de stabiliteitsperiode. Binnen zo'n record is de overschrijding uitsluitend informatief zolang het record nog niet verlopen is en de controller alleen verwachte control-plane-`SOURCE_WAIT` observeert; zij reset de stabiliteitsperiode dan niet. Bij de harde UTC-eindtijd vervalt deze uitzondering direct en gelden de normale alarm- en resetregels. In alle gevallen blijft de lokale controller zonder runner in `SOURCE_WAIT` doorproberen; dit is geen bevestigde securityafwijking. Een opstartrace of tijdelijke API-/database-onbereikbaarheid op `scrum4me-server` stuurt daarom nooit een quarantaineopdracht naar `max2`. De andere host behoudt zijn laatst goedgekeurde truststate, laat een reeds `RUNNING` job zo ver mogelijk gecontroleerd eindigen en start geen nieuwe runnercyclus. Een `WAITING` runner wordt graceful gestopt; het serverzijdige nulbewijs wordt na bronherstel uitgevoerd vóór heropening. Daarna blijft ook die host in `SOURCE_WAIT` totdat readiness en de trustgate weer groen zijn. Pas een bereikbare, geauthenticeerde Forgejo-bron die de inhoudelijke trustgate hard laat falen mag beide controllers quarantainen. De controller blijft zelf actief in `SOURCE_WAIT`, `CREDENTIAL_ERROR` of `QUARANTINED`; een unit-restart omzeilt nooit de gates.
+De boot-SLA is maximaal vijf minuten vanaf `docker.service=active` tot `WAITING`. Buiten een geldig, identiek op beide hosts gearmd maintenance-record alarmeert overschrijding en reset zij de stabiliteitsperiode. Binnen zo'n record is de overschrijding uitsluitend informatief zolang het record nog niet verlopen is en de controller alleen verwachte control-plane-`SOURCE_WAIT` observeert; zij reset de stabiliteitsperiode dan niet. Bij de harde UTC-eindtijd vervalt deze uitzondering direct en gelden de normale alarm- en resetregels. In alle gevallen blijft de lokale controller zonder runner in `SOURCE_WAIT` doorproberen; dit is geen bevestigde securityafwijking. Er bestaat geen commandokanaal tussen de hosts: poolbrede quarantaine is convergent en niet gecommandeerd (§7.7). Een opstartrace of tijdelijke API-/database-onbereikbaarheid op `scrum4me-server` kan `max2` daarom niet quarantainen. De andere host behoudt zijn laatst goedgekeurde truststate, laat een reeds `RUNNING` job zo ver mogelijk gecontroleerd eindigen en start geen nieuwe runnercyclus. Een `WAITING` runner wordt graceful gestopt; het serverzijdige nulbewijs wordt na bronherstel uitgevoerd vóór heropening. Daarna blijft ook die host in `SOURCE_WAIT` totdat readiness en de trustgate weer groen zijn. Pas een bereikbare, geauthenticeerde Forgejo-bron die de inhoudelijke trustgate hard laat falen mag beide controllers quarantainen. De controller blijft zelf actief in `SOURCE_WAIT`, `CREDENTIAL_ERROR` of `QUARANTINED`; een unit-restart omzeilt nooit de gates.
 
 Omdat Forgejo en Postgres zelf op `scrum4me-server` draaien, is een hostreboot daar ook een tijdelijk control-plane-onderhoud: `max2` blijft als host/controller gezond maar gaat na drain naar `SOURCE_WAIT`, omdat Forgejo gedurende dat vooraf aangekondigde venster geen nieuwe jobs kan uitdelen. Dat is geen bewijsbaar runnerfailovervenster en wordt niet als zodanig gepresenteerd. De reboottest op `scrum4me-server` vereist daarom een goedgekeurd productie-onderhoudsvenster; jobs worden vooraf gedraind, nieuwe runs blijven tijdens de control-plane-uitval uit of queued en na API-readiness volgt op beide hosts de trustgate vóór een runner terugkeert. Ongeplande productie-uitval blijft niet toegestaan.
 
 De gekozen vorm is rechtstreeks ondersteund door de [Forgejo Runner 12.10.1-configuratie](https://code.forgejo.org/forgejo/runner/src/tag/v12.10.1/internal/pkg/config/config.example.yaml), de [`one-job`-commandregistratie met `--wait/-w`](https://code.forgejo.org/forgejo/runner/src/tag/v12.10.1/internal/app/cmd/cmd.go), de [single-task-poller](https://code.forgejo.org/forgejo/runner/src/tag/v12.10.1/internal/app/poll/single.go) en de [Forgejo 15-registratiedocumentatie](https://forgejo.org/docs/v15.0/admin/actions/registration/).
+
+### 6.1 Versiebeheer, distributie en driftgate
+
+De bundel is niet alleen "versiebeheerd" maar heeft één benoemde canonieke bron. Twee losse kopieën zouden twee bronnen van waarheid zijn en maken de byte-identiek-eis uit §4 en §9 onbewijsbaar.
+
+| Repository | Rol | Inhoud |
+|---|---|---|
+| `scrum4me-server` | canonieke bron | `docs/forgejo-runner-pool/` met dit ontwerp, de reviewrapporten en het runbook; `forgejo-runner/` met de volledige gedeelde bundel; `hosts/scrum4me-server/` met host-overlay en bewijs |
+| `max2` | host-overlay | `hosts/max2/` met `runner-config.yml` zonder secretwaarden, preflight-uitkomsten en inventarisatie; `evidence/` met metingen, testbewijs en maintenance-records |
+
+`max2` bevat bewust geen kopie van de bundel. Beide hosts rollen uit vanaf exact dezelfde commit-SHA van de canonieke repo.
+
+Bindend:
+
+- iedere host houdt de uitgerolde bundelcommit-SHA vast in `/opt/forgejo-runner/BUNDLE_COMMIT`; `verify-stack.sh` faalt als die ontbreekt, niet in de canonieke repo bestaat of afwijkt van de andere host;
+- `verify-stack.sh` berekent daarnaast een canonieke hash over de uitgerolde bundelbestanden en vergelijkt die met de hash van die commit; dit is de mechanische invulling van "byte-identiek" waarnaar §9 verwijst;
+- beide waarden staan in de monitoring van §10;
+- secrets komen niet in Git: naast de eenmalige scan in stap B draait op beide repo's een pre-commit secret-scan, en `/opt/forgejo-runner/credentials/` staat in `.gitignore`;
+- deployment gebeurt handmatig of via SSH vanaf `mac`, nooit via een Forgejo Actions-workflow. Jobcontainers draaien in DinD zonder host-Docker-socket en zonder hostpadvolumes (§7.6) en kunnen de hoststack fysiek niet wijzigen. Een deployworkflow op deze runners is per ontwerp onmogelijk en mag niet worden gebouwd;
+- beide repo's zijn nieuwe Actions-enabled repositories op dezelfde Forgejo-instance en vallen dus binnen de trustgrens van §7.7. Stap A neemt ze op in `trusted-actions-scope.yml` vóór de eerste trustgate-run; anders alarmeert de eerste dagelijkse controle op deze repo's zelf als zachte trustafwijking.
 
 ## 7. Wijzigingen aan de bestaande installatie
 
@@ -240,6 +264,10 @@ Als de ready en geauthenticeerde bron vervolgens een vereist bestaand object of 
 
 Een **bevestigde harde trustafwijking** is: een onbekende of niet-goedgekeurde workflow-schrijver, een fork/PR-pad waarmee onbetrouwbare code op de gedeelde labels kan starten, of een na geslaagde bron-readiness inhoudelijk niet-uitleesbare relevante instelling. Alleen dan gaan de cyclecontrollers op beide hosts naar `QUARANTINED`, accepteert de pool geen nieuwe jobs en is global scope NO-GO; als het niet veilig kan worden hersteld, worden de runners beperkt tot organisatie- of repositoryscope voor uitsluitend goedgekeurde repositories.
 
+Deze poolbrede quarantaine is **convergent, niet gecommandeerd**. Er bestaat geen commandokanaal, RPC of gedeelde state tussen de hosts en er wordt er ook geen gebouwd: beide controllers draaien dezelfde gate tegen dezelfde Forgejo-bron en bereiken daardoor onafhankelijk hetzelfde oordeel, elk binnen zijn eigen dertigsecondeninterval. Waar dit ontwerp "op beide hosts" schrijft, betekent dat convergentie en nooit een instructie van de ene host naar de andere. Een kanaal zou een nieuwe faalmodus, eigen authenticatie en een split-brainvraag toevoegen zonder iets op te lossen.
+
+Het gevolg is expliciet en aanvaard: een trustafwijking in de gedeelde bron is een gemeenschappelijke faalmodus die beide hosts tegelijk stilzet. De tweemachinepool beschermt tegen host-, Docker-, DinD- en runnerfalen, niet tegen een instancebrede trustbevinding. Bij een securitybevinding is dat het bedoelde gedrag: doorgaan op de andere host zou onbetrouwbare code op een privileged DinD naast productie laten draaien.
+
 Een **zachte trustafwijking** is een nieuwe repository waarop Actions uitstaat, een collaborator zonder recht om workflows te wijzigen of een strengere branch-protectionregel. Die afwijking alarmeert direct en moet binnen 24 uur worden beoordeeld en in de allowlist worden verwerkt, maar zet de pool niet automatisch stil. Dezelfde controle draait dagelijks en na iedere repository-, collaborator-, team-, Actions-, workflowmap- of policywijziging. Een bevestigde harde afwijking reset de stabiliteitsperiode als securityquarantaine; een zachte afwijking niet zolang zij binnen 24 uur is afgehandeld en niet tot een harde afwijking evolueert. Tijdelijke brononbereikbaarheid wordt als availability-event gelogd: een lopende job mag gecontroleerd eindigen, een wachtende runner stopt graceful, er start geen nieuwe runner en de host gaat naar `SOURCE_WAIT`. Zodra de bron herstelt, volgen het uitgestelde assignment-nulbewijs, beide readinessprobes en de volledige trustgate vóór de overgang naar `WAITING`. Dit is geen cross-hostquarantaine; bij een centrale Forgejo-uitval kunnen beide hosts wel onafhankelijk en terecht `SOURCE_WAIT` bereiken.
 
 ### 7.8 Productieworkload beschermen
@@ -255,6 +283,17 @@ Tijdens de representatieve workflow wordt ook iedere vijf seconden `MemAvailable
 
 `capacity: 1` voorkomt meerdere gelijktijdige jobs binnen één DinD. De afgeleide limieten worden op beide hosts gelijk gehouden zodat hetzelfde label dezelfde minimale uitvoeromgeving betekent. Iedere latere wijziging geldt voor beide runners en reset de zevendaagse stabiliteitsperiode.
 
+De caps worden op `scrum4me-server` gemeten maar gelden gelijk op **beide** hosts. De headroomgate moet daarom ook op beide hosts slagen. Stap A legt van `max2` het aantal vCPU's, het fysieke geheugen, de laagste `MemAvailable` onder de eigen productielast en de vrije ruimte plus inodes op `DockerRootDir` vast. `preflight.sh` faalt vóór iedere mutatie als op de betrokken host niet geldt:
+
+- de som van de vCPU-limieten van runner en DinD is ten hoogste 50% van de aanwezige vCPU's;
+- de som van beide geheugenlimieten is ten hoogste 50% van de laagste gemeten `MemAvailable`;
+- de vrije ruimte op `DockerRootDir` is ten minste 20% én ten minste de som van de gepinde toegestane images uit `allowed-job-images.txt` plus 20 GB werkruimte;
+- de vrije inodes op `DockerRootDir` zijn ten minste 20%.
+
+Haalt `max2` deze grenzen niet bij de uit `scrum4me-server` afgeleide caps, dan is dat een NO-GO voor identieke caps: de pool is dan niet uitwisselbaar en er volgt eerst een beperktere workload of een nieuw hardware- of architectuurbesluit. Lagere caps op alleen `max2` zijn niet toegestaan, omdat hetzelfde label dan een andere minimale uitvoeromgeving zou betekenen.
+
+Meet tijdens dezelfde representatieve run ook de wandkloktijd per job op de huidige, warme DinD-cache. Die waarde is de jobduurbaseline waartegen §9 de cacheloze pool afzet.
+
 ### 7.9 DinD-retentie en scrub tussen jobs
 
 Fase 1 accepteert geen jobstate, lokaal gebouwde images of buildcache tussen opeenvolgende jobs of repositories. Runnercache staat uit. Een permanente `daemon` kan na een idle-meting nog een nieuwe job aannemen; daarom gebruikt iedere host de in Runner 12.10.1 ondersteunde opdracht [`one-job --wait`](https://code.forgejo.org/forgejo/runner/src/tag/v12.10.1/internal/app/cmd/job.go). De single-task-poller wacht op precies één job, laat die voltooien, sluit daarna af en accepteert geen tweede job.
@@ -268,6 +307,8 @@ De host-systemd-cyclecontroller is de enige eigenaar van de runnerlevenscyclus e
 - `DRAINING`: een geplande stop blokkeert een nieuwe cyclus en bewijst serverzijdig dat geen job meer aan deze runner is toegewezen of actief;
 - `SCRUBBING`: het runnerproces is geëindigd en er bestaat geen runnercontainer die een volgende job kan aannemen;
 - `QUARANTINED`: trust-, DinD-, image- of scrubbewijs faalde; er wordt geen runnerproces gestart.
+
+De controller is een niet-triviale toestandsmachine: een geserialiseerde eventloop, oplopende `event_seq`, een schedulingfence, tweewaarnemingenbevestiging, een deadlinewatchdog en atomair gepersisteerde toestand. Hij wordt daarom in Python geïmplementeerd als `scripts/forgejo_runner_cycle.py` en niet in shell. Signal handling, de race tussen childexit en readinessprobe, monotone deadlines en atomaire statepersistentie zijn in shell niet betrouwbaar uit te drukken; een fragiele controller zou zelf een grotere storingsbron worden dan het probleem dat hij oplost. Het stub- en testharnas uit stap A is de unittestsuite van deze module en hoort bij de bundel; de gates uit stap A zijn pas groen als die suite groen is. De overige scripts uit §6 blijven shell.
 
 De controller bewaakt het runner-childproces en de geauthenticeerde readinessprobe gelijktijdig; hij blokkeert dus niet uitsluitend op de `one-job`-exit. In normale toestand wordt readiness iedere dertig seconden getoetst. De eerste fout zet de schedulingfence, blokkeert iedere childstart en stopt een `WAITING` child direct via `DRAINING`; de vijfsecondenbevestiging uit §7.7 kiest pas daarna de foutklasse. Bij een al vóór de latch `RUNNING` job legt de controller de geselecteerde volgende toestand vast maar breekt hij die job niet abrupt af; na het gecontroleerde einde en scrub start geen nieuw childproces. Een op/na-latch geaccepteerde job volgt de cancel/scrub/redispatchroute uit §7.7. In iedere fouttoestand blijft de controller automatisch iedere dertig seconden herproberen; alleen twee geldige readinessprobes vijf seconden uiteen, assignment-nulbewijs en de volledige groene trustgate mogen opnieuw een runner starten. De zestigsecondenwatchdog commit iedere niet-opgeloste fence naar de zwaarste waargenomen klasse.
 
@@ -297,11 +338,13 @@ De controller logt runner-ID, cyclusnummer, begin/eindtijd, toestand en geanonim
 
 ### Stap A — Bestaande installatie read-only vastleggen
 
-Leg image-ID’s, manifestdigests, Compose-config, runnerconfig zonder secretwaarden, legacy `.runner`-metadata zonder tokenwaarde, volledige labels, global scope, netwerken, volumes en healthstatus vast. Noteer expliciet de huidige anonieme volume-ID en de omvang van de inner-DinD-data; die state wordt vóór uitfasering gescrubd maar niet naar het nieuwe benoemde volume gekopieerd. Inventariseer via Forgejo alle zichtbare runnerrecords met ID, naam, scope, versie, volledige labels voor zover beschikbaar, online/offline en busy/idle. Leg uit de effectieve Forgejo 15.0.2-configuratie en bijbehorende versiebron de Actions assignment-/requeue-timeout vast als `T_requeue`; als die niet aantoonbaar is, wordt de wachttak uit §7.9 uitgeschakeld. Leg op beide hosts NTP/chrony-synchronisatiestatus en de gemeten wandklokskew ten opzichte van de Forgejo-Date-header vast. Deze meting dient uitsluitend audit/corroboratie; `event_seq` blijft de enige vóór/na-fencebeslisser. Voer de trustscope-gate inclusief `.forgejo/workflows`/`.github/workflows`-fallback uit en leg de goedgekeurde allowlist vast.
+Leg image-ID’s, manifestdigests, Compose-config, runnerconfig zonder secretwaarden, legacy `.runner`-metadata zonder tokenwaarde, volledige labels, global scope, netwerken, volumes en healthstatus vast. Noteer expliciet de huidige anonieme volume-ID en de omvang van de inner-DinD-data; die state wordt vóór uitfasering gescrubd maar niet naar het nieuwe benoemde volume gekopieerd. Inventariseer via Forgejo alle zichtbare runnerrecords met ID, naam, scope, versie, volledige labels voor zover beschikbaar, online/offline en busy/idle. Bepaal als eerste uit de effectieve Forgejo 15.0.2-configuratie en bijbehorende versiebron de Actions assignment-/requeue-timeout `T_requeue`, omdat die uitkomst de wachttak in §7.9 aan- of uitzet; als die niet aantoonbaar is, wordt de wachttak uit §7.9 uitgeschakeld. Leg op beide hosts NTP/chrony-synchronisatiestatus en de gemeten wandklokskew ten opzichte van de Forgejo-Date-header vast. Deze meting dient uitsluitend audit/corroboratie; `event_seq` blijft de enige vóór/na-fencebeslisser. Voer de trustscope-gate inclusief `.forgejo/workflows`/`.github/workflows`-fallback uit en leg de goedgekeurde allowlist vast.
 
 Bewijs met een stub/testharnas alle vier readinessuitkomsten afzonderlijk: transport/5xx → `SOURCE_WAIT`; authprobe 401/403 → lokaal `CREDENTIAL_ERROR`; overige status/schemafout → lokale `QUARANTINED`; geldige 2xx-schema's → inhoudelijke trustgate. Test per foutklasse ook: de eerste afwijking zet alleen een informatief event plus schedulingfence en stopt een `WAITING` child; twee gelijke afwijkingen bevestigen de toestand; klassesprong herstart bevestiging; twee geldige probes plus nulbewijs en groene trustgate herstellen automatisch zonder directe runnerstart. Test met één geserialiseerde eventloop en kunstmatige logvertraging dat alleen `JOB_ACCEPTED/RUNNING.event_seq < fence_seq` vóór-latch is, dat remote/Forgejo-tijden nooit beslissen en dat unknown/late veilig naar cancel/scrub/redispatch gaat. Laat vervolgens een blijvende foutklassesprong en een blijvende valid/error-flap minimaal zestig seconden lopen en bewijs in beide gevallen de deadline, zwaarste-klassekeuze en het alarm. Test ook het gearmde onderhoudsrecord: gemengde startupklassen committen vóór algemene readiness alleen `SOURCE_WAIT`; na tweemaal geldige algemene readiness worden 401/protocol normaal bevestigd; na de harde eindtijd bestaat geen uitzondering. Bewijs daarnaast dat alleen een bevestigde harde inhoudelijke gatefailure een cross-hostquarantaine geeft. Verifieer dat de bestaande productiecontainers gezond zijn voordat iets wordt toegevoegd.
 
-Draai een representatieve zwaarste workflow en meet iedere vijf seconden het piekgebruik van CPU, geheugen en PID's van runner en DinD plus `MemAvailable` van de host. Bereken daarna de caps volgens §7.8 en stop bij overschrijding van de hostheadroomgate.
+Draai een representatieve zwaarste workflow en meet iedere vijf seconden het piekgebruik van CPU, geheugen en PID's van runner en DinD plus `MemAvailable` van de host. Bereken daarna de caps volgens §7.8 en stop bij overschrijding van de hostheadroomgate. Leg tijdens diezelfde run de wandkloktijd per job vast als warme-cachebaseline voor §9.
+
+Inventariseer daarnaast van `max2` het aantal vCPU's, het fysieke geheugen, de laagste `MemAvailable` onder eigen productielast en de vrije ruimte plus inodes op `DockerRootDir`, en voer de headroom- en preflightgates uit §7.8 op beide hosts uit. Neem ten slotte de repo's `scrum4me-server` en `max2` uit §6.1 als Actions-enabled repositories op in `trusted-actions-scope.yml` vóór de eerste trustgate-run.
 
 ### Stap B — Gedeelde Runner 12-bundel maken
 
@@ -369,7 +412,8 @@ De pool is stabiel wanneer zeven aaneengesloten dagen aan alle criteria is volda
 - geen host heeft een onopgeloste readiness-schedulingfence ouder dan zestig seconden; iedere deadline heeft buiten maintenance de zwaarste waargenomen foutklasse gecommit en gealarmeerd, of binnen het exact gearmde startupvenster uitsluitend `SOURCE_WAIT` gecommit;
 - vrije ruimte op het Docker-datafilesystem blijft minimaal 20%;
 - de productiecontainers op beide hosts ondervinden geen runnergerelateerde uitval;
-- labels en gemeenschappelijke configuratie zijn byte- of canoniek-identiek.
+- labels en gemeenschappelijke configuratie zijn byte- of canoniek-identiek: beide hosts draaien aantoonbaar dezelfde bundelcommit-SHA en dezelfde canonieke bundelhash volgens §6.1;
+- de gemeten jobduur van de representatieve workflow blijft binnen 200% van de warme-cachebaseline uit stap A; een structurele overschrijding is geen storing, maar vereist vóór het stabiel verklaren van de pool een expliciet besluit over het cachebeleid.
 
 ## 10. Monitoring
 
@@ -391,6 +435,8 @@ Meet op iedere host minimaal iedere vijf minuten:
 - enabled/active-status van `forgejo-runner-cycle.service`, laatste bootgate-resultaat en tijd tot `WAITING` na host- of Dockerboot;
 - laatste geplande drain en het bijbehorende Forgejo-side nulbewijs voor assigned/running jobs;
 - jobwachttijd;
+- jobduur per uitgevoerde job, afgezet tegen de warme-cachebaseline uit stap A;
+- uitgerolde bundelcommit-SHA en canonieke bundelhash per host, plus de gelijkheid daarvan tussen beide hosts;
 - gezondheid van de bestaande productiecontainers.
 
 Registreer de eerste readinessafwijking alleen als informatief event met klasse en latchtijd. Waarschuw operationeel bij een bevestigde fouttoestand of een schedulingfence die buiten een geldig maintenance-startupvenster de zestigsecondenwatchdog bereikt, bij `SOURCE_WAIT` langer dan vijf minuten buiten een op beide hosts geldig gearmd control-plane-venster, bij `SOURCE_WAIT` na de harde UTC-eindtijd van dat venster, bij een ontbrekend/ongelijk/verlopen maintenance-record, iedere bevestigde `CREDENTIAL_ERROR` als lokale securitymelding, onbekende controllerstaat, ongeplande of te lange `DRAINING`, `SCRUBBING` langer dan vijf minuten buiten het afzonderlijke oude-volume-scrubrecord, ontbrekend post-stop-nulbewijs, een niet-enabled/inactieve cycle-unit buiten gepland onderhoud, iedere overgang naar `QUARANTINED`, een bevestigde harde trustafwijking, een zachte trustafwijking ouder dan 24 uur, DinD unhealthy, meer dan twee onverwachte DinD-restarts in vijftien minuten, minder dan 20% vrije ruimte of herhaalde resource throttling. Een normale `one-job`-exit, verwachte `SOURCE_WAIT` binnen een geldig control-plane-maintenance-record en een bewezen scrubvenster binnen het aparte oude-volume-scrubrecord geven geen restart- of offlinealarm en resetten de stabiliteitsperiode niet; na expiry doen ze dat wel volgens de normale criteria.
@@ -600,8 +646,6 @@ Na het bereiken van de rondecap zijn uitsluitend de twee finale reviewfindings v
 - De boot-SLA in §6 en de stabiliteitsdefinitie in §9 gebruiken nu dezelfde regel: binnen een geldig, identiek gearmd en niet verlopen control-plane-maintenance-record is overschrijding informatief en reset zij de stabiliteitsperiode niet; buiten dat venster en na de harde UTC-eindtijd blijven availabilityalarm en stabiliteitsreset gelden.
 - De eenmalige scrub van het oude anonieme DinD-volume in stap G gebruikt nu een afzonderlijk maintenance-record met eigen `maintenance_id`, UTC-start, harde UTC-eindtijd op basis van actuele dataomvang plus proefmeting, expliciet beperkte opschorting van §9-criteria en automatische terugval naar normale alarmen na expiry.
 
-## 14. Acceptatie van dit ontwerp
-
 ### Delta-review R11 — 31 augustus 2026
 
 **Reviewers:** `mac:codex` en `scrum4me-server:claude`  
@@ -613,8 +657,21 @@ Na het bereiken van de rondecap zijn uitsluitend de twee finale reviewfindings v
 
 Beide reviewers bevestigden dat de ronde-10-MAJOR over boot-SLA versus maintenance-record en de ronde-10-MINOR over het oude DinD-volume-scrubrecord zijn opgelost. Beiden vonden geen regressie op de eerder gesloten Runner 12-poolcontracten.
 
+### Revisie na R11 — verwerkt voor delta-review R12
+
+Na de dubbele GO van R11 zijn zes post-GO-wijzigingen aangebracht. Zij wijzigen de status van het ontwerp pas na een nieuwe delta-review met GO.
+
+1. **Versiebeheer en distributie (nieuw §6.1).** De "gedeelde, versiebeheerde bundel" had geen benoemde bron, geen distributiemechanisme en geen driftgate, terwijl §4 en §9 byte-identieke bundels eisen. De bundel is nu canoniek in de `scrum4me-server`-repo; `max2` is host-overlay zonder kopie. Beide hosts rollen uit vanaf dezelfde commit-SHA, `verify-stack.sh` vergelijkt commit-SHA en canonieke bundelhash tussen de hosts, en §9 en §10 verwijzen daarnaar. Ook vastgelegd: pre-commit secret-scan, geen deployment via Forgejo Actions (jobs kunnen de hoststack per ontwerp niet raken), en opname van beide repo's in `trusted-actions-scope.yml` vóór de eerste trustgate-run.
+2. **Headroomgate op beide hosts (§7.8, stap A).** De caps waren afgeleid uit een meting op `scrum4me-server`, golden gelijk op beide hosts, maar werden alleen op `scrum4me-server` gegate't; `max2`-hardware werd nergens vastgelegd en `preflight.sh` had geen criteria. `max2` wordt nu geïnventariseerd en `preflight.sh` heeft expliciete drempels voor vCPU, geheugen, vrije ruimte en inodes. Lagere caps op alleen `max2` blijven verboden.
+3. **Controller in Python (§6, §7.9).** De toestandsmachine met geserialiseerde eventloop, `event_seq`, schedulingfence, bevestigingsdrempel en deadlinewatchdog is als shellscript niet betrouwbaar te bouwen. De controller is nu `scripts/forgejo_runner_cycle.py`; het stub-/testharnas uit stap A is zijn unittestsuite en een stap-A-gate. Overige scripts blijven shell.
+4. **Quarantaine is convergent, niet gecommandeerd (§6, §7.7).** De tekst impliceerde op één plek een quarantaineopdracht van host naar host terwijl geen kanaal, authenticatie of faalmodus was beschreven. Vastgelegd is nu dat er geen kanaal bestaat en er ook geen komt: beide controllers oordelen onafhankelijk over dezelfde bron. Het resterende gevolg — een instancebrede trustbevinding is een gemeenschappelijke faalmodus die de hele pool stilzet — is expliciet aanvaard.
+5. **Eerlijke variabelentelling en cacheregressie (§2, §7.8, §9, §10, stap A).** De claim dat fase 1 "slechts één hoofdeigenschap" verandert klopte niet: registratiemodel, levenscyclus, stateretentie, caps, digest-pinning en trustgate wijzigen tegelijk. De onderbouwing verwijst nu naar de gefaseerde volgorde van §8. Omdat de scrub de cache verwijdert waarop de huidige circa 121 GB DinD-state wijst, is jobduur toegevoegd als baselinemeting in stap A, als stabiliteitscriterium in §9 en als monitoringmeetpunt in §10.
+6. **Redactioneel.** De dubbele kop `## 14. Acceptatie van dit ontwerp` is opgelost; delta-review R11 staat nu waar hij hoort, in het Review record. `T_requeue` wordt in stap A expliciet als eerste bepaald omdat de uitkomst een hele tak in §7.9 aan- of uitzet.
+
 ## 14. Acceptatie van dit ontwerp
 
-Dit ontwerp heeft dubbele GO voor de delta-review na rondecap 10. Het is daarmee goedgekeurd als ontwerp voor de route: eerst een stabiele Forgejo Runner 12.10.1-tweemachinepool op `scrum4me-server` en `max2`, daarna pas een afzonderlijke rolling Runner 13-fase.
+Dit ontwerp heeft dubbele GO gekregen voor de delta-review na rondecap 10 (R11). De route zelf is daarmee goedgekeurd: eerst een stabiele Forgejo Runner 12.10.1-tweemachinepool op `scrum4me-server` en `max2`, daarna pas een afzonderlijke rolling Runner 13-fase.
+
+De zes post-GO-wijzigingen uit "Revisie na R11" zijn nog niet beoordeeld. Zolang delta-review R12 geen GO heeft, geldt R11 als de laatst goedgekeurde revisie en zijn die wijzigingen voorgesteld, niet vastgesteld.
 
 Productie-uitvoering zelf is nog niet gestart. De volgende stap is een uitvoerbaar implementatieplan met exacte read-only inventarisatiecommando's, bestandsinhoud, deploymentcommando's, gates, testworkflows en rollbackcommando's.
