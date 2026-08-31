@@ -1120,7 +1120,7 @@ Bevestigde responseschema's, uit dezelfde spec gelezen:
 - Produces:
   - `trust_scope.inventory(client, shared_labels) -> dict` — de gemeten toestand, met per repository `has_actions`, `workflow_source`, `workflows`, `risky_triggers`, `gebruikt_gedeeld_label`, `writers` (collaborators én teamleden), `branch_protection` en `unreadable`
   - `trust_scope.classify(inventory, allowlist) -> Verdict` met velden `hard: list[str]`, `soft: list[str]`, `unreadable: list[str]`. `Verdict.ok` is alleen `True` bij nul harde afwijkingen en nul onleesbare objecten.
-  - clientcontract dat `trust_scope` verwacht: `repos()`, `contents(full_name, path)`, `collaborators(full_name)`, `collaborator_permission(full_name, login)`, `teams(full_name)`, `team_members(team_id)`, `branch_protections(full_name)`
+  - clientcontract dat `trust_scope` verwacht: `repos()`, `contents(full_name, path)`, `collaborators(full_name)`, `collaborator_permission(full_name, login)`, `teams(full_name)`, `team_members(team_id)`, `branch_protections(full_name)`. Alleen `contents()` mag `None` teruggeven — dat betekent "map bestaat niet" en stuurt de fallback aan. Geeft een van de andere methoden `None`, dan is de meting onvolledig en is dat `Unreadable`.
   - Exitcodes van de wrapper: `0` groen, `10` zachte afwijking, `20` harde afwijking, `30` onleesbaar of fail-closed.
 
 **Classificatieregels, afgeleid uit §7.7.** Hard: een workflow-schrijver die niet bij naam in de allowlist staat, ongeacht of hij via collaborator of via team binnenkomt; een Actions-enabled repository die niet in de allowlist staat; een risicovolle trigger (`pull_request`, `pull_request_target`, `workflow_run`) in een workflow die óók een gedeeld runnerlabel gebruikt — dat is het fork/PR-pad waarlangs onbetrouwbare code op de gedeelde labels kan starten. Zacht: een risicovolle trigger in een workflow die géén gedeeld label gebruikt; een ontbrekende branch-protection op de default branch van een repository die de gedeelde labels wél gebruikt; een nieuwe repository met Actions uit. Onleesbaar: iedere workflowmap, workflowbestand, collaborator-, team- of branch-protectionrespons die niet ondubbelzinnig uitleesbaar is — dat is fail-closed en levert exit 30.
@@ -1342,6 +1342,69 @@ class TestSchrijvers(unittest.TestCase):
         self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
 
 
+class TestVierenveertigVierNulVier(unittest.TestCase):
+    """Een 404 op een trustscope-endpoint mag nooit stil "leeg" betekenen.
+
+    Alleen het aftasten van de workflowmappen kent afwezigheid als geldige
+    uitkomst; alles daarbuiten moet de gate rood maken (7.7 fail-closed).
+    """
+
+    class StubClient(FakeClient):
+        def __init__(self, leeg_endpoint):
+            super().__init__([REPO_ACTIONS],
+                             contents={("janpeter/app", ".forgejo/workflows"): []})
+            self.leeg = leeg_endpoint
+
+        def collaborators(self, full_name):
+            return None if self.leeg == "collaborators" else []
+
+        def teams(self, full_name):
+            return None if self.leeg == "teams" else []
+
+        def branch_protections(self, full_name):
+            return None if self.leeg == "branch_protections" else []
+
+    def _verdict(self, endpoint):
+        client = self.StubClient(endpoint)
+        return trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+
+    def test_404_op_collaborators_is_fail_closed(self):
+        verdict = self._verdict("collaborators")
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("collaboratorlijst" in u for u in verdict.unreadable))
+
+    def test_404_op_teams_is_fail_closed(self):
+        verdict = self._verdict("teams")
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("teamlijst" in u for u in verdict.unreadable))
+
+    def test_404_op_branch_protections_is_fail_closed(self):
+        verdict = self._verdict("branch_protections")
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("branch-protection" in u for u in verdict.unreadable))
+
+    def test_client_geeft_alleen_bij_missing_ok_none_terug(self):
+        import urllib.error
+        import trust_scope_cli
+
+        class Nep404:
+            def __call__(self, req, timeout=None):
+                raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+        client = trust_scope_cli.ForgejoClient("https://voorbeeld.invalid", "x")
+        origineel = trust_scope_cli.urllib.request.urlopen
+        trust_scope_cli.urllib.request.urlopen = Nep404()
+        try:
+            # De workflowmap mag ontbreken.
+            self.assertIsNone(client._get("/repos/a/b/contents/.forgejo/workflows",
+                                          missing_ok=True))
+            # Alles daarbuiten is onleesbaar.
+            with self.assertRaises(trust_scope.Unreadable):
+                client._get("/repos/a/b/collaborators")
+        finally:
+            trust_scope_cli.urllib.request.urlopen = origineel
+
+
 class TestClassificatie(unittest.TestCase):
     def _inv(self, **overrides):
         repo = {
@@ -1518,7 +1581,10 @@ def _schrijvers(client, full_name, owner_login=None):
     if owner_login:
         schrijvers.add(owner_login)
 
-    for collab in client.collaborators(full_name):
+    collabs = client.collaborators(full_name)
+    if collabs is None:
+        raise Unreadable(f"{full_name}: collaboratorlijst niet uitleesbaar")
+    for collab in collabs:
         login = collab.get("login")
         if not login:
             continue
@@ -1527,10 +1593,16 @@ def _schrijvers(client, full_name, owner_login=None):
         if rol in ROLLEN_MET_SCHRIJFRECHT:
             schrijvers.add(login)
 
-    for team in client.teams(full_name):
+    teams = client.teams(full_name)
+    if teams is None:
+        raise Unreadable(f"{full_name}: teamlijst niet uitleesbaar")
+    for team in teams:
         if str(team.get("permission", "")).lower() not in ROLLEN_MET_SCHRIJFRECHT:
             continue
-        for lid in client.team_members(team.get("id")):
+        leden = client.team_members(team.get("id"))
+        if leden is None:
+            raise Unreadable(f"{full_name}: leden van team {team.get('id')} niet uitleesbaar")
+        for lid in leden:
             login = lid.get("login")
             if login:
                 schrijvers.add(login)
@@ -1594,6 +1666,8 @@ def inventory(client, shared_labels=()):
 
             try:
                 regels = client.branch_protections(full_name)
+                if regels is None:
+                    raise Unreadable(f"{full_name}: branch-protection niet uitleesbaar")
                 entry["branch_protection"] = [
                     r for r in regels
                     if r.get("branch_name") == entry["default_branch"]
@@ -1663,7 +1737,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 27 tests, 0 failures.
+Expected: PASS — 31 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -1692,7 +1766,15 @@ class ForgejoClient:
         self.base = base_url.rstrip("/")
         self.token = token
 
-    def _get(self, path, params=None):
+    def _get(self, path, params=None, *, missing_ok=False):
+        """Haalt een API-pad op. Een 404 is standaard NIET normaal.
+
+        Alleen bij het aftasten van de twee workflowmappen is afwezigheid een
+        geldige uitkomst; daar geldt `missing_ok=True`. Overal elders zou een
+        404 stil "geen collaborators", "geen teams" of "geen branch-protection"
+        betekenen, en dat is fail-open in een gate die volgens 7.7 fail-closed
+        moet zijn.
+        """
         url = f"{self.base}/api/v1{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
@@ -1701,7 +1783,7 @@ class ForgejoClient:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as exc:
-            if exc.code == 404:
+            if exc.code == 404 and missing_ok:
                 return None
             raise Unreadable(f"{path}: HTTP {exc.code}") from exc
         except (urllib.error.URLError, ValueError) as exc:
@@ -1718,22 +1800,26 @@ class ForgejoClient:
             page += 1
 
     def contents(self, full_name, path):
-        return self._get(f"/repos/{full_name}/contents/{path}")
+        # De enige plek waar een 404 een geldige uitkomst is: de workflowmap
+        # bestaat niet en de fallback moet worden geprobeerd.
+        return self._get(f"/repos/{full_name}/contents/{path}", missing_ok=True)
 
+    # Hieronder is een 404 nooit normaal: die maakt de meting onvolledig en
+    # moet de gate rood maken in plaats van een lege verzameling te leveren.
     def collaborators(self, full_name):
-        return self._get(f"/repos/{full_name}/collaborators") or []
+        return self._get(f"/repos/{full_name}/collaborators")
 
     def collaborator_permission(self, full_name, login):
-        return self._get(f"/repos/{full_name}/collaborators/{login}/permission") or {}
+        return self._get(f"/repos/{full_name}/collaborators/{login}/permission")
 
     def teams(self, full_name):
-        return self._get(f"/repos/{full_name}/teams") or []
+        return self._get(f"/repos/{full_name}/teams")
 
     def team_members(self, team_id):
-        return self._get(f"/teams/{team_id}/members") or []
+        return self._get(f"/teams/{team_id}/members")
 
     def branch_protections(self, full_name):
-        return self._get(f"/repos/{full_name}/branch_protections") or []
+        return self._get(f"/repos/{full_name}/branch_protections")
 
 
 def load_allowlist(path):
@@ -5304,6 +5390,25 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 3 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `a422f9d4-bda6-4acc-ac3a-c483b79a45a9`, `eaaf2f0d-3d51-4bda-9dd9-5089b580be1c`
+**Replies:** `dfa861b8-fe2f-4569-8218-107f708dc2f0`, `3bd405d6-39db-4cac-a4ae-8028e35f6c81`
+**Beoordeelde revisie:** 5356 regels, commit `3aee497`, SHA-256 `09c0e32d6e91ae51dddb38fef4675c214d5e72bb60fffe3494297d356964a060`
+**Verdicts:** Codex NO-GO; Claude **GO**
+**Tellingen:** Codex 0 BLOCKER / 1 MAJOR / 0 MINOR; Claude 0 BLOCKER / 0 MAJOR / 0 MINOR
+
+**De weerlegging uit ronde 2 is door beide reviewers geadjudiceerd als terecht.** Beiden lazen de responsketen zelf uit: het endpoint `/repos/{owner}/{repo}/collaborators/{collaborator}/permission` verwijst via `responses.RepoCollaboratorPermission` naar de gelijknamige definitie met `permission` (string), `role_name` en `user`; het booleanschema `Permission` hangt aan `Repository.permissions`. Codex bevestigde expliciet dat zijn eigen ronde-2-fix op de echte respons niets zou hebben gevonden. Alle drie de fixes uit ronde 2 houden stand.
+
+**Claude mat bovendien dat de valide kern zwaarder woog dan het plan zelf stelde.** Live gecontroleerd: `janpeter/scrum4me-server` en `janpeter/max2` hebben allebei **nul collaborators**, terwijl `repo.owner.login` bij beide `janpeter` is. Zonder de toegevoegde eigenaarsregel was `writers` voor de enige twee repo's in scope dus niet onvolledig maar leeg, en had de trustgate nul schrijvers geïnventariseerd. Codex vond de juiste bug met de verkeerde onderbouwing.
+
+Codex verifieerde daarnaast dat de nieuwe tellercontrole discrimineert: een in-memory wijziging van Task 6 van 27 naar 26 wordt als afwijking gedetecteerd.
+
+**MAJOR (codex, geaccepteerd en nagemeten):** de netwerkclient behandelde iedere HTTP 404 als "leeg" in plaats van fail-closed. `_get()` gaf bij een 404 `None` terug, en `collaborators()`, `collaborator_permission()`, `teams()`, `team_members()` en `branch_protections()` zetten dat om naar `[]` respectievelijk `{}`. Zelf nagemeten op de regels 1695 en 1723–1736 van de beoordeelde revisie. Alleen bij het aftasten van de twee workflowmappen is een 404 een geldige uitkomst; bij de overige endpoints betekent het dat de meting onvolledig is, en §7.7 eist daar fail-closed. Een 404 op collaborators of teams zou "geen schrijvers" hebben opgeleverd en de gate groen kunnen maken terwijl de identiteitenset niet is gemeten.
+
+Verwerkt: `_get()` heeft een expliciete `missing_ok`-parameter die standaard `False` is en bij een 404 `Unreadable` opwerpt; alleen `contents()` geeft `missing_ok=True` mee. De vijf andere methoden geven de respons ongewijzigd door zonder `or []`-fallback, en `trust_scope` verheft een `None` van collaborators, teams, teamleden of branch-protection expliciet tot `Unreadable`. Vier tests erbij: drie die per endpoint bewijzen dat een ontbrekende respons in `verdict.unreadable` eindigt en het oordeel rood maakt, en één die de client zelf toetst met een gesimuleerde 404 — `missing_ok=True` geeft `None`, de standaard werpt `Unreadable`. Task 6 gaat van 27 naar 31 tests.
 
 ### Plan-review ronde 2 — 31 augustus 2026
 
