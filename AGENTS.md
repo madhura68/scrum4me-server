@@ -1,4 +1,4 @@
-# CLAUDE.md — scrum4me-server
+# AGENTS.md — scrum4me-server
 
 Host-repo voor de Ubuntu-machine `scrum4me-server` én **canonieke bron** van de gedeelde Forgejo-Runner-poolbundel die op zowel `scrum4me-server` als `max2` draait. Op deze host draaien Forgejo 15.0.2 en Postgres zelf; een reboot hier is daarom ook control-plane-onderhoud voor de runnerpool.
 
