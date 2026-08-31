@@ -141,7 +141,7 @@ Bindend, met per regel de stap die het bewijst:
 - beide waarden staan in de monitoring van §10;
 - secrets komen niet in Git. Vandaag bestaat alleen de eenmalige scan van stap B, en negeren de `.gitignore`-bestanden van beide repo's `credentials/`, `forgejo-token`, `*.token`, `*.key`, `*.pem`, `.env` en `.env.*`, met `.env.example` expliciet toegestaan. Een doorlopende scan is er nog niet: stap B levert `scripts/secret-scan.sh` plus `scripts/install-git-hooks.sh` in de canonieke repo, installeert die als pre-commit hook in beide werkbomen en bewijst met een wegwerptestbestand dat een commit met een tokenpatroon daadwerkelijk wordt geblokkeerd. Pas na dat bewijs mag dit ontwerp beweren dat de scan draait. Het actieve token leeft op de host in `/opt/forgejo-runner/credentials/` en bevindt zich dus nooit binnen een repo-werkboom;
 - deployment gebeurt handmatig of via SSH vanaf `mac`, nooit via een Forgejo Actions-workflow. Jobcontainers draaien in DinD zonder host-Docker-socket en zonder hostpadvolumes (§7.6) en kunnen de hoststack fysiek niet wijzigen. Een deployworkflow op deze runners is per ontwerp onmogelijk en mag niet worden gebouwd;
-- beide repo's staan op dezelfde Forgejo-instance en vallen daarmee binnen de trustgrens van §7.7. Stap A stelt per repo vast óf Actions is ingeschakeld en neemt beide op in `trusted-actions-scope.yml` vóór de eerste trustgate-run; anders alarmeert de eerste dagelijkse controle op deze repo's zelf als zachte trustafwijking.
+- beide repo's staan op dezelfde Forgejo-instance en vallen daarmee binnen de trustgrens van §7.7. Stap A stelt per repo vast óf Actions is ingeschakeld. Alleen een aantoonbaar Actions-enabled repo wordt als trusted scope in `trusted-actions-scope.yml` opgenomen; een repo met Actions uit wordt daar expliciet als bekende niet-Actions-repo vastgelegd, zodat later inschakelen als drift zichtbaar wordt. Beide vastleggingen gebeuren vóór de eerste trustgate-run; anders alarmeert de eerste dagelijkse controle op deze repo's zelf als zachte trustafwijking.
 
 ## 7. Wijzigingen aan de bestaande installatie
 
@@ -349,7 +349,7 @@ Bewijs met een stub/testharnas alle vier readinessuitkomsten afzonderlijk: trans
 
 Draai een representatieve zwaarste workflow en meet iedere vijf seconden het piekgebruik van CPU, geheugen en PID's van runner en DinD plus `MemAvailable` van de host. Bereken daarna de caps volgens §7.8 en stop bij overschrijding van de hostheadroomgate. Leg tijdens diezelfde run de wandkloktijd per job vast als warme-cachebaseline voor §9.
 
-Inventariseer daarnaast van `max2` het aantal vCPU's, het fysieke geheugen, de laagste `MemAvailable` onder eigen productielast en de vrije ruimte plus inodes op `DockerRootDir`, en voer de headroom- en preflightgates uit §7.8 op beide hosts uit. Neem ten slotte de repo's `scrum4me-server` en `max2` uit §6.1 als Actions-enabled repositories op in `trusted-actions-scope.yml` vóór de eerste trustgate-run.
+Inventariseer daarnaast van `max2` het aantal vCPU's, het fysieke geheugen, de laagste `MemAvailable` onder eigen productielast en de vrije ruimte plus inodes op `DockerRootDir`, en voer de headroom- en preflightgates uit §7.8 op beide hosts uit. Stel ten slotte voor de repo's `scrum4me-server` en `max2` uit §6.1 per repo vast óf Actions is ingeschakeld. Neem alleen een aantoonbaar Actions-enabled repo als trusted scope op in `trusted-actions-scope.yml`; leg een repo met Actions uit daar expliciet vast als bekende niet-Actions-repo, zodat later inschakelen als drift zichtbaar wordt. Beide vastleggingen gebeuren vóór de eerste trustgate-run. Neem geen van beide repo's ongetoetst als Actions-enabled aan.
 
 ### Stap B — Gedeelde Runner 12-bundel maken
 
@@ -685,6 +685,18 @@ Wijziging 2 tot en met 6 hielden stand: headroomgate op beide hosts, Python-cont
 **MAJOR, geaccepteerd en nagemeten tegen de boom:** §6.1 verwarde doelstructuur met de as-built repo's. De tabel beschreef in tegenwoordige tijd een `forgejo-runner/`, `hosts/scrum4me-server/`, `hosts/max2/` en `evidence/` die op respectievelijk commit `d718f6a` en `922e84c` niet bestaan, en de bullets claimden een draaiende pre-commit secret-scan plus een `.gitignore`-regel `/opt/forgejo-runner/credentials/`. Zelf nagemeten met `git ls-tree -r --name-only HEAD` en `ls .git/hooks`: beide repo's bevatten alleen `README.md`, `CLAUDE.md`, `.gitignore` en in `scrum4me-server` de documenten; in geen van beide staat een geïnstalleerde hook, alleen `pre-commit.sample`; de `.gitignore` negeert `credentials/` en niet het genoemde hostpad, dat in een repo-`.gitignore` ook niet thuishoort.
 
 Verwerkt in revisie 12b: §6.1 is nu expliciet een doelstructuur met een kolom "bestaat nu" en de stap waarin ieder onderdeel ontstaat. De doorlopende secret-scan is een stap-B-gate geworden met een verplicht blokkeringsbewijs, en het ontwerp mag pas ná dat bewijs beweren dat de scan draait. De niet-geverifieerde bewering dat beide repo's Actions-enabled zijn is vervangen door een stap-A-vaststelling.
+
+### Delta-review R12 — ronde 2 van maximaal 5 — 31 augustus 2026
+
+**Reviewer:** `mac:codex`
+**Request:** `db6766ed-889e-4161-b86c-3190c14f48cd` — **Reply:** `6a6c8efa-a3b5-47d1-9c36-f794acc8f7a0`
+**Beoordeelde revisie:** 695 regels, commit `4a4df16`, SHA-256 `cf3a683e982dfac8fbb80b91ddd6b9f403cabb520ff47d8d376005ef357fcf22`
+**Verdict:** NO-GO — 0 BLOCKER / 1 MAJOR / 0 MINOR
+**Oordeel over de ronde-1-MAJOR:** partially held — de verwarring tussen doelstructuur en as-built boom en de niet-bestaande hookclaim zijn gesloten; de bijbehorende Actions-aanname niet.
+
+**MAJOR, geaccepteerd en nagemeten:** §6.1 stelde na de ronde-1-fix dat stap A per repo vaststelt óf Actions is ingeschakeld, maar stap A zelf droeg de oude aanname nog: "Neem ten slotte de repo's `scrum4me-server` en `max2` uit §6.1 als Actions-enabled repositories op in `trusted-actions-scope.yml`." Zelf nagemeten op regel 144 tegenover regel 352 van commit `4a4df16`: de twee passages spraken elkaar tegen. Een implementator die stap A letterlijk volgt legt beide repo's als Actions-enabled vast zonder bewijs, wat juist het trustbewijs verzwakt dat global runner-activatie gate't. Dit is de klassieke restfout: de bewering was op één plek gecorrigeerd en op de andere blijven staan.
+
+Verwerkt in revisie 12c: §6.1 en stap A gebruiken nu dezelfde regel. Stap A stelt per repo vast óf Actions is ingeschakeld; alleen een aantoonbaar Actions-enabled repo komt als trusted scope in `trusted-actions-scope.yml`, en een repo met Actions uit wordt daar expliciet als bekende niet-Actions-repo vastgelegd zodat later inschakelen als drift zichtbaar wordt. Stap A verbiedt expliciet het ongetoetst aannemen van Actions-enabled.
 
 ## 14. Acceptatie van dit ontwerp
 
