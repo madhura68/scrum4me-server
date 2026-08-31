@@ -95,6 +95,8 @@ Alles onder `forgejo-runner/` is de gedeelde bundel uit §6 en wordt byte-identi
 | `forgejo-runner/scripts/trust_scope.py` | Inventarisatie- en classificatielogica van de trustscope, zonder netwerk-IO | 6 |
 | `forgejo-runner/scripts/trust_scope_cli.py` | Netwerkclient en CLI rond `trust_scope.py`; vertaalt het oordeel naar exitcodes | 6 |
 | `forgejo-runner/trusted-actions-scope.yml` | De goedgekeurde allowlist die de gate toetst | 6 |
+| `forgejo-runner/scripts/pick_heaviest_workflow.py` | Kiest de zwaarste representatieve workflow uit historische runs; IO-vrij | 7 |
+| `forgejo-runner/scripts/pick-heaviest-workflow.py` | CLI eromheen die de runs ophaalt via de Forgejo-API | 7 |
 | `forgejo-runner/scripts/measure-workload.sh` | Meet iedere vijf seconden CPU, geheugen, PID's en `MemAvailable` tijdens de zwaarste workflow; legt jobduur vast | 7 |
 | `forgejo-runner/scripts/capture-host-facts.sh` | vCPU, geheugen, laagste `MemAvailable`, vrije ruimte en inodes op `DockerRootDir` | 8 |
 | `forgejo-runner/scripts/compute_caps.py` | Berekent de caps volgens §7.8 uit de meetreeks | 9 |
@@ -105,10 +107,12 @@ Alles onder `forgejo-runner/` is de gedeelde bundel uit §6 en wordt byte-identi
 | `forgejo-runner/.env.example` | Uitsluitend imagepins en niet-geheime waarden | 16 |
 | `forgejo-runner/labels.txt` | Canonieke geordende labellijst, digest-gepind | 16 |
 | `forgejo-runner/allowed-job-images.txt` | Registry-gevalideerde digests die de scrub mag behouden | 16 |
+| `forgejo-runner/scripts/resolve-digests.sh` | Zet een mutable tag om in een registry-gevalideerde digest | 16 |
 | `forgejo-runner/runner-config.policy.yml` | Capacity, timeouts en DinD-policy | 17 |
 | `forgejo-runner/scripts/render-config.sh` | Maakt de hostconfig uit basisconfig, policy, UUID en labels | 17 |
 | `forgejo-runner/scripts/scrub-dind.sh` | Fenced cleanup binnen uitsluitend de eigen DinD | 18 |
 | `forgejo-runner/forgejo-runner-cycle.service` | De systemd-unit die de controller als enige eigenaar van de runnerlevenscyclus draait | 19 |
+| `forgejo-runner/scripts/bundle-hash.sh` | Canonieke hash over de bundelbestanden; de mechanische invulling van "byte-identiek" | 20 |
 | `forgejo-runner/scripts/verify-stack.sh` | Health, poorten, config, labels, isolatie, `BUNDLE_COMMIT` en bundelhash | 20 |
 | `forgejo-runner/scripts/secret-scan.sh` | Scant staged inhoud op tokenpatronen en secretbestandsnamen | 21 |
 | `forgejo-runner/scripts/install-git-hooks.sh` | Installeert de scan als pre-commit hook in een werkboom | 21 |
@@ -607,13 +611,34 @@ awk -F'\t' 'NR>1 {print $4, "owner_id="$7, "repo_id="$8}' \
 
 Expected: het bestaande runnerrecord heeft `owner_id=0` en `repo_id=0`. Wijkt dat af, dan klopt §7.4 niet en is dat een bevinding vóór stap B.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Stel `T_requeue` vast en leg het bewijs vast**
+
+§8 stap A eist dat de effectieve Actions assignment- of requeue-timeout als `T_requeue` wordt vastgelegd, omdat die uitkomst de wachttak in §7.9 aan- of uitzet. Deze waarde komt uit de effectieve Forgejo-configuratie en de bijbehorende versiebron, niet uit een schatting.
+
+```bash
+# 1. De effectieve configuratie van de draaiende instance.
+ssh janpeter@scrum4me-srv 'docker exec scrum4me-forgejo \
+  cat /data/gitea/conf/app.ini 2>/dev/null || cat /etc/gitea/app.ini' \
+  | grep -iA 20 '^\[actions\]' | tee /tmp/actions-config.txt
+
+# 2. De defaults van deze exacte versie, uit de container zelf.
+ssh janpeter@scrum4me-srv 'docker exec scrum4me-forgejo forgejo --version'
+```
+
+Schrijf `docs/forgejo-runner-pool/evidence/stap-a/t-requeue.md` met: het gevonden configblok, de versie waartegen je het hebt gelezen, de afgeleide waarde van `T_requeue` in seconden, en het commando waarmee je het hebt vastgesteld.
+
+Kun je `T_requeue` **niet** aantoonbaar vaststellen, schrijf dat dan expliciet op. Dat is een geldige uitkomst: §7.9 schakelt de wachttak dan uit en iedere ambigue toewijzing gaat via gecontroleerde cancel en redispatch. Raad geen waarde — een verzonnen `T_requeue` maakt de wachttak juist gevaarlijk.
+
+Let op: `docker exec` is hier een leesactie, maar staat bewust niet in de read-only guard van Task 1. Voer hem daarom handmatig uit zoals hierboven en niet via `ro_docker`; de guard blijft zo scherp voor de geautomatiseerde paden.
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add forgejo-runner/scripts/capture-forgejo-records.sh \
         forgejo-runner/tests/test_capture_forgejo_records.bats \
-        docs/forgejo-runner-pool/evidence/stap-a/forgejo/
-git commit -m "feat(stap-a): inventarisatie van Forgejo-runnerrecords via de admin-API"
+        docs/forgejo-runner-pool/evidence/stap-a/forgejo/ \
+        docs/forgejo-runner-pool/evidence/stap-a/t-requeue.md
+git commit -m "feat(stap-a): inventarisatie van Forgejo-runnerrecords en T_requeue"
 ```
 
 ---
@@ -3324,3 +3349,1481 @@ git commit -m "feat(controller): maintenance-record met harde eindtijd en startu
 ```
 
 ---
+
+### Task 15: Joblevenscyclus, drain en assignment-nulbewijs
+
+De negen stappen van §7.9 en het FetchTask-ambiguïteitsbewijs. Dit is het deel dat bepaalt dat er nooit een tweede job wordt aangenomen voordat de scrub schoon is bewezen.
+
+Het exitcodecontract is brongebonden: `runJob` geeft het resultaat van de single-task-poller terug, die bij een ontvangen taak `runner.Run(...)` aanroept zonder het jobresultaat als procesfout terug te geven en daarna `nil` retourneert. Een normaal afgeronde **groene én rode** workflow levert daarom procesexit `0`; de terminale Forgejo-jobstatus bepaalt het jobresultaat. Non-zero duidt op config-, initialisatie-, poller- of runtimefalen. Task 17 valideert dit contract tegen de echte image; stap E bewijst het met een bewust groene en een bewust rode testjob.
+
+**Files:**
+- Modify: `forgejo-runner/scripts/forgejo_runner_cycle.py`
+- Test: `forgejo-runner/tests/test_cycle_lifecycle.py`
+
+**Interfaces:**
+- Consumes: `Controller` uit Task 13 en 14
+- Produces:
+  - `assignment_nulbewijs(snapshots) -> bool` — waar bij twee opeenvolgende snapshots, minimaal `NULBEWIJS_INTERVAL_SECONDS` uit elkaar, zonder toegewezen of lopende job
+  - `Controller.drain(now)` — zet `DRAINING` en blokkeert een volgende cyclus
+  - `Controller.cycle_stappen()` — de bindende volgorde als lijst met stapnamen, zodat de volgorde testbaar is en niet alleen in proza staat
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```python
+# forgejo-runner/tests/test_cycle_lifecycle.py
+import unittest, sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+import forgejo_runner_cycle as c
+
+S = c.State
+
+
+class NepKlok:
+    def __init__(self):
+        self.mono, self.wall = 0.0, 1000.0
+
+    def __call__(self):
+        return (self.mono, self.wall)
+
+    def tik(self, seconden):
+        self.mono += seconden
+        self.wall += seconden
+
+
+def snap(t, assigned=0, running=0):
+    return {"mono": t, "assigned": assigned, "running": running}
+
+
+class TestNulbewijs(unittest.TestCase):
+    def test_twee_lege_snapshots_tien_seconden_uiteen_bewijzen_nul(self):
+        self.assertTrue(c.assignment_nulbewijs([snap(0.0), snap(10.0)]))
+
+    def test_te_kort_uiteen_bewijst_niets(self):
+        self.assertFalse(c.assignment_nulbewijs([snap(0.0), snap(5.0)]))
+
+    def test_een_snapshot_bewijst_niets(self):
+        self.assertFalse(c.assignment_nulbewijs([snap(0.0)]))
+
+    def test_een_toegewezen_job_breekt_het_bewijs(self):
+        self.assertFalse(c.assignment_nulbewijs([snap(0.0), snap(10.0, assigned=1)]))
+
+    def test_een_lopende_job_breekt_het_bewijs(self):
+        self.assertFalse(c.assignment_nulbewijs([snap(0.0, running=1), snap(10.0)]))
+
+    def test_lege_lijst_bewijst_niets(self):
+        self.assertFalse(c.assignment_nulbewijs([]))
+
+
+class TestCyclusvolgorde(unittest.TestCase):
+    def test_scrub_komt_voor_een_nieuwe_runnerstart(self):
+        stappen = c.Controller.cycle_stappen()
+        self.assertLess(stappen.index("scrub"), stappen.index("start_runner_volgende_cyclus"))
+
+    def test_bewijs_schoon_komt_voor_een_nieuwe_runnerstart(self):
+        stappen = c.Controller.cycle_stappen()
+        self.assertLess(stappen.index("bewijs_schoon"),
+                        stappen.index("start_runner_volgende_cyclus"))
+
+    def test_trustgate_is_de_eerste_stap(self):
+        self.assertEqual(c.Controller.cycle_stappen()[0], "trustgate")
+
+    def test_bewijs_geen_runnerproces_komt_voor_de_scrub(self):
+        stappen = c.Controller.cycle_stappen()
+        self.assertLess(stappen.index("bewijs_geen_runnerproces"), stappen.index("scrub"))
+
+
+class TestDrain(unittest.TestCase):
+    def setUp(self):
+        self.klok = NepKlok()
+        self.loop = c.EventLoop(self.klok)
+        self.ctrl = c.Controller(self.loop)
+        self.ctrl.gates_groen = True
+
+    def test_drain_vanuit_waiting_gaat_naar_draining(self):
+        self.ctrl.state = S.WAITING
+        self.ctrl.drain(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.DRAINING)
+
+    def test_drain_blokkeert_een_volgende_child(self):
+        self.ctrl.state = S.WAITING
+        self.ctrl.drain(self.klok.mono)
+        self.assertFalse(self.ctrl.mag_child_starten)
+
+    def test_drain_tijdens_running_breekt_de_job_niet_af(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.drain(self.klok.mono)
+        self.assertEqual(self.ctrl.state, S.RUNNING)
+        self.assertTrue(self.ctrl.drain_gevraagd)
+
+    def test_na_drain_leidt_een_groene_scrub_niet_terug_naar_waiting(self):
+        self.ctrl.state = S.RUNNING
+        self.ctrl.drain(self.klok.mono)
+        self.ctrl.on_event(self.loop.submit("child_exit", {"code": 0}))
+        self.ctrl.on_event(self.loop.submit("scrub_done", {"ok": True}))
+        self.assertEqual(self.ctrl.state, S.DRAINING)
+
+
+class TestOpNaLatchJob(unittest.TestCase):
+    def test_job_na_de_fence_leidt_tot_cancel_en_scrub(self):
+        klok = NepKlok()
+        loop = c.EventLoop(klok)
+        ctrl = c.Controller(loop)
+        ctrl.gates_groen = True
+        ctrl.state = S.WAITING
+        ctrl.on_event(loop.submit("readiness", {"klasse": c.ReadinessClass.SOURCE_WAIT}))
+        job = loop.submit("job_accepted", {})
+        ctrl.on_event(job)
+        self.assertEqual(ctrl.latch_verdict(job), "op-of-na")
+        self.assertIn("cancel_en_redispatch", [e.kind for e in loop.events])
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_lifecycle.py' -v`
+Expected: FAIL — `assignment_nulbewijs`, `cycle_stappen` en `drain` bestaan nog niet.
+
+- [ ] **Step 3: Breid de module uit**
+
+```python
+NULBEWIJS_INTERVAL_SECONDS = 10.0
+
+
+def assignment_nulbewijs(snapshots):
+    """Sluit het FetchTask-ambiguïteitsvenster (7.9).
+
+    Vereist twee opeenvolgende snapshots, minimaal NULBEWIJS_INTERVAL_SECONDS
+    uit elkaar, waarin geen enkele job aan deze runner is toegewezen of loopt.
+    Minder bewijs is geen bewijs: de functie is fail-closed.
+    """
+    if len(snapshots) < 2:
+        return False
+    vorige, laatste = snapshots[-2], snapshots[-1]
+    if (laatste["mono"] - vorige["mono"]) < NULBEWIJS_INTERVAL_SECONDS:
+        return False
+    return all(s.get("assigned", 0) == 0 and s.get("running", 0) == 0
+               for s in (vorige, laatste))
+```
+
+Voeg aan `Controller` toe:
+
+```python
+    @staticmethod
+    def cycle_stappen():
+        """De bindende cyclus uit 7.9, als lijst zodat de volgorde testbaar is."""
+        return [
+            "trustgate",
+            "controleer_dind_health",
+            "controleer_toegestane_images",
+            "start_runner_one_job_wait",
+            "wacht_op_child_exit",
+            "bewijs_geen_runnerproces",
+            "scrub",
+            "bewijs_schoon",
+            "start_runner_volgende_cyclus",
+        ]
+
+    def drain(self, now):
+        """Geplande stop. Vanuit WAITING direct stoppen; vanuit RUNNING de job
+        terminaal laten worden en daarna geen nieuwe cyclus starten (7.9)."""
+        self.drain_gevraagd = True
+        if self.state is State.WAITING:
+            self.state = State.DRAINING
+```
+
+Voeg aan `Controller.__init__` toe: `self.drain_gevraagd = False`.
+
+Pas `_on_job_accepted` aan zodat een op/na-latch job fail-closed wordt afgehandeld:
+
+```python
+    def _on_job_accepted(self, event):
+        if self.fence is not None and self.latch_verdict(event) == "op-of-na":
+            # Fail-closed: stoppen, cancel of requeue, daarna scrub en nulbewijs.
+            self.loop.submit("cancel_en_redispatch", {"event_seq": event.event_seq})
+            self.state = State.DRAINING
+            return
+        if self.state is State.WAITING:
+            self.state = State.RUNNING
+```
+
+Pas `_on_scrub_done` aan zodat een gevraagde drain niet heropent:
+
+```python
+    def _on_scrub_done(self, event):
+        if not event.payload.get("ok"):
+            self.state = State.QUARANTINED
+            return
+        if self._laatste_exitcode not in (0, None):
+            self.state = State.QUARANTINED
+            return
+        if self.drain_gevraagd:
+            self.state = State.DRAINING
+            return
+        self.state = State.WAITING if self.gates_groen else State.SOURCE_WAIT
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_lifecycle.py' -v`
+Expected: PASS — 15 tests, 0 failures.
+
+- [ ] **Step 5: Draai de volledige controllersuite — dit is de stap-A-harnasgate**
+
+Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_cycle_*.py' -v`
+Expected: PASS, alle tests uit Task 11 tot en met 15 samen. §7.9 maakt deze suite de stap-A-gate: zolang hij niet groen is, is stap A niet afgerond.
+
+- [ ] **Step 6: Leg de harnasdekking vast tegenover §8 stap A**
+
+Schrijf `docs/forgejo-runner-pool/evidence/stap-a/testharnas-dekking.md` met een tabel die iedere eis uit stap A koppelt aan de test die haar bewijst:
+
+| Eis uit §8 stap A | Test |
+|---|---|
+| transport/5xx → `SOURCE_WAIT` | `test_cycle_readiness.TestVierwegclassificatie.test_transportfout_is_source_wait`, `…test_5xx_is_source_wait` |
+| authprobe 401/403 → `CREDENTIAL_ERROR` | `…test_401_en_403_op_de_authprobe_is_credential_error` |
+| overige status/schemafout → `QUARANTINED` | `…test_overige_status_is_protocol`, `…test_2xx_met_verkeerd_schema_is_protocol` |
+| geldige 2xx → inhoudelijke trustgate | `…test_2xx_met_geldig_schema_is_ready` plus `test_cycle_eventloop.…test_rode_gates_houden_de_controller_uit_waiting` |
+| eerste afwijking zet alleen informatief event plus fence | `test_cycle_fence.TestFenceZetten.test_eerste_afwijking_logt_fence_set_en_alarmeert_niet` |
+| eerste afwijking stopt een `WAITING` child | `…test_eerste_afwijking_haalt_waiting_direct_uit_de_lucht` |
+| twee gelijke afwijkingen bevestigen | `test_cycle_readiness.TestBevestiging.test_twee_gelijke_waarnemingen_bevestigen` |
+| klassesprong herstart bevestiging | `…test_klassesprong_herstart_de_bevestiging` |
+| automatisch herstel zonder directe runnerstart | `test_cycle_fence.TestFenceWissen.…` (drie tests) |
+| alleen `event_seq < fence_seq` is vóór-latch | `test_cycle_fence.TestLatchclassificatie.…` (vijf tests) |
+| remote/Forgejo-tijden beslissen nooit | `…test_late_wandklok_verandert_het_oordeel_niet`, `test_cycle_eventloop.…test_event_seq_loopt_op_ook_als_de_wandklok_terugspringt` |
+| unknown/late gaat naar cancel/scrub/redispatch | `test_cycle_lifecycle.TestOpNaLatchJob.…` |
+| blijvende klassesprong bereikt de deadline | `test_cycle_fence.TestDeadlinewatchdog.test_zwaarste_klasse_wint_bij_een_blijvende_klassesprong` |
+| blijvende valid/error-flap bereikt de deadline | `…test_valid_error_flap_bereikt_alsnog_de_deadline` |
+| deadline kiest de zwaarste klasse en alarmeert | `…test_deadline_commit_gaat_naar_de_zwaarste_klasse`, `…test_deadline_commit_alarmeert` |
+| gemengde startupklassen committen alleen `SOURCE_WAIT` | `test_cycle_maintenance.TestVensterGedrag.test_gemengde_startupklassen_committen_alleen_source_wait` |
+| na algemene readiness gelden 401/protocol normaal | `…test_na_tweemaal_geldige_algemene_readiness_vervalt_de_uitzondering` |
+| na de harde eindtijd bestaat geen uitzondering | `…test_na_de_harde_eindtijd_geldt_de_normale_regel` |
+| assignment-nulbewijs vereist twee snapshots | `test_cycle_lifecycle.TestNulbewijs.…` (zes tests) |
+
+Ontbreekt er een rij, dan is stap A niet gedekt en moet de test er alsnog komen.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add forgejo-runner/scripts/forgejo_runner_cycle.py \
+        forgejo-runner/tests/test_cycle_lifecycle.py \
+        docs/forgejo-runner-pool/evidence/stap-a/testharnas-dekking.md
+git commit -m "feat(controller): joblevenscyclus, drain en assignment-nulbewijs"
+```
+
+---
+
+## Stap B — de gedeelde bundel
+
+Vanaf hier wordt de bundel gebouwd die byte-identiek naar beide hosts gaat. Alles wordt in deze repo gemaakt en gevalideerd; er wordt in stap B nog niets uitgerold.
+
+### Task 16: Compose, imagepins en het labelcontract
+
+§4 eist dat runner- en DinD-image met tag **én** registry-gevalideerde manifestdigest worden vastgelegd, en dat de labellijst canoniek en digest-gepind is. De meting van 31 augustus liet zien dat de live installatie mutable tags gebruikt (`code.forgejo.org/forgejo/runner:12` en `docker:dind`); die worden hier vervangen door digests uit Task 2.
+
+**Files:**
+- Create: `forgejo-runner/compose.yaml`
+- Create: `forgejo-runner/.env.example`
+- Create: `forgejo-runner/labels.txt`
+- Create: `forgejo-runner/allowed-job-images.txt`
+- Create: `forgejo-runner/scripts/resolve-digests.sh`
+- Test: `forgejo-runner/tests/test_compose_contract.bats`
+
+**Interfaces:**
+- Consumes: `images.json` en `runner-registration.json` uit Task 2
+- Produces: `.env` met `RUNNER_IMAGE`, `DIND_IMAGE` en `JOB_IMAGE`, elk als `repo@sha256:…`; `labels.txt` met één regel per label in de vorm `naam:docker://image@sha256:…`; `allowed-job-images.txt` met per regel een digest en de grootte in bytes, gelezen door `preflight.sh` uit Task 10
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_compose_contract.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  COMPOSE="$REPO_ROOT/forgejo-runner/compose.yaml"
+  LABELS="$REPO_ROOT/forgejo-runner/labels.txt"
+  IMAGES="$REPO_ROOT/forgejo-runner/allowed-job-images.txt"
+}
+
+@test "dind is privileged en de runner niet" {
+  run python3 -c "
+import sys
+tekst = open('$COMPOSE').read()
+runner = tekst.split('runner:')[1].split('dind:')[0]
+dind = tekst.split('dind:')[1]
+sys.exit(0 if ('privileged: true' in dind and 'privileged' not in runner) else 1)
+"
+  [ "$status" -eq 0 ]
+}
+
+@test "er is geen host-docker-socket gemount" {
+  run grep -c '/var/run/docker.sock' "$COMPOSE"
+  [ "$output" = "0" ]
+}
+
+@test "er is geen poort gepubliceerd" {
+  run grep -cE '^\s+ports:' "$COMPOSE"
+  [ "$output" = "0" ]
+}
+
+@test "er is geen host-pid, host-ipc of host-netwerkmode" {
+  run grep -cE 'pid: *host|ipc: *host|network_mode: *host' "$COMPOSE"
+  [ "$output" = "0" ]
+}
+
+@test "runner heeft restart no en dind restart always" {
+  grep -q 'restart: "no"' "$COMPOSE"
+  grep -q 'restart: always' "$COMPOSE"
+}
+
+@test "het dind-volume heeft de expliciete naam" {
+  grep -q 'name: forgejo-runner-dind-data' "$COMPOSE"
+}
+
+@test "de runner krijgt het juiste docker-endpoint" {
+  grep -q 'DOCKER_HOST=tcp://dind:2375' "$COMPOSE"
+}
+
+@test "images staan als digest in het compose-bestand, niet als kale tag" {
+  run grep -cE 'image: *\$\{(RUNNER|DIND)_IMAGE\}' "$COMPOSE"
+  [ "$output" = "2" ]
+}
+
+@test "labels.txt is niet leeg en elke regel draagt een digest" {
+  [ -s "$LABELS" ]
+  while read -r regel; do
+    [[ "$regel" == *"@sha256:"* ]] || { echo "geen digest: $regel"; false; }
+  done < "$LABELS"
+}
+
+@test "allowed-job-images.txt bevat alleen digests met een grootte" {
+  [ -s "$IMAGES" ]
+  while read -r digest grootte; do
+    [[ "$digest" == *"@sha256:"* ]] || { echo "geen digest: $digest"; false; }
+    [[ "$grootte" =~ ^[0-9]+$ ]] || { echo "geen grootte: $grootte"; false; }
+  done < "$IMAGES"
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_compose_contract.bats`
+Expected: FAIL — de bestanden bestaan nog niet.
+
+- [ ] **Step 3: Resolveer de digests vanaf de registry**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/resolve-digests.sh
+# Zet een mutable tag om in een registry-gevalideerde digest.
+# Een lokale image-ID telt niet: 4 van het migratieontwerp eist dat de digest
+# vanaf de registry bevestigd is.
+set -euo pipefail
+
+for tag in "$@"; do
+  digest="$(docker manifest inspect --verbose "$tag" 2>/dev/null \
+    | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, list):
+    data = data[0]
+print(data["Descriptor"]["digest"])
+')"
+  [ -n "$digest" ] || { printf 'kon geen digest resolven voor %s\n' "$tag" >&2 ; exit 1 ; }
+  repo="${tag%%:*}"
+  printf '%s\t%s@%s\n' "$tag" "$repo" "$digest"
+done
+```
+
+```bash
+bash forgejo-runner/scripts/resolve-digests.sh \
+  code.forgejo.org/forgejo/runner:12 \
+  docker:dind \
+  catthehacker/ubuntu:act-latest \
+  | tee docs/forgejo-runner-pool/evidence/stap-a/resolved-digests.tsv
+```
+
+Expected: drie regels met elk een `sha256:`-digest. Vergelijk de runner- en DinD-digest met de `RepoDigests` uit `images.json` van Task 2: **wijken ze af, dan is de tag sinds de inventarisatie verschoven** en moet je de digest uit `images.json` gebruiken, want dat is wat er aantoonbaar draait.
+
+- [ ] **Step 4: Schrijf `.env.example`, `labels.txt` en `allowed-job-images.txt`**
+
+```bash
+# forgejo-runner/.env.example
+# Uitsluitend imagepins en niet-geheime waarden. Nooit tokens of UUID's.
+# Vul de digests uit scripts/resolve-digests.sh, gekruist met images.json uit stap A.
+RUNNER_IMAGE=code.forgejo.org/forgejo/runner@sha256:VUL_IN
+DIND_IMAGE=docker@sha256:VUL_IN
+JOB_IMAGE=catthehacker/ubuntu@sha256:VUL_IN
+
+# Resourcecaps uit caps.md (7.8). Identiek op beide hosts.
+RUNNER_CPUS=VUL_IN
+RUNNER_MEM=VUL_IN
+RUNNER_PIDS=VUL_IN
+DIND_CPUS=VUL_IN
+DIND_MEM=VUL_IN
+DIND_PIDS=VUL_IN
+```
+
+```text
+# forgejo-runner/labels.txt
+# Canonieke geordende labellijst. De labelnaam blijft gelijk aan de live
+# installatie; de imageverwijzing is digest-gepind (7.4).
+ubuntu-latest:docker://catthehacker/ubuntu@sha256:VUL_IN
+```
+
+```text
+# forgejo-runner/allowed-job-images.txt
+# Digests die de scrub mag behouden, met hun grootte in bytes.
+# preflight.sh telt deze groottes op bij de vereiste vrije schijfruimte.
+catthehacker/ubuntu@sha256:VUL_IN	VUL_IN
+```
+
+De labelnaam en de imageverwijzing komen uit `runner-registration.json` van Task 2 — het legacy `.runner`-veld `labels` is de canonieke bron, niet het Forgejo-record, dat alleen kale labelnamen toont. Vergelijk met een YAML- of JSON-parser en een canonieke JSON-weergave, nooit met een inspringingsgevoelige `awk`-extractie.
+
+- [ ] **Step 5: Schrijf `compose.yaml`**
+
+```yaml
+# forgejo-runner/compose.yaml
+# Gedeelde runner- en DinD-stack. Byte-identiek op beide hosts.
+# De runnerservice staat onder het profiel "cycle": `docker compose up -d` start
+# uitsluitend DinD, en alleen de cyclecontroller maakt per job een runner aan.
+
+services:
+  dind:
+    image: ${DIND_IMAGE}
+    restart: always
+    privileged: true          # bewuste keuze, 7.6; alleen hier, nooit op jobcontainers
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--tls=false"]
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    networks:
+      - runner-control
+    volumes:
+      - dind-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "-H", "tcp://127.0.0.1:2375", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    cpus: ${DIND_CPUS}
+    mem_limit: ${DIND_MEM}
+    pids_limit: ${DIND_PIDS}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  runner:
+    image: ${RUNNER_IMAGE}
+    profiles: ["cycle"]
+    restart: "no"             # de controller is de enige eigenaar van de levenscyclus
+    depends_on:
+      dind:
+        condition: service_healthy
+    environment:
+      - DOCKER_HOST=tcp://dind:2375
+    networks:
+      - runner-control
+    volumes:
+      - ./runner-config.yml:/etc/forgejo-runner/config.yml:ro
+      - /opt/forgejo-runner/credentials/forgejo-token:/run/forgejo-runner-credentials/forgejo-token:ro
+    cpus: ${RUNNER_CPUS}
+    mem_limit: ${RUNNER_MEM}
+    pids_limit: ${RUNNER_PIDS}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  runner-control:
+    driver: bridge
+    internal: false           # DinD moet images kunnen pullen; geen hostpoorten
+
+volumes:
+  dind-data:
+    name: forgejo-runner-dind-data
+```
+
+- [ ] **Step 6: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_compose_contract.bats`
+Expected: PASS — 10 tests, 0 failures. De twee laatste tests falen zolang `VUL_IN` niet is vervangen; vul eerst de echte digests in.
+
+- [ ] **Step 7: Valideer Compose statisch**
+
+```bash
+cd forgejo-runner && cp .env.example .env && docker compose config >/dev/null && echo "compose config OK"
+```
+
+Expected: `compose config OK`. Faalt dit, dan klopt de syntax of ontbreekt een variabele.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add forgejo-runner/compose.yaml forgejo-runner/.env.example forgejo-runner/labels.txt \
+        forgejo-runner/allowed-job-images.txt forgejo-runner/scripts/resolve-digests.sh \
+        forgejo-runner/tests/test_compose_contract.bats \
+        docs/forgejo-runner-pool/evidence/stap-a/resolved-digests.tsv
+git commit -m "feat(stap-b): compose, digest-gepinde images en canoniek labelcontract"
+```
+
+---
+
+### Task 17: Runnerconfig, policy en validatie tegen de echte image
+
+§4 eist exact één `server.connections`-verbinding, `capacity: 1` en een absoluut `token_url`. §7.5 legt de configknoppen vast. Deze taak valideert dat tegen de **echte** Runner 12.10.1-image in plaats van tegen documentatie.
+
+**Files:**
+- Create: `forgejo-runner/runner-config.policy.yml`
+- Create: `forgejo-runner/scripts/render-config.sh`
+- Test: `forgejo-runner/tests/test_render_config.bats`
+
+**Interfaces:**
+- Consumes: `labels.txt` uit Task 16
+- Produces: `runner-config.yml` per host, met de UUID van die host en zonder enige tokenwaarde
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_render_config.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  SCRIPT="$REPO_ROOT/forgejo-runner/scripts/render-config.sh"
+  POLICY="$REPO_ROOT/forgejo-runner/runner-config.policy.yml"
+  LABELS="$BATS_TEST_TMPDIR/labels.txt"
+  echo 'ubuntu-latest:docker://catthehacker/ubuntu@sha256:abc' > "$LABELS"
+  OUT="$BATS_TEST_TMPDIR/runner-config.yml"
+}
+
+@test "rendert exact een connection" {
+  bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 --labels "$LABELS" \
+    --policy "$POLICY" --out "$OUT"
+  run python3 -c "
+import re
+tekst = open('$OUT').read()
+print(len(re.findall(r'^\s+forgejo:', tekst, re.M)))
+"
+  [ "$output" = "1" ]
+}
+
+@test "gebruikt het absolute token_url en geen placeholder" {
+  bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 --labels "$LABELS" \
+    --policy "$POLICY" --out "$OUT"
+  grep -q 'token_url: file:/run/forgejo-runner-credentials/forgejo-token' "$OUT"
+  run grep -c 'CREDENTIALS_DIRECTORY' "$OUT"
+  [ "$output" = "0" ]
+}
+
+@test "bevat geen tokenwaarde" {
+  bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 --labels "$LABELS" \
+    --policy "$POLICY" --out "$OUT"
+  run grep -cE '^\s+token:' "$OUT"
+  [ "$output" = "0" ]
+}
+
+@test "zet capacity op 1 en docker_host op streepje" {
+  bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 --labels "$LABELS" \
+    --policy "$POLICY" --out "$OUT"
+  grep -qE 'capacity: *1' "$OUT"
+  grep -qE 'docker_host: *"-"' "$OUT"
+}
+
+@test "neemt de labels uit labels.txt over" {
+  bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 --labels "$LABELS" \
+    --policy "$POLICY" --out "$OUT"
+  grep -q 'catthehacker/ubuntu@sha256:abc' "$OUT"
+}
+
+@test "weigert een lege labellijst" {
+  : > "$BATS_TEST_TMPDIR/leeg.txt"
+  run bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 \
+    --labels "$BATS_TEST_TMPDIR/leeg.txt" --policy "$POLICY" --out "$OUT"
+  [ "$status" -ne 0 ]
+}
+
+@test "weigert een label zonder digest" {
+  echo 'ubuntu-latest:docker://catthehacker/ubuntu:act-latest' > "$BATS_TEST_TMPDIR/tag.txt"
+  run bash "$SCRIPT" --uuid 11111111-2222-3333-4444-555555555555 \
+    --labels "$BATS_TEST_TMPDIR/tag.txt" --policy "$POLICY" --out "$OUT"
+  [ "$status" -ne 0 ]
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_render_config.bats`
+Expected: FAIL — script en policy bestaan nog niet.
+
+- [ ] **Step 3: Schrijf de policy**
+
+```yaml
+# forgejo-runner/runner-config.policy.yml
+# Gedeelde policy: geldt byte-identiek op beide hosts. Bevat nooit een UUID,
+# token of hostnaam; render-config.sh voegt het hostspecifieke deel toe.
+log:
+  level: info
+
+runner:
+  capacity: 1                 # 4: een job tegelijk per DinD
+  timeout: 3h
+  shutdown_timeout: 3m
+  fetch_timeout: 5s
+  fetch_interval: 2s
+  envs:
+    DOCKER_HOST: tcp://dind.internal:2375   # 7.5, job- en stepcontainers
+
+cache:
+  enabled: false              # 7.9: geen state tussen jobs
+
+container:
+  network: ""
+  privileged: false           # jobcontainers nooit privileged
+  docker_host: "-"            # 7.5: gebruik DOCKER_HOST, mount geen socket
+  valid_volumes: []
+  options: --add-host=dind.internal:host-gateway
+
+host:
+  workdir_parent: /tmp/forgejo-runner
+```
+
+- [ ] **Step 4: Schrijf de renderer**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/render-config.sh
+# Bouwt de hostconfig uit de gedeelde policy, het canonieke labelblok en de
+# hostspecifieke UUID. Schrijft nooit een tokenwaarde: 6 legt het token in een
+# apart bestand dat via token_url wordt gelezen.
+set -euo pipefail
+
+UUID="" ; LABELS="" ; POLICY="" ; OUT="" ; URL="${FORGEJO_URL:-https://git.jp-visser.nl}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --uuid)   UUID="$2"   ; shift 2 ;;
+    --labels) LABELS="$2" ; shift 2 ;;
+    --policy) POLICY="$2" ; shift 2 ;;
+    --out)    OUT="$2"    ; shift 2 ;;
+    --url)    URL="$2"    ; shift 2 ;;
+    *) printf 'onbekend argument: %s\n' "$1" >&2 ; exit 2 ;;
+  esac
+done
+[ -n "$UUID" ] && [ -n "$LABELS" ] && [ -n "$POLICY" ] && [ -n "$OUT" ] || {
+  printf 'gebruik: --uuid UUID --labels BESTAND --policy BESTAND --out BESTAND\n' >&2 ; exit 2 ; }
+
+# 7.4: een lege lijst of een mutabele tag zonder digest is een harde fout.
+grep -qE '\S' "$LABELS" || { printf 'labels.txt is leeg\n' >&2 ; exit 3 ; }
+while read -r regel; do
+  case "$regel" in
+    ''|'#'*) continue ;;
+    *@sha256:*) : ;;
+    *) printf 'label zonder digest: %s\n' "$regel" >&2 ; exit 4 ;;
+  esac
+done < "$LABELS"
+
+{
+  cat "$POLICY"
+  printf '\nserver:\n  connections:\n    forgejo:\n'
+  printf '      url: %s\n' "$URL"
+  printf '      uuid: %s\n' "$UUID"
+  printf '      token_url: file:/run/forgejo-runner-credentials/forgejo-token\n'
+  printf '      labels:\n'
+  while read -r regel; do
+    case "$regel" in ''|'#'*) continue ;; esac
+    printf '        - %s\n' "$regel"
+  done < "$LABELS"
+} > "$OUT"
+
+printf 'config gerenderd naar %s\n' "$OUT"
+```
+
+- [ ] **Step 5: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_render_config.bats`
+Expected: PASS — 7 tests, 0 failures.
+
+- [ ] **Step 6: Valideer tegen de echte Runner 12.10.1-image**
+
+Dit is de gate die §8 stap B eist: de opdracht en de configvorm worden tegen de image bevestigd, niet tegen documentatie.
+
+```bash
+source ~/.zshenv
+bash forgejo-runner/scripts/render-config.sh \
+  --uuid 00000000-0000-4000-8000-000000000000 \
+  --labels forgejo-runner/labels.txt \
+  --policy forgejo-runner/runner-config.policy.yml \
+  --out /tmp/validate-config.yml
+
+# 1. bestaat one-job en kent het --wait?
+ssh janpeter@max2 'docker run --rm --entrypoint forgejo-runner \
+  ${RUNNER_IMAGE:-code.forgejo.org/forgejo/runner:12} one-job --help' | tee /tmp/one-job-help.txt
+grep -q -- '--wait' /tmp/one-job-help.txt
+
+# 2. accepteert de binary deze config zonder legacy .runner?
+scp /tmp/validate-config.yml janpeter@max2:/tmp/
+ssh janpeter@max2 'docker run --rm -v /tmp/validate-config.yml:/c.yml:ro \
+  --entrypoint forgejo-runner ${RUNNER_IMAGE:-code.forgejo.org/forgejo/runner:12} \
+  --config /c.yml one-job --help' ; echo "exit=$?"
+```
+
+Expected: `--wait` staat letterlijk in de helptekst van `one-job`, en de configvalidatie geeft exit 0. Ontbreekt `--wait`, of weigert de binary de config, dan is dat een BLOCKER voor het ontwerp en stopt dit plan hier.
+
+- [ ] **Step 7: Bewijs dat een ongeldige config non-zero geeft**
+
+```bash
+printf 'server:\n  connections:\n    a: {url: "x"}\n    b: {url: "y"}\n' > /tmp/twee-connections.yml
+scp /tmp/twee-connections.yml janpeter@max2:/tmp/
+ssh janpeter@max2 'docker run --rm -v /tmp/twee-connections.yml:/c.yml:ro \
+  --entrypoint forgejo-runner ${RUNNER_IMAGE:-code.forgejo.org/forgejo/runner:12} \
+  --config /c.yml one-job --wait' ; echo "exit=$?"
+```
+
+Expected: een non-zero exitcode. Dit is het bewijs dat §7.9 nodig heeft: non-zero bij `--wait` duidt op config-, initialisatie-, poller- of runtimefalen en mag nooit tot heropenen leiden. Leg de exitcode vast in `docs/forgejo-runner-pool/evidence/stap-a/exitcodecontract.md`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add forgejo-runner/runner-config.policy.yml forgejo-runner/scripts/render-config.sh \
+        forgejo-runner/tests/test_render_config.bats \
+        docs/forgejo-runner-pool/evidence/stap-a/exitcodecontract.md
+git commit -m "feat(stap-b): runnerconfig, policy en validatie tegen de echte image"
+```
+
+---
+
+### Task 18: Scrub binnen de eigen DinD
+
+§7.9 eist na iedere job een volledige scrub binnen uitsluitend de eigen DinD: alle containers, volumes, niet-standaardnetwerken, lokaal gebouwde of niet-toegestane images en de volledige BuildKit-cache verdwijnen. Alleen jobimages waarvan de exacte digest in `allowed-job-images.txt` staat blijven behouden. De outer Runner- en DinD-images staan in de **hostdaemon** en worden door deze inner scrub niet geraakt — dat was de kern van de deels verworpen ronde-3-bevinding.
+
+De scrub mag maximaal vijf minuten duren. Een overschrijding alarmeert, quarantaint die host en reset de stabiliteitsperiode.
+
+**Files:**
+- Create: `forgejo-runner/scripts/scrub-dind.sh`
+- Test: `forgejo-runner/tests/test_scrub_dind.bats`
+
+**Interfaces:**
+- Consumes: `allowed-job-images.txt` uit Task 16
+- Produces: exitcode `0` bij een bewezen schone DinD, `50` bij een resterend object, `51` bij tijdsoverschrijding; op stdout een regel per bewijscategorie
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_scrub_dind.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  SCRIPT="$REPO_ROOT/forgejo-runner/scripts/scrub-dind.sh"
+  ALLOW="$BATS_TEST_TMPDIR/allow.txt"
+  echo "catthehacker/ubuntu@sha256:abc	2147483648" > "$ALLOW"
+  FAKE_BIN="$BATS_TEST_TMPDIR/bin"
+  mkdir -p "$FAKE_BIN"
+  STATE="$BATS_TEST_TMPDIR/state"
+  mkdir -p "$STATE"
+  : > "$STATE/containers" ; : > "$STATE/volumes"
+  echo "bridge" > "$STATE/networks" ; echo "host" >> "$STATE/networks" ; echo "none" >> "$STATE/networks"
+  echo "catthehacker/ubuntu@sha256:abc" > "$STATE/images"
+  cat > "$FAKE_BIN/docker" <<EOS
+#!/usr/bin/env bash
+STATE="$STATE"
+case "\$*" in
+  *"ps -aq"*)          cat "\$STATE/containers" ;;
+  *"volume ls -q"*)    cat "\$STATE/volumes" ;;
+  *"network ls"*)      cat "\$STATE/networks" ;;
+  *"images --digests"*|*"image ls"*) cat "\$STATE/images" ;;
+  *"builder prune"*|*"rm "*|*"volume rm"*|*"network rm"*|*"rmi"*) : ;;
+  *"buildx du"*)       echo "0B" ;;
+esac
+EOS
+  chmod +x "$FAKE_BIN/docker"
+  PATH="$FAKE_BIN:$PATH"
+}
+
+@test "schone dind levert exit 0" {
+  run bash "$SCRIPT" --endpoint tcp://dind:2375 --allow "$ALLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "een achtergebleven container faalt met 50" {
+  echo "c1" > "$BATS_TEST_TMPDIR/state/containers"
+  run bash "$SCRIPT" --endpoint tcp://dind:2375 --allow "$ALLOW"
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"container"* ]]
+}
+
+@test "een achtergebleven volume faalt met 50" {
+  echo "v1" > "$BATS_TEST_TMPDIR/state/volumes"
+  run bash "$SCRIPT" --endpoint tcp://dind:2375 --allow "$ALLOW"
+  [ "$status" -eq 50 ]
+}
+
+@test "een niet-standaardnetwerk faalt met 50" {
+  echo "vreemd" >> "$BATS_TEST_TMPDIR/state/networks"
+  run bash "$SCRIPT" --endpoint tcp://dind:2375 --allow "$ALLOW"
+  [ "$status" -eq 50 ]
+}
+
+@test "een image buiten de allowlist faalt met 50" {
+  echo "zelfgebouwd@sha256:def" >> "$BATS_TEST_TMPDIR/state/images"
+  run bash "$SCRIPT" --endpoint tcp://dind:2375 --allow "$ALLOW"
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"image"* ]]
+}
+
+@test "gebruikt nooit de host-docker-socket" {
+  run grep -c 'docker.sock' "$SCRIPT"
+  [ "$output" = "0" ]
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_scrub_dind.bats`
+Expected: FAIL — het script bestaat nog niet.
+
+- [ ] **Step 3: Schrijf de implementatie**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/scrub-dind.sh
+# Fenced cleanup binnen uitsluitend de eigen DinD (7.9).
+# Draait terwijl er aantoonbaar geen runnerproces bestaat.
+# De outer Runner- en DinD-images staan in de hostdaemon en worden hier niet geraakt.
+set -euo pipefail
+
+ENDPOINT="" ; ALLOW="" ; MAX_SECONDS="${SCRUB_MAX_SECONDS:-300}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --endpoint) ENDPOINT="$2" ; shift 2 ;;
+    --allow)    ALLOW="$2"    ; shift 2 ;;
+    *) printf 'onbekend argument: %s\n' "$1" >&2 ; exit 2 ;;
+  esac
+done
+[ -n "$ENDPOINT" ] && [ -f "$ALLOW" ] || {
+  printf 'gebruik: scrub-dind.sh --endpoint tcp://dind:2375 --allow BESTAND\n' >&2 ; exit 2 ; }
+
+START="$(date +%s)"
+d() { docker -H "$ENDPOINT" "$@" ; }
+
+toegestaan() {
+  awk '{print $1}' "$ALLOW" | grep -Fxq "$1"
+}
+
+# Opruimen. Fouten worden genegeerd; het bewijs hieronder is wat telt.
+d ps -aq | while read -r id; do [ -n "$id" ] && d rm -f "$id" || true ; done
+d volume ls -q | while read -r v; do [ -n "$v" ] && d volume rm -f "$v" || true ; done
+d network ls --format '{{.Name}}' | while read -r n; do
+  case "$n" in bridge|host|none|'') : ;; *) d network rm "$n" || true ;; esac
+done
+d builder prune -af >/dev/null 2>&1 || true
+d images --digests --format '{{.Repository}}@{{.Digest}}' | while read -r img; do
+  [ -n "$img" ] || continue
+  toegestaan "$img" || d rmi -f "$img" || true
+done
+
+# Bewijs. Vanaf hier bepaalt de meting de exitcode.
+FALEN=0
+melden() { printf '%s: %s\n' "$1" "$2" ; [ "$2" = "FAIL" ] && FALEN=1 ; return 0 ; }
+
+[ -z "$(d ps -aq)" ] && melden containers OK || melden containers FAIL
+[ -z "$(d volume ls -q)" ] && melden volumes OK || melden volumes FAIL
+
+VREEMD="$(d network ls --format '{{.Name}}' | grep -vxE 'bridge|host|none' || true)"
+[ -z "$VREEMD" ] && melden netwerken OK || melden netwerken FAIL
+
+NIET_TOEGESTAAN=""
+while read -r img; do
+  [ -n "$img" ] || continue
+  toegestaan "$img" || NIET_TOEGESTAAN="$NIET_TOEGESTAAN $img"
+done < <(d images --digests --format '{{.Repository}}@{{.Digest}}')
+[ -z "$NIET_TOEGESTAAN" ] && melden images OK || melden images FAIL
+
+DUUR=$(( $(date +%s) - START ))
+printf 'duur_seconden: %s\n' "$DUUR"
+[ "$DUUR" -le "$MAX_SECONDS" ] || exit 51
+[ "$FALEN" -eq 0 ] || exit 50
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_scrub_dind.bats`
+Expected: PASS — 6 tests, 0 failures.
+
+- [ ] **Step 5: Lint en commit**
+
+```bash
+shellcheck forgejo-runner/scripts/scrub-dind.sh
+git add forgejo-runner/scripts/scrub-dind.sh forgejo-runner/tests/test_scrub_dind.bats
+git commit -m "feat(stap-b): fenced scrub binnen de eigen DinD met schoonbewijs"
+```
+
+---
+
+### Task 19: Systemd-unit
+
+§6 legt de unit vast: `systemctl enable --now`, met minimaal `Requires=docker.service`, `After=docker.service network-online.target`, `Wants=network-online.target` en `WantedBy=multi-user.target`. Bij boot start eerst alleen DinD; pas na een groene healthcheck gaat de controller naar `SOURCE_WAIT`. De boot-SLA is vijf minuten van `docker.service=active` tot `WAITING`.
+
+**Files:**
+- Create: `forgejo-runner/forgejo-runner-cycle.service`
+- Test: `forgejo-runner/tests/test_unit_contract.bats`
+
+**Interfaces:**
+- Consumes: `forgejo_runner_cycle.py` uit Task 11 tot en met 15
+- Produces: een systemd-unit die op beide hosts identiek is
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_unit_contract.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  UNIT="$REPO_ROOT/forgejo-runner/forgejo-runner-cycle.service"
+}
+
+@test "unit heeft alle vier verplichte afhankelijkheden" {
+  grep -q '^Requires=docker.service' "$UNIT"
+  grep -q '^After=docker.service network-online.target' "$UNIT"
+  grep -q '^Wants=network-online.target' "$UNIT"
+  grep -q '^WantedBy=multi-user.target' "$UNIT"
+}
+
+@test "unit start de python-controller en geen shellscript" {
+  grep -qE '^ExecStart=.*forgejo_runner_cycle\.py' "$UNIT"
+  run grep -cE '^ExecStart=.*\.sh' "$UNIT"
+  [ "$output" = "0" ]
+}
+
+@test "unit herstart niet automatisch op een manier die de gates omzeilt" {
+  grep -qE '^Restart=on-failure' "$UNIT"
+  grep -qE '^RestartSec=' "$UNIT"
+}
+
+@test "unit bevat geen secrets" {
+  run grep -ciE 'token|password|secret' "$UNIT"
+  [ "$output" = "0" ]
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_unit_contract.bats`
+Expected: FAIL — de unit bestaat nog niet.
+
+- [ ] **Step 3: Schrijf de unit**
+
+```ini
+# forgejo-runner/forgejo-runner-cycle.service
+[Unit]
+Description=Forgejo Runner cyclecontroller (een job per runnerproces)
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/forgejo-runner
+ExecStart=/usr/bin/python3 /opt/forgejo-runner/scripts/forgejo_runner_cycle.py --config /opt/forgejo-runner/controller.toml
+# De controller houdt zijn eigen toestand vast; een restart begint altijd
+# opnieuw in SOURCE_WAIT en doorloopt alle gates. Een unit-restart omzeilt
+# nooit een fence of een quarantaine.
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=300
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_unit_contract.bats`
+Expected: PASS — 4 tests, 0 failures.
+
+- [ ] **Step 5: Valideer de unitsyntax zonder hem te installeren**
+
+```bash
+scp forgejo-runner/forgejo-runner-cycle.service janpeter@max2:/tmp/
+ssh janpeter@max2 'systemd-analyze verify /tmp/forgejo-runner-cycle.service' ; echo "exit=$?"
+```
+
+Expected: geen fouten over onbekende directives. Waarschuwingen over het nog niet bestaande `ExecStart`-pad zijn verwacht: de bundel wordt pas in stap D uitgerold. Installeer de unit hier **niet** — dat is stap D.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add forgejo-runner/forgejo-runner-cycle.service forgejo-runner/tests/test_unit_contract.bats
+git commit -m "feat(stap-b): systemd-unit voor de cyclecontroller"
+```
+
+---
+
+### Task 20: Verificatiescript met bundelhash en `BUNDLE_COMMIT`
+
+§6.1 maakt dit de mechanische invulling van "byte-identiek": iedere host houdt zijn uitgerolde commit-SHA vast in `/opt/forgejo-runner/BUNDLE_COMMIT`, en `verify-stack.sh` vergelijkt die plus een canonieke hash over de bundelbestanden met de andere host.
+
+**Files:**
+- Create: `forgejo-runner/scripts/bundle-hash.sh`
+- Create: `forgejo-runner/scripts/verify-stack.sh`
+- Test: `forgejo-runner/tests/test_bundle_hash.bats`
+
+**Interfaces:**
+- Consumes: de bundelbestanden uit Task 16 tot en met 19
+- Produces: `bundle-hash.sh` schrijft één sha256 over de gesorteerde inhoud van alle bundelbestanden; `verify-stack.sh` faalt met `60` bij een ontbrekende of afwijkende `BUNDLE_COMMIT` en met `61` bij een afwijkende bundelhash
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_bundle_hash.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  SCRIPT="$REPO_ROOT/forgejo-runner/scripts/bundle-hash.sh"
+  BUNDLE="$BATS_TEST_TMPDIR/bundel"
+  mkdir -p "$BUNDLE/scripts"
+  echo "a" > "$BUNDLE/compose.yaml"
+  echo "b" > "$BUNDLE/scripts/x.sh"
+}
+
+@test "levert een stabiele hash bij gelijke inhoud" {
+  h1="$(bash "$SCRIPT" "$BUNDLE")"
+  h2="$(bash "$SCRIPT" "$BUNDLE")"
+  [ "$h1" = "$h2" ]
+  [ "${#h1}" -eq 64 ]
+}
+
+@test "verandert bij gewijzigde inhoud" {
+  h1="$(bash "$SCRIPT" "$BUNDLE")"
+  echo "gewijzigd" > "$BUNDLE/compose.yaml"
+  h2="$(bash "$SCRIPT" "$BUNDLE")"
+  [ "$h1" != "$h2" ]
+}
+
+@test "verandert bij een hernoemd bestand" {
+  h1="$(bash "$SCRIPT" "$BUNDLE")"
+  mv "$BUNDLE/scripts/x.sh" "$BUNDLE/scripts/y.sh"
+  h2="$(bash "$SCRIPT" "$BUNDLE")"
+  [ "$h1" != "$h2" ]
+}
+
+@test "negeert .env met echte waarden" {
+  h1="$(bash "$SCRIPT" "$BUNDLE")"
+  echo "TOKEN=geheim" > "$BUNDLE/.env"
+  h2="$(bash "$SCRIPT" "$BUNDLE")"
+  [ "$h1" = "$h2" ]
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_bundle_hash.bats`
+Expected: FAIL — het script bestaat nog niet.
+
+- [ ] **Step 3: Schrijf de hashfunctie**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/bundle-hash.sh
+# Canonieke hash over de bundelbestanden (6.1). Pad en inhoud tellen allebei
+# mee, zodat een hernoeming de hash verandert. .env blijft buiten de hash:
+# dat bestand is hostlokaal en mag afwijken.
+set -euo pipefail
+
+BUNDLE="${1:-}"
+[ -d "$BUNDLE" ] || { printf 'gebruik: bundle-hash.sh BUNDELMAP\n' >&2 ; exit 2 ; }
+
+cd "$BUNDLE"
+find . -type f ! -name '.env' ! -path './tests/*' -print0 \
+  | LC_ALL=C sort -z \
+  | while IFS= read -r -d '' pad; do
+      printf '%s\0' "$pad"
+      cat "$pad"
+      printf '\0'
+    done \
+  | shasum -a 256 \
+  | awk '{print $1}'
+```
+
+Let op: op de Ubuntu-hosts heet dit commando `sha256sum` en op mac `shasum -a 256`. Gebruik daarom in het script een detectie:
+
+```bash
+if command -v sha256sum >/dev/null 2>&1; then HASHER="sha256sum"; else HASHER="shasum -a 256"; fi
+```
+
+en vervang de vaste `shasum -a 256` door `$HASHER`. Zonder die detectie faalt de vergelijking tussen mac en host, en dat is precies de vergelijking waar §6.1 om vraagt.
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_bundle_hash.bats`
+Expected: PASS — 4 tests, 0 failures.
+
+- [ ] **Step 5: Schrijf `verify-stack.sh`**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/verify-stack.sh
+# Verifieert de uitgerolde stack op deze host (6.1, 7.5, 7.6).
+# Exit 0 groen, 60 commit-drift, 61 bundelhash-drift, 62 isolatiefout.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUNDLE="$SCRIPT_DIR/.."
+VERWACHT_COMMIT="${1:-}"
+VERWACHTE_HASH="${2:-}"
+[ -n "$VERWACHT_COMMIT" ] && [ -n "$VERWACHTE_HASH" ] || {
+  printf 'gebruik: verify-stack.sh COMMIT_SHA BUNDEL_HASH\n' >&2 ; exit 2 ; }
+
+HUIDIG_COMMIT="$(cat /opt/forgejo-runner/BUNDLE_COMMIT 2>/dev/null || true)"
+[ -n "$HUIDIG_COMMIT" ] || { printf 'BUNDLE_COMMIT ontbreekt\n' >&2 ; exit 60 ; }
+[ "$HUIDIG_COMMIT" = "$VERWACHT_COMMIT" ] || {
+  printf 'commit-drift: host %s, verwacht %s\n' "$HUIDIG_COMMIT" "$VERWACHT_COMMIT" >&2 ; exit 60 ; }
+
+HUIDIGE_HASH="$(bash "$SCRIPT_DIR/bundle-hash.sh" "$BUNDLE")"
+[ "$HUIDIGE_HASH" = "$VERWACHTE_HASH" ] || {
+  printf 'bundelhash-drift: host %s, verwacht %s\n' "$HUIDIGE_HASH" "$VERWACHTE_HASH" >&2 ; exit 61 ; }
+
+# Isolatie: geen hostlistener op de Docker-API-poorten (7.5).
+if ss -ltn 2>/dev/null | grep -qE ':(2375|2376)\b'; then
+  printf 'isolatiefout: er luistert iets op 2375 of 2376\n' >&2 ; exit 62
+fi
+
+printf 'commit: %s\nbundel_hash: %s\nisolatie: OK\n' "$HUIDIG_COMMIT" "$HUIDIGE_HASH"
+```
+
+- [ ] **Step 6: Bewijs dat drift wordt gedetecteerd**
+
+```bash
+shellcheck forgejo-runner/scripts/bundle-hash.sh forgejo-runner/scripts/verify-stack.sh
+HASH="$(bash forgejo-runner/scripts/bundle-hash.sh forgejo-runner)"
+COMMIT="$(git rev-parse HEAD)"
+echo "bundelhash op deze commit: $HASH"
+bash forgejo-runner/scripts/verify-stack.sh "$COMMIT" "afwijkende-hash" ; echo "exit=$?"
+```
+
+Expected: de laatste aanroep geeft `exit=60` of `61` — nooit 0. Een gate die niet kan falen is geen gate.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add forgejo-runner/scripts/bundle-hash.sh forgejo-runner/scripts/verify-stack.sh \
+        forgejo-runner/tests/test_bundle_hash.bats
+git commit -m "feat(stap-b): bundelhash en verify-stack met driftdetectie"
+```
+
+---
+
+### Task 21: Secret-scan en pre-commit hook
+
+Delta-review R12 sloot §6.1 op het punt dat er vandaag géén doorlopende scan draait — alleen de eenmalige scan van stap B. Deze taak levert de scan, installeert hem, en **bewijst** dat hij een commit met een tokenpatroon blokkeert. Pas na dat bewijs mag het ontwerp beweren dat de scan draait.
+
+**Files:**
+- Create: `forgejo-runner/scripts/secret-scan.sh`
+- Create: `forgejo-runner/scripts/install-git-hooks.sh`
+- Test: `forgejo-runner/tests/test_secret_scan.bats`
+
+**Interfaces:**
+- Consumes: niets
+- Produces: `secret-scan.sh` leest paden van de commandoregel of staged bestanden uit `git diff --cached --name-only`; exit `0` schoon, `70` bij een treffer. `install-git-hooks.sh` installeert hem als `pre-commit` in een opgegeven werkboom.
+
+- [ ] **Step 1: Schrijf de falende test**
+
+```bash
+# forgejo-runner/tests/test_secret_scan.bats
+setup() {
+  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  SCRIPT="$REPO_ROOT/forgejo-runner/scripts/secret-scan.sh"
+  WERK="$BATS_TEST_TMPDIR/werk"
+  mkdir -p "$WERK"
+}
+
+@test "schone inhoud levert exit 0" {
+  echo "log:\n  level: info" > "$WERK/config.yml"
+  run bash "$SCRIPT" "$WERK/config.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "een forgejo-tokenpatroon wordt geblokkeerd" {
+  printf 'token: %s\n' "$(printf 'a%.0s' {1..40})" > "$WERK/config.yml"
+  run bash "$SCRIPT" "$WERK/config.yml"
+  [ "$status" -eq 70 ]
+}
+
+@test "een private sleutel wordt geblokkeerd" {
+  echo "-----BEGIN OPENSSH PRIVATE KEY-----" > "$WERK/id"
+  run bash "$SCRIPT" "$WERK/id"
+  [ "$status" -eq 70 ]
+}
+
+@test "een secretbestandsnaam wordt geblokkeerd" {
+  echo "wat dan ook" > "$WERK/forgejo-token"
+  run bash "$SCRIPT" "$WERK/forgejo-token"
+  [ "$status" -eq 70 ]
+}
+
+@test "een digest is geen secret" {
+  echo "image: catthehacker/ubuntu@sha256:$(printf 'b%.0s' {1..64})" > "$WERK/labels.txt"
+  run bash "$SCRIPT" "$WERK/labels.txt"
+  [ "$status" -eq 0 ]
+}
+
+@test "een uuid is geen secret" {
+  echo "uuid: 11111111-2222-3333-4444-555555555555" > "$WERK/config.yml"
+  run bash "$SCRIPT" "$WERK/config.yml"
+  [ "$status" -eq 0 ]
+}
+
+@test "de placeholder token_url is geen secret" {
+  echo "token_url: file:/run/forgejo-runner-credentials/forgejo-token" > "$WERK/c.yml"
+  run bash "$SCRIPT" "$WERK/c.yml"
+  [ "$status" -eq 0 ]
+}
+```
+
+- [ ] **Step 2: Draai de test en bevestig dat hij faalt**
+
+Run: `bats forgejo-runner/tests/test_secret_scan.bats`
+Expected: FAIL — het script bestaat nog niet.
+
+- [ ] **Step 3: Schrijf de scan**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/secret-scan.sh
+# Blokkeert secrets voordat ze in Git belanden (6.1).
+# Zonder argumenten scant hij de staged bestanden.
+# Exit 0 schoon, 70 bij een treffer.
+set -uo pipefail
+
+bestanden=("$@")
+if [ "${#bestanden[@]}" -eq 0 ]; then
+  mapfile -t bestanden < <(git diff --cached --name-only --diff-filter=ACM)
+fi
+[ "${#bestanden[@]}" -gt 0 ] || exit 0
+
+TREFFER=0
+for pad in "${bestanden[@]}"; do
+  [ -f "$pad" ] || continue
+
+  # 1. Bestandsnamen die per definitie een secret dragen.
+  case "$(basename "$pad")" in
+    forgejo-token|*.key|*.pem|.env)
+      printf 'secret-scan: %s is een secretbestand en hoort niet in Git\n' "$pad" >&2
+      TREFFER=1 ; continue ;;
+  esac
+
+  # 2. Private sleutels.
+  if grep -qE 'BEGIN (OPENSSH|RSA|EC|PGP) PRIVATE KEY' "$pad"; then
+    printf 'secret-scan: %s bevat een private sleutel\n' "$pad" >&2
+    TREFFER=1 ; continue
+  fi
+
+  # 3. Een token-achtige waarde achter een sleutelnaam. Digests en UUID's
+  #    vallen hier bewust buiten: die staan legitiem in de bundel.
+  if grep -nE '(token|secret|password)[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9_/+-]{20,}' "$pad" \
+     | grep -vE 'sha256:|token_url|[0-9a-f]{8}-[0-9a-f]{4}-' >/dev/null; then
+    printf 'secret-scan: %s bevat een tokenachtige waarde\n' "$pad" >&2
+    TREFFER=1 ; continue
+  fi
+done
+
+[ "$TREFFER" -eq 0 ] || exit 70
+```
+
+- [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
+
+Run: `bats forgejo-runner/tests/test_secret_scan.bats`
+Expected: PASS — 7 tests, 0 failures.
+
+- [ ] **Step 5: Schrijf de installer**
+
+```bash
+#!/usr/bin/env bash
+# forgejo-runner/scripts/install-git-hooks.sh
+# Installeert secret-scan.sh als pre-commit hook in een werkboom.
+# Respecteert core.hooksPath: staat die gezet, dan installeert hij daar.
+set -euo pipefail
+
+WERKBOOM="${1:-}"
+[ -d "$WERKBOOM/.git" ] || [ -f "$WERKBOOM/.git" ] || {
+  printf 'gebruik: install-git-hooks.sh WERKBOOM\n' >&2 ; exit 2 ; }
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOOKS_PATH="$(git -C "$WERKBOOM" config --get core.hooksPath || true)"
+if [ -n "$HOOKS_PATH" ]; then
+  DOEL="$WERKBOOM/$HOOKS_PATH"
+else
+  DOEL="$(git -C "$WERKBOOM" rev-parse --git-path hooks)"
+  DOEL="$WERKBOOM/$DOEL"
+fi
+mkdir -p "$DOEL"
+
+cat > "$DOEL/pre-commit" <<EOS
+#!/usr/bin/env bash
+# Geinstalleerd door forgejo-runner/scripts/install-git-hooks.sh
+exec "$SCRIPT_DIR/secret-scan.sh"
+EOS
+chmod +x "$DOEL/pre-commit"
+printf 'pre-commit hook geinstalleerd in %s\n' "$DOEL"
+```
+
+- [ ] **Step 6: Installeer in beide werkbomen en bewijs dat de hook blokkeert**
+
+Dit blokkeringsbewijs is wat §6.1 eist voordat het ontwerp mag beweren dat de scan draait.
+
+```bash
+bash forgejo-runner/scripts/install-git-hooks.sh /Users/janpetervisser/Development/scrum4me-server
+bash forgejo-runner/scripts/install-git-hooks.sh /Users/janpetervisser/Development/max2
+
+cd /tmp && rm -rf hooktest && git init -q hooktest && cd hooktest
+bash /Users/janpetervisser/Development/scrum4me-server/forgejo-runner/scripts/install-git-hooks.sh /tmp/hooktest
+printf 'token: %s\n' "$(printf 'a%.0s' {1..40})" > geheim.yml
+git add geheim.yml
+git commit -m "dit hoort te falen" ; echo "exit=$?"
+cd / && rm -rf /tmp/hooktest
+```
+
+Expected: de commit faalt met een non-zero exitcode en de melding `secret-scan: … bevat een tokenachtige waarde`. Slaagt de commit wél, dan is de hook niet actief en mag §6.1 niet worden aangepast; onderzoek eerst `core.hooksPath`.
+
+Leg de uitvoer vast in `docs/forgejo-runner-pool/evidence/stap-a/secret-scan-blokkeringsbewijs.txt`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd /Users/janpetervisser/Development/scrum4me-server
+git add forgejo-runner/scripts/secret-scan.sh forgejo-runner/scripts/install-git-hooks.sh \
+        forgejo-runner/tests/test_secret_scan.bats \
+        docs/forgejo-runner-pool/evidence/stap-a/secret-scan-blokkeringsbewijs.txt
+git commit -m "feat(stap-b): secret-scan met bewezen blokkerende pre-commit hook"
+```
+
+---
+
+### Task 22: Bundel-README en de afsluitende gate van stap A en B
+
+De laatste taak. Zij levert de README uit §6 en toetst of stap A en B werkelijk af zijn, zodat stap C op vaste grond begint.
+
+**Files:**
+- Create: `forgejo-runner/README.md`
+- Create: `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md`
+
+**Interfaces:**
+- Consumes: alle voorgaande taken
+- Produces: een afsluitrapport dat per eis uit §8 stap A en stap B het bewijsbestand noemt
+
+- [ ] **Step 1: Schrijf de bundel-README**
+
+```markdown
+# forgejo-runner — gedeelde bundel
+
+Deze map is de **canonieke bron** van de Forgejo-Runner-poolbundel. Beide hosts
+(`scrum4me-server` en `max2`) rollen uit vanaf dezelfde commit-SHA van deze repo.
+De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp.
+
+## Uitrollen
+
+1. `bash scripts/preflight.sh --facts … --caps … --images allowed-job-images.txt`
+   moet exit 0 geven. Faalt hij, dan wordt er niets uitgerold.
+2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host.
+3. Schrijf de commit-SHA naar `/opt/forgejo-runner/BUNDLE_COMMIT`.
+4. Zet het token als `/opt/forgejo-runner/credentials/forgejo-token`, mode `0600`,
+   eigendom van de effectieve runner-UID:GID. Het token komt nooit uit deze repo.
+5. `docker compose up -d` start uitsluitend DinD; de runner staat onder het
+   profiel `cycle` en wordt alleen door de cyclecontroller gestart.
+6. `systemctl enable --now forgejo-runner-cycle.service`.
+7. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven.
+
+## Terugdraaien
+
+Zet de unit eerst in `DRAINING`, wacht tot een geaccepteerde job terminaal is en
+leg het Forgejo-side nulbewijs voor assigned/running jobs vast. Stop en disable
+daarna de unit en verwijder alleen de runner- en DinD-containers. Laat het volume
+`forgejo-runner-dind-data` staan voor onderzoek. Herstart nooit de host-Dockerdaemon.
+
+## Wat hier bewust niet gebeurt
+
+- Geen deployment via Forgejo Actions: jobcontainers draaien in DinD zonder
+  host-Docker-socket en zonder hostpadvolumes en kunnen deze stack niet wijzigen.
+- Geen wijziging aan `/etc/docker/daemon.json`, geen herstart van de Docker-daemon,
+  geen hostbrede `docker system prune`.
+- Geen gedeeld DinD-volume of gedeelde DinD tussen de hosts.
+```
+
+- [ ] **Step 2: Draai alle tests van de hele bundel**
+
+```bash
+bats forgejo-runner/tests/*.bats
+python3 -m unittest discover -s forgejo-runner/tests -p 'test_*.py' -v
+shellcheck -x forgejo-runner/scripts/*.sh
+```
+
+Expected: alles groen, geen shellcheck-bevindingen. Dit is de gate: is er ook maar één test rood, dan zijn stap A en B niet af.
+
+- [ ] **Step 3: Schrijf het afsluitrapport**
+
+Maak `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` met een tabel die iedere eis uit §8 stap A en stap B koppelt aan het bewijsbestand of de test die haar afdekt:
+
+| Eis | Bewijs |
+|---|---|
+| image-ID's, manifestdigests, Compose, netwerken, volumes, health | `evidence/stap-a/scrum4me-server/images.json`, `containers.json`, `networks.json`, `volumes.json` |
+| anonieme volume-ID en omvang inner-DinD-data | `evidence/stap-a/scrum4me-server/dind-usage.txt` |
+| legacy `.runner`-metadata zonder tokenwaarde, met mode | `runner-registration.json`, `runner-registration-stat.txt` |
+| volledige labels en global scope | `runner-registration.json`, `evidence/stap-a/forgejo/runners-summary.tsv` |
+| alle zichtbare runnerrecords | `evidence/stap-a/forgejo/runners-summary.tsv` |
+| `T_requeue` | `evidence/stap-a/t-requeue.md` |
+| NTP-status en klokskew op beide hosts | `evidence/stap-a/clock-scrum4me-server.txt`, `max2-clock.txt` |
+| trustscope-gate met `.forgejo`/`.github`-fallback en allowlist | `evidence/stap-a/trust/trust-inventory.json`, `trust-verdict.json`, `trusted-actions-scope.yml` |
+| vier readinessuitkomsten met stub/testharnas | `evidence/stap-a/testharnas-dekking.md` |
+| fence, latch, deadline, maintenance | idem |
+| piekmeting en caps | `evidence/stap-a/workload-scrum4me-server.tsv`, `caps.md` |
+| jobduurbaseline | `evidence/stap-a/jobduur-baseline.md` |
+| hostfeiten en headroom op beide hosts | `host-facts-*.tsv`, `caps.md`, `preflight-*.txt` |
+| productiecontainers gezond vóór aanvang | `evidence/stap-a/productiecontainers-voor.txt` |
+| registry-gevalideerde digests | `evidence/stap-a/resolved-digests.tsv` |
+| Compose statisch gevalideerd | `tests/test_compose_contract.bats`, `docker compose config` |
+| bundel gescand op secrets | `evidence/stap-a/secret-scan-blokkeringsbewijs.txt` |
+| exact één connection, absoluut `token_url`, `one-job --wait` | `tests/test_render_config.bats`, `evidence/stap-a/exitcodecontract.md` |
+| exitcodecontract vastgelegd | `evidence/stap-a/exitcodecontract.md` |
+| ephemeral gemeten en voorgelegd | `evidence/stap-a/ephemeral-spike.md` |
+
+Ontbreekt er een bewijsbestand, dan is de bijbehorende eis niet afgedekt en is stap A of B niet af.
+
+- [ ] **Step 4: Werk het Review record van het ontwerp bij**
+
+Voeg aan `docs/forgejo-runner-pool/migratieontwerp.md` onder §13 een korte notitie toe dat stap A en B zijn uitgevoerd, met de commit-SHA van dit plan en de datum. Wijzig verder niets aan het ontwerp: iedere inhoudelijke wijziging vraagt een nieuwe delta-review.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add forgejo-runner/README.md docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md \
+        docs/forgejo-runner-pool/migratieontwerp.md
+git commit -m "feat(stap-b): bundel-README en afsluitgate van stap A en B"
+```
+
+---
+
+## Wat hierna komt
+
+Stap C tot en met H worden pas gepland wanneer stap A de meetwaarden heeft opgeleverd. Zonder de echte digests, caps, labels, `T_requeue` en de uitkomst van de ephemeral-spike zou een plan voor die stappen waarden moeten verzinnen, en dat is precies wat deze reviewloop tweemaal heeft afgestraft.
+
+Twee besluitpunten liggen dan bij JP:
+
+1. **De ephemeral-afweging** uit Task 4. Wordt ephemeral registratie opgenomen, dan raakt dat §7.3 en §7.4 van het ontwerp en vraagt het een delta-review vóór stap C.
+2. **De uitkomst van de headroomgate** uit Task 9 en 10. Is een host rood, dan is dat volgens §7.8 een NO-GO voor identieke caps en volgt eerst een architectuurbesluit.
+
+## Zelfcontrole van dit plan
+
+Uitgevoerd na het schrijven, tegen het migratieontwerp.
+
+**Dekking van stap A.** Iedere eis uit §8 stap A is aan een taak gekoppeld: inventarisatie (Task 2), runnerrecords en scope (Task 3), `T_requeue` (Task 3 step 6 en de evidence-tabel), klokskew (Task 5), trustgate met fallback (Task 6), stub/testharnas met alle vier readinessuitkomsten plus fence, latch, deadline en maintenance (Task 11 tot en met 15, samengevat in `testharnas-dekking.md`), piekmeting en caps (Task 7 tot en met 9), hostheadroom op beide hosts (Task 8 tot en met 10). De eis "verifieer dat de bestaande productiecontainers gezond zijn voordat iets wordt toegevoegd" staat in de afsluittabel van Task 22 met `productiecontainers-voor.txt` als bewijs; die momentopname hoort vóór Task 2 te worden gemaakt met `docker ps --format` op beide hosts.
+
+**Dekking van stap B.** Bundel met Runner 12.10.1 en DinD-pin (Task 16), registry-validatie van beide digests en de jobimage (Task 16 step 3), Compose statisch gevalideerd inclusief `restart: "no"`, `restart: always` en het benoemde volume (Task 16 step 6 en 7), scan op secrets (Task 21), validatie van exact één connection, absoluut `token_url`, connection-labels en de letterlijke opdracht `one-job --wait` zonder legacy `.runner` (Task 17 step 6), en het exitcodecontract (Task 17 step 7).
+
+**Bewust buiten dit plan.** `capture-current.sh` staat in §6 onder `scripts/` maar wordt hier al in stap A gebruikt; dat is geen afwijking, want §8 stap A vraagt precies die inventarisatie. `render-config.sh` levert in stap B alleen een validatieconfig; de echte hostconfig met een echte UUID ontstaat in stap C en D.
+
+**Consistentie van namen en typen.** `ro_docker` (Task 1) wordt gebruikt in Task 2, 7 en 8. `Confirmation`, `ReadinessClass` en `SEVERITY` (Task 11) worden gebruikt in Task 12 tot en met 15. `Fence` en `latch_verdict` (Task 13) in Task 15. `MaintenanceRecord` (Task 14) in `tick`. `assignment_nulbewijs` (Task 15) wordt in stap D en F aangeroepen en is hier alleen gedefinieerd en getest. `allowed-job-images.txt` (Task 16) wordt gelezen door `preflight.sh` (Task 10) en `scrub-dind.sh` (Task 18) — Task 10 is daarom geschreven met `--images` als optioneel argument, zodat hij vóór Task 16 al draaibaar is.
+
+**Bekende volgordeafhankelijkheid.** Task 10 (`preflight.sh`) verwijst naar `allowed-job-images.txt` uit Task 16. Dat is bewust: zonder dat bestand telt de schijfdrempel alleen de 20 GiB werkruimte, en met dat bestand telt hij de imagegroottes erbij op. Draai `preflight.sh` daarom na Task 16 nogmaals, vóór stap C.
