@@ -29,7 +29,7 @@ Gemeten op 2026-08-31 vanaf `mac` via Tailscale-SSH. Deze waarden zijn **niet** 
 | MemTotal | 15,0 GiB | 30,6 GiB |
 | Python | 3.14.4, stdlib `unittest` beschikbaar | 3.14.4, stdlib `unittest` beschikbaar |
 | `sudo -n` | zonder wachtwoord | zonder wachtwoord |
-| Containers totaal | 23 | 20 |
+| Containers totaal (`docker ps -aq`) | 23 | 19 (11 draaiend, 8 gestopt) |
 
 Let op: de Tailscale-naam van de serverhost is **`scrum4me-srv`**, terwijl `hostname` **`scrum4me-server`** teruggeeft. Gebruik `scrum4me-srv` in SSH-commando's en `scrum4me-server` als hostnaam in bewijsbestanden en configuratie.
 
@@ -419,7 +419,25 @@ scp -r janpeter@scrum4me-srv:/tmp/s4m-capture/out/. \
 
 Expected: alle vijf bestanden aanwezig; `images.json` bevat voor beide images een `RepoDigests`-regel met een `sha256:`-waarde.
 
-- [ ] **Step 7: Controleer dat er geen tokenwaarde in het bewijs staat**
+- [ ] **Step 7: Extraheer de canonieke labelnamen**
+
+Task 6 heeft de labelnamen nodig om te bepalen of een workflow de gedeelde pool kan bereiken. Die namen staan in de live installatie in het `labels`-veld van `.runner` — het Forgejo-record toont alleen kale namen en is volgens §7.4 geen geldige bron voor de imageverwijzing, maar voor de **namen** is `.runner` de canonieke bron en die is in stap A al beschikbaar. Zo hoeft Task 6 niet op `labels.txt` uit stap B te wachten.
+
+```bash
+EV=docs/forgejo-runner-pool/evidence/stap-a
+python3 - "$EV/scrum4me-server/runner-registration.json" > "$EV/shared-label-names.txt" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for label in d.get("labels") or []:
+    # Een label heeft de vorm `naam` of `naam:docker://image`; alleen de naam telt hier.
+    print(str(label).split(":", 1)[0])
+PY
+cat "$EV/shared-label-names.txt"
+```
+
+Expected: minstens één regel, met `ubuntu-latest` als de live installatie ongewijzigd is. Is het bestand leeg, dan is `.runner` niet uitgelezen of bevat het geen labels — dat is een bevinding vóór Task 6, want de trustgate kan dan niet bepalen welke workflows de pool bereiken.
+
+- [ ] **Step 8: Controleer dat er geen tokenwaarde in het bewijs staat**
 
 ```bash
 grep -rE '[A-Za-z0-9_-]{30,}' docs/forgejo-runner-pool/evidence/stap-a/scrum4me-server/runner-registration.json
@@ -427,11 +445,12 @@ grep -rE '[A-Za-z0-9_-]{30,}' docs/forgejo-runner-pool/evidence/stap-a/scrum4me-
 
 Expected: geen treffer anders dan een UUID; het veld `token` bevat letterlijk `<GEREDIGEERD>`. Vind je wél een tokenachtige string, verwijder het bestand, corrigeer de redactie en begin deze stap opnieuw — commit hem niet.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add forgejo-runner/scripts/capture-current.sh forgejo-runner/tests/test_capture_current.bats \
-        docs/forgejo-runner-pool/evidence/stap-a/scrum4me-server/
+        docs/forgejo-runner-pool/evidence/stap-a/scrum4me-server/ \
+        docs/forgejo-runner-pool/evidence/stap-a/shared-label-names.txt
 git commit -m "feat(stap-a): read-only inventarisatie van de live runnerstack"
 ```
 
@@ -660,7 +679,7 @@ Wat de documentatie stelt en wat deze spike moet toetsen:
 
 **Veiligheidskaders, alle vier hard.** Deze taak is de enige uitzondering op "stap A muteert niets" en blijft strikt binnen deze grenzen:
 
-1. het testrecord draagt uitsluitend het unieke label `ephemeral-spike-<datum>` en **nooit** een gedeeld productielabel, zodat geen enkele productiejob erop kan landen;
+1. het testrecord krijgt `name: ephemeral-spike-<datum>` en draagt **geen enkel label**. Dat is geen keuze maar een eigenschap van de API: `RegisterRunnerOptions` kent exact drie velden — `description`, `ephemeral` en `name` — en heeft geen `labels`. Labels bereiken een runnerrecord uitsluitend doordat een runnerdaemon ze bij het verbinden meldt, en kader 2 verbiedt juist dat er een daemon start. Een record zonder labels matcht geen enkele `runs-on`, dus er kan geen productiejob op landen. Het script bewijst dit met een harde assertie op het teruggelezen record;
 2. er wordt **geen runnerproces** met dit record gestart;
 3. het record wordt in dezelfde taak verwijderd en de verwijdering wordt bewezen;
 4. de bestaande runner en zijn record worden niet aangeraakt.
@@ -683,14 +702,22 @@ setup() {
   SCRIPT="$REPO_ROOT/forgejo-runner/scripts/spike-ephemeral.sh"
   FAKE_BIN="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$FAKE_BIN"
+  # De nep-curl is bewust stateful: na de DELETE moet een GET op hetzelfde
+  # record falen, anders is het opruimbewijs niet te halen en kan de suite
+  # per constructie nooit groen worden.
+  export FAKE_STATE="$BATS_TEST_TMPDIR/verwijderd"
   cat > "$FAKE_BIN/curl" <<'EOS'
 #!/usr/bin/env bash
-body=""
-for a in "$@"; do case "$a" in --data) body="next" ;; esac; done
 case "$*" in
-  *"--request DELETE"*) echo '' ; exit 0 ;;
-  *runners/999*)        echo '{"id":999,"uuid":"u-999","name":"spike","ephemeral":true,"labels":["ephemeral-spike-x"],"status":"offline"}' ; exit 0 ;;
-  *runners*)            echo '{"id":999,"uuid":"u-999","token":"GEHEIM"}' ; exit 0 ;;
+  *"--request DELETE"*)
+    touch "$FAKE_STATE" ; echo '' ; exit 0 ;;
+  *runners/999*)
+    # Na de DELETE bestaat het record niet meer; curl --fail-with-body geeft dan non-zero.
+    [ -e "$FAKE_STATE" ] && exit 22
+    echo '{"id":999,"uuid":"u-999","name":"ephemeral-spike-test","ephemeral":true,"labels":[],"status":"offline"}'
+    exit 0 ;;
+  *runners*)
+    echo '{"id":999,"uuid":"u-999","token":"GEHEIM"}' ; exit 0 ;;
 esac
 echo '{}'
 EOS
@@ -714,8 +741,40 @@ EOS
 
 @test "verwijdert het record en legt dat vast" {
   out="$BATS_TEST_TMPDIR/ev"
-  bash "$SCRIPT" --label ephemeral-spike-test --out "$out"
+  run bash "$SCRIPT" --label ephemeral-spike-test --out "$out"
+  [ "$status" -eq 0 ]
   grep -q "verwijderd" "$out/ephemeral-spike.md"
+}
+
+@test "faalt als het record na de DELETE blijft bestaan" {
+  # Zonder state blijft de GET slagen; het script hoort dan met 5 te stoppen.
+  cat > "$BATS_TEST_TMPDIR/bin/curl" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *"--request DELETE"*) echo '' ; exit 0 ;;
+  *runners/999*) echo '{"id":999,"uuid":"u-999","labels":[]}' ; exit 0 ;;
+  *runners*)     echo '{"id":999,"uuid":"u-999","token":"GEHEIM"}' ; exit 0 ;;
+esac
+EOS
+  chmod +x "$BATS_TEST_TMPDIR/bin/curl"
+  run bash "$SCRIPT" --label ephemeral-spike-test --out "$BATS_TEST_TMPDIR/ev2"
+  [ "$status" -eq 5 ]
+}
+
+@test "faalt als het record toch labels blijkt te dragen" {
+  cat > "$BATS_TEST_TMPDIR/bin/curl" <<'EOS'
+#!/usr/bin/env bash
+case "$*" in
+  *"--request DELETE"*) touch "$FAKE_STATE" ; echo '' ; exit 0 ;;
+  *runners/999*)
+    [ -e "$FAKE_STATE" ] && exit 22
+    echo '{"id":999,"uuid":"u-999","labels":["ubuntu-latest"]}' ; exit 0 ;;
+  *runners*) echo '{"id":999,"uuid":"u-999","token":"GEHEIM"}' ; exit 0 ;;
+esac
+EOS
+  chmod +x "$BATS_TEST_TMPDIR/bin/curl"
+  run bash "$SCRIPT" --label ephemeral-spike-test --out "$BATS_TEST_TMPDIR/ev3"
+  [ "$status" -eq 6 ]
 }
 ```
 
@@ -779,10 +838,25 @@ HAS_TOKEN="$(printf '%s' "$CREATE_JSON" | python3 -c 'import json,sys; print("ja
   printf -- '- respons bevatte een token: %s (waarde bewust niet vastgelegd)\n\n' "$HAS_TOKEN"
 } >> "$DOC"
 
-# Terugleesbewijs: staat ephemeral echt op het record?
+# Terugleesbewijs: staat ephemeral echt op het record, en draagt het geen labels?
 READ_JSON="$(api "$FORGEJO_URL/api/v1/admin/actions/runners/$RUNNER_ID")"
+
+# Veiligheidskader 1: RegisterRunnerOptions kent geen labels en er verbindt geen
+# daemon, dus het record hoort labelloos te zijn. Blijkt dat niet zo, dan klopt
+# de aanname niet en stoppen we voordat er iets op dit record kan landen.
+LABELS_AANTAL="$(printf '%s' "$READ_JSON" | python3 -c '
+import json,sys
+print(len(json.load(sys.stdin).get("labels") or []))
+')"
+if [ "$LABELS_AANTAL" != "0" ]; then
+  printf 'FOUT: record %s draagt %s label(s); veiligheidskader 1 klopt niet. Verwijder het record handmatig.\n' \
+    "$RUNNER_ID" "$LABELS_AANTAL" >&2
+  api --request DELETE "$FORGEJO_URL/api/v1/admin/actions/runners/$RUNNER_ID" >/dev/null || true
+  exit 6
+fi
+
 {
-  printf '## 2. Het record toont ephemeral\n\n```json\n'
+  printf '## 2. Het record toont ephemeral en draagt geen labels\n\n```json\n'
   printf '%s' "$READ_JSON" | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
@@ -1022,6 +1096,15 @@ Bevestigde endpoints:
 | `/api/v1/repos/{owner}/{repo}/collaborators/{user}/permission` | effectief recht per collaborator |
 | `/api/v1/repos/{owner}/{repo}/teams` | teams met toegang |
 | `/api/v1/repos/{owner}/{repo}/branch_protections` | branch-protection op de default branch |
+| `/api/v1/teams/{id}/members` | leden van een team met toegang tot de repository |
+
+Bevestigde responseschema's, uit dezelfde spec gelezen:
+
+- `Team`: `id`, `name`, `permission`, `units`, `units_map`, `organization`, `includes_all_repositories`
+- `Permission`: `admin`, `pull`, `push`
+- `User`: `login`, `is_admin`, …
+- `BranchProtection`: `rule_name`, `branch_name`, `required_approvals`, `enable_push`, `enable_push_whitelist`, `push_whitelist_usernames`, `push_whitelist_teams`, `block_on_rejected_reviews`, `dismiss_stale_approvals`, `apply_to_admins`, …
+- `ContentsResponse`: `name`, `path`, `type`, `size`, `content` (base64), `encoding`
 
 §6 van het ontwerp benoemt `verify-trust-scope.sh` als het bundelbestand. De JSON-logica komt in een apart Python-module `scripts/trust_scope.py`, met `verify-trust-scope.sh` als dunne wrapper: de naam en de verantwoordelijkheid van het bundelbestand blijven zo exact zoals §6 ze belegt, terwijl de logica testbaar wordt zonder externe dependencies.
 
@@ -1033,28 +1116,43 @@ Bevestigde endpoints:
 - Test: `forgejo-runner/tests/test_trust_scope.py`
 
 **Interfaces:**
-- Consumes: `FORGEJO_TOKEN`, `FORGEJO_URL`
+- Consumes: `FORGEJO_TOKEN`, `FORGEJO_URL`, en de gedeelde labelnamen uit `labels.txt`
 - Produces:
-  - `trust_scope.inventory(client) -> dict` — de gemeten toestand
+  - `trust_scope.inventory(client, shared_labels) -> dict` — de gemeten toestand, met per repository `has_actions`, `workflow_source`, `workflows`, `risky_triggers`, `gebruikt_gedeeld_label`, `writers` (collaborators én teamleden), `branch_protection` en `unreadable`
   - `trust_scope.classify(inventory, allowlist) -> Verdict` met velden `hard: list[str]`, `soft: list[str]`, `unreadable: list[str]`. `Verdict.ok` is alleen `True` bij nul harde afwijkingen en nul onleesbare objecten.
+  - clientcontract dat `trust_scope` verwacht: `repos()`, `contents(full_name, path)`, `collaborators(full_name)`, `collaborator_permission(full_name, login)`, `teams(full_name)`, `team_members(team_id)`, `branch_protections(full_name)`
   - Exitcodes van de wrapper: `0` groen, `10` zachte afwijking, `20` harde afwijking, `30` onleesbaar of fail-closed.
+
+**Classificatieregels, afgeleid uit §7.7.** Hard: een workflow-schrijver die niet bij naam in de allowlist staat, ongeacht of hij via collaborator of via team binnenkomt; een Actions-enabled repository die niet in de allowlist staat; een risicovolle trigger (`pull_request`, `pull_request_target`, `workflow_run`) in een workflow die óók een gedeeld runnerlabel gebruikt — dat is het fork/PR-pad waarlangs onbetrouwbare code op de gedeelde labels kan starten. Zacht: een risicovolle trigger in een workflow die géén gedeeld label gebruikt; een ontbrekende branch-protection op de default branch van een repository die de gedeelde labels wél gebruikt; een nieuwe repository met Actions uit. Onleesbaar: iedere workflowmap, workflowbestand, collaborator-, team- of branch-protectionrespons die niet ondubbelzinnig uitleesbaar is — dat is fail-closed en levert exit 30.
 
 - [ ] **Step 1: Schrijf de falende test**
 
 ```python
 # forgejo-runner/tests/test_trust_scope.py
-import unittest, sys, pathlib
+import base64, unittest, sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 import trust_scope
+
+GEDEELDE_LABELS = ("ubuntu-latest",)
+
+
+def b64(tekst):
+    return {"content": base64.b64encode(tekst.encode()).decode(), "encoding": "base64",
+            "path": "wf.yml", "type": "file", "name": "wf.yml"}
 
 
 class FakeClient:
     """Levert vaste API-antwoorden; raakt geen netwerk."""
 
-    def __init__(self, repos, contents=None, collaborators=None, unreadable=()):
+    def __init__(self, repos, contents=None, collaborators=None, permissions=None,
+                 teams=None, team_members=None, protections=None, unreadable=()):
         self._repos = repos
         self._contents = contents or {}
         self._collaborators = collaborators or {}
+        self._permissions = permissions or {}
+        self._teams = teams or {}
+        self._team_members = team_members or {}
+        self._protections = protections or {}
         self._unreadable = set(unreadable)
 
     def repos(self):
@@ -1068,8 +1166,17 @@ class FakeClient:
     def collaborators(self, full_name):
         return self._collaborators.get(full_name, [])
 
+    def collaborator_permission(self, full_name, login):
+        return self._permissions.get((full_name, login), {})
+
+    def teams(self, full_name):
+        return self._teams.get(full_name, [])
+
+    def team_members(self, team_id):
+        return self._team_members.get(team_id, [])
+
     def branch_protections(self, full_name):
-        return []
+        return self._protections.get(full_name, [])
 
 
 REPO_ACTIONS = {
@@ -1089,38 +1196,123 @@ ALLOWLIST = {
     "identities": [{"name": "janpeter"}],
 }
 
+MAP = [{"name": "ci.yml", "type": "file", "path": ".forgejo/workflows/ci.yml"}]
+
 
 class TestWorkflowSource(unittest.TestCase):
     def test_forgejo_map_wint_van_github_fallback(self):
-        client = FakeClient(
-            [REPO_ACTIONS],
-            contents={
-                ("janpeter/app", ".forgejo/workflows"): [{"name": "ci.yml", "type": "file"}],
-                ("janpeter/app", ".github/workflows"): [{"name": "oud.yml", "type": "file"}],
-            },
-        )
-        inv = trust_scope.inventory(client)
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): MAP,
+            ("janpeter/app", ".github/workflows"): [{"name": "oud.yml", "type": "file"}],
+            ("janpeter/app", ".forgejo/workflows/ci.yml"): b64("on: push\n"),
+        })
+        inv = trust_scope.inventory(client, GEDEELDE_LABELS)
         self.assertEqual(inv["repositories"][0]["workflow_source"], ".forgejo/workflows")
 
     def test_valt_terug_op_github_als_forgejo_map_ontbreekt(self):
-        client = FakeClient(
-            [REPO_ACTIONS],
-            contents={("janpeter/app", ".github/workflows"): [{"name": "ci.yml", "type": "file"}]},
-        )
-        inv = trust_scope.inventory(client)
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".github/workflows"): [
+                {"name": "ci.yml", "type": "file", "path": ".github/workflows/ci.yml"}],
+            ("janpeter/app", ".github/workflows/ci.yml"): b64("on: push\n"),
+        })
+        inv = trust_scope.inventory(client, GEDEELDE_LABELS)
         self.assertEqual(inv["repositories"][0]["workflow_source"], ".github/workflows")
 
     def test_onleesbare_map_is_fail_closed(self):
         client = FakeClient([REPO_ACTIONS], unreadable=[("janpeter/app", ".forgejo/workflows")])
-        inv = trust_scope.inventory(client)
-        verdict = trust_scope.classify(inv, ALLOWLIST)
+        verdict = trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(verdict.unreadable)
+
+    def test_onleesbaar_workflowbestand_is_fail_closed(self):
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): MAP,
+            ("janpeter/app", ".forgejo/workflows/ci.yml"): {
+                "content": "@@geen-base64@@", "encoding": "base64",
+                "path": "ci.yml", "type": "file", "name": "ci.yml"},
+        })
+        verdict = trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
         self.assertFalse(verdict.ok)
         self.assertTrue(verdict.unreadable)
 
     def test_repo_zonder_actions_krijgt_geen_workflowbron(self):
-        client = FakeClient([REPO_NO_ACTIONS])
-        inv = trust_scope.inventory(client)
+        inv = trust_scope.inventory(FakeClient([REPO_NO_ACTIONS]), GEDEELDE_LABELS)
         self.assertIsNone(inv["repositories"][0]["workflow_source"])
+
+
+class TestTriggerscan(unittest.TestCase):
+    def test_detecteert_pull_request_target(self):
+        triggers, _ = trust_scope.scan_workflow("on:\n  pull_request_target:\n", GEDEELDE_LABELS)
+        self.assertIn("pull_request_target", triggers)
+
+    def test_pull_request_target_slokt_pull_request_niet_dubbel_op(self):
+        triggers, _ = trust_scope.scan_workflow("on:\n  pull_request_target:\n", GEDEELDE_LABELS)
+        self.assertEqual(triggers, ["pull_request_target"])
+
+    def test_detecteert_workflow_run(self):
+        triggers, _ = trust_scope.scan_workflow("on: workflow_run\n", GEDEELDE_LABELS)
+        self.assertIn("workflow_run", triggers)
+
+    def test_push_only_is_niet_riskant(self):
+        triggers, _ = trust_scope.scan_workflow("on:\n  push:\n", GEDEELDE_LABELS)
+        self.assertEqual(triggers, [])
+
+    def test_detecteert_gedeeld_label(self):
+        _, gebruikt = trust_scope.scan_workflow("runs-on: ubuntu-latest\n", GEDEELDE_LABELS)
+        self.assertTrue(gebruikt)
+
+    def test_ander_label_telt_niet_als_gedeeld(self):
+        _, gebruikt = trust_scope.scan_workflow("runs-on: eigen-runner\n", GEDEELDE_LABELS)
+        self.assertFalse(gebruikt)
+
+    def test_inventory_vult_risky_triggers_werkelijk(self):
+        client = FakeClient([REPO_ACTIONS], contents={
+            ("janpeter/app", ".forgejo/workflows"): MAP,
+            ("janpeter/app", ".forgejo/workflows/ci.yml"):
+                b64("on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n"),
+        })
+        repo = trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]
+        self.assertEqual(repo["risky_triggers"], ["pull_request"])
+        self.assertTrue(repo["gebruikt_gedeeld_label"])
+
+
+class TestSchrijvers(unittest.TestCase):
+    def _client(self, **kw):
+        basis = dict(contents={("janpeter/app", ".forgejo/workflows"): []})
+        basis.update(kw)
+        return FakeClient([REPO_ACTIONS], **basis)
+
+    def test_collaborator_met_push_is_schrijver(self):
+        client = self._client(
+            collaborators={"janpeter/app": [{"login": "eva"}]},
+            permissions={("janpeter/app", "eva"): {"permission": "write"}})
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], ["eva"])
+
+    def test_collaborator_met_alleen_pull_is_geen_schrijver(self):
+        client = self._client(
+            collaborators={"janpeter/app": [{"login": "lezer"}]},
+            permissions={("janpeter/app", "lezer"): {"permission": "read"}})
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], [])
+
+    def test_teamlid_met_write_telt_ook_als_schrijver(self):
+        client = self._client(
+            teams={"janpeter/app": [{"id": 7, "name": "devs", "permission": "write"}]},
+            team_members={7: [{"login": "sam"}]})
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], ["sam"])
+
+    def test_teamlid_met_alleen_read_telt_niet(self):
+        client = self._client(
+            teams={"janpeter/app": [{"id": 8, "name": "kijkers", "permission": "read"}]},
+            team_members={8: [{"login": "kim"}]})
+        self.assertEqual(trust_scope.inventory(client, GEDEELDE_LABELS)["repositories"][0]["writers"], [])
+
+    def test_onbekend_teamlid_is_een_harde_afwijking(self):
+        client = self._client(
+            teams={"janpeter/app": [{"id": 7, "name": "devs", "permission": "admin"}]},
+            team_members={7: [{"login": "vreemdeling"}]})
+        verdict = trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
 
 
 class TestClassificatie(unittest.TestCase):
@@ -1128,7 +1320,9 @@ class TestClassificatie(unittest.TestCase):
         repo = {
             "full_name": "janpeter/app", "has_actions": True,
             "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
-            "risky_triggers": [], "unreadable": [],
+            "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [{"branch_name": "main"}],
+            "default_branch": "main", "unreadable": [],
         }
         repo.update(overrides)
         return {"repositories": [repo], "unreadable": []}
@@ -1144,29 +1338,43 @@ class TestClassificatie(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
 
-    def test_fork_pr_trigger_is_hard(self):
+    def test_risicotrigger_met_gedeeld_label_is_hard(self):
         verdict = trust_scope.classify(
-            self._inv(risky_triggers=["pull_request_target"]), ALLOWLIST)
+            self._inv(risky_triggers=["pull_request_target"], gebruikt_gedeeld_label=True),
+            ALLOWLIST)
         self.assertFalse(verdict.ok)
         self.assertTrue(any("pull_request_target" in h for h in verdict.hard))
+
+    def test_risicotrigger_zonder_gedeeld_label_is_zacht(self):
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=False), ALLOWLIST)
+        self.assertTrue(verdict.ok)
+        self.assertTrue(any("pull_request" in z for z in verdict.soft))
+
+    def test_ontbrekende_branch_protection_bij_gedeeld_label_is_zacht(self):
+        verdict = trust_scope.classify(
+            self._inv(gebruikt_gedeeld_label=True, branch_protection=[]), ALLOWLIST)
+        self.assertTrue(verdict.ok)
+        self.assertTrue(any("branch-protection" in z for z in verdict.soft))
 
     def test_nieuwe_repo_zonder_actions_is_zacht(self):
         inv = self._inv()
         inv["repositories"].append({
-            "full_name": "janpeter/nieuw", "has_actions": False,
-            "workflow_source": None, "writers": ["janpeter"],
-            "risky_triggers": [], "unreadable": [],
+            "full_name": "janpeter/nieuw", "has_actions": False, "workflow_source": None,
+            "writers": [], "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [], "default_branch": "main", "unreadable": [],
         })
         verdict = trust_scope.classify(inv, ALLOWLIST)
         self.assertTrue(verdict.ok)
-        self.assertTrue(any("janpeter/nieuw" in s for s in verdict.soft))
+        self.assertTrue(any("janpeter/nieuw" in z for z in verdict.soft))
 
     def test_nieuwe_repo_met_actions_is_hard(self):
         inv = self._inv()
         inv["repositories"].append({
             "full_name": "janpeter/nieuw", "has_actions": True,
-            "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
-            "risky_triggers": [], "unreadable": [],
+            "workflow_source": ".forgejo/workflows", "writers": [],
+            "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [], "default_branch": "main", "unreadable": [],
         })
         verdict = trust_scope.classify(inv, ALLOWLIST)
         self.assertFalse(verdict.ok)
@@ -1195,9 +1403,10 @@ ingespoten, zodat de tests geen echte instance nodig hebben.
 
 from dataclasses import dataclass, field
 
-RISKY_TRIGGERS = ("pull_request", "pull_request_target", "workflow_run")
+RISKY_TRIGGERS = ("pull_request_target", "pull_request", "workflow_run")
 FORGEJO_WORKFLOWS = ".forgejo/workflows"
 GITHUB_WORKFLOWS = ".github/workflows"
+WORKFLOW_SUFFIXEN = (".yml", ".yaml")
 
 
 class Unreadable(Exception):
@@ -1220,13 +1429,78 @@ def _workflow_source(client, full_name):
     for path in (FORGEJO_WORKFLOWS, GITHUB_WORKFLOWS):
         listing = client.contents(full_name, path)
         if listing:
-            return path
-    return None
+            return path, listing
+    return None, []
 
 
-def inventory(client):
+def _decodeer(entry):
+    """Leest de inhoud van een ContentsResponse. Alles wat niet ondubbelzinnig
+    te decoderen is, is onleesbaar en dus fail-closed."""
+    import base64
+    inhoud = entry.get("content")
+    if inhoud is None:
+        raise Unreadable(f"{entry.get('path')}: geen content in de respons")
+    codering = (entry.get("encoding") or "").lower()
+    if codering == "base64":
+        try:
+            return base64.b64decode(inhoud).decode("utf-8", errors="strict")
+        except Exception as exc:
+            raise Unreadable(f"{entry.get('path')}: base64 niet te decoderen: {exc}") from exc
+    if codering in ("", "utf-8", "plain"):
+        return inhoud
+    raise Unreadable(f"{entry.get('path')}: onbekende encoding {codering!r}")
+
+
+def scan_workflow(tekst, shared_labels):
+    """Conservatieve detectie van risicovolle triggers en gedeeld-labelgebruik.
+
+    Bewust geen YAML-parser: er is er geen beschikbaar zonder externe dependency,
+    en een half-werkende parser is gevaarlijker dan overgevoelige detectie.
+    Over-detectie kost hooguit een handmatige goedkeuring in de allowlist;
+    onder-detectie laat onbetrouwbare code toe. Daarom een tekstscan die eerder
+    te veel dan te weinig markeert.
+    """
+    gevonden = []
+    for trigger in RISKY_TRIGGERS:
+        if trigger in tekst and trigger not in gevonden:
+            # pull_request_target bevat pull_request; alleen de langste telt.
+            if trigger == "pull_request" and "pull_request_target" in gevonden:
+                continue
+            gevonden.append(trigger)
+    gebruikt_label = any(label and label in tekst for label in shared_labels)
+    return gevonden, gebruikt_label
+
+
+def _schrijvers(client, full_name):
+    """Iedere identiteit met write of admin op deze repository, via collaborators
+    en via teams. Een teamlid is net zo goed een workflow-schrijver."""
+    schrijvers = set()
+
+    for collab in client.collaborators(full_name):
+        login = collab.get("login")
+        if not login:
+            continue
+        perm = client.collaborator_permission(full_name, login) or {}
+        rol = str(perm.get("permission", "")).lower()
+        rechten = perm.get("permissions") or collab.get("permissions") or {}
+        if rol in ("admin", "write") or rechten.get("admin") or rechten.get("push"):
+            schrijvers.add(login)
+
+    for team in client.teams(full_name):
+        if str(team.get("permission", "")).lower() not in ("admin", "write", "owner"):
+            continue
+        for lid in client.team_members(team.get("id")):
+            login = lid.get("login")
+            if login:
+                schrijvers.add(login)
+
+    return sorted(schrijvers)
+
+
+def inventory(client, shared_labels=()):
     repositories = []
     unreadable = []
+
     for repo in client.repos():
         full_name = repo["full_name"]
         entry = {
@@ -1238,37 +1512,63 @@ def inventory(client):
             "default_branch": repo.get("default_branch"),
             "owner": (repo.get("owner") or {}).get("login"),
             "workflow_source": None,
+            "workflows": [],
             "risky_triggers": [],
+            "gebruikt_gedeeld_label": False,
             "writers": [],
+            "branch_protection": None,
             "unreadable": [],
         }
+
         if entry["has_actions"]:
+            listing = []
             try:
-                entry["workflow_source"] = _workflow_source(client, full_name)
+                entry["workflow_source"], listing = _workflow_source(client, full_name)
             except Unreadable as exc:
                 entry["unreadable"].append(str(exc))
-                unreadable.append(str(exc))
+
+            for item in listing or []:
+                naam = item.get("name", "")
+                if item.get("type") != "file" or not naam.endswith(WORKFLOW_SUFFIXEN):
+                    continue
+                pad = item.get("path") or f"{entry['workflow_source']}/{naam}"
+                entry["workflows"].append(pad)
+                try:
+                    bestand = client.contents(full_name, pad)
+                    if isinstance(bestand, list) or bestand is None:
+                        raise Unreadable(f"{full_name}:{pad}: geen bestandsrespons")
+                    triggers, gebruikt = scan_workflow(_decodeer(bestand), shared_labels)
+                except Unreadable as exc:
+                    entry["unreadable"].append(str(exc))
+                    continue
+                for trigger in triggers:
+                    if trigger not in entry["risky_triggers"]:
+                        entry["risky_triggers"].append(trigger)
+                entry["gebruikt_gedeeld_label"] = entry["gebruikt_gedeeld_label"] or gebruikt
+
             try:
-                for collab in client.collaborators(full_name):
-                    perm = (collab.get("permissions") or {})
-                    if perm.get("admin") or perm.get("push"):
-                        entry["writers"].append(collab.get("login"))
+                entry["writers"] = _schrijvers(client, full_name)
             except Unreadable as exc:
                 entry["unreadable"].append(str(exc))
-                unreadable.append(str(exc))
+
+            try:
+                regels = client.branch_protections(full_name)
+                entry["branch_protection"] = [
+                    r for r in regels
+                    if r.get("branch_name") == entry["default_branch"]
+                    or r.get("rule_name") == entry["default_branch"]
+                ]
+            except Unreadable as exc:
+                entry["unreadable"].append(str(exc))
+
+        unreadable.extend(entry["unreadable"])
         repositories.append(entry)
+
     return {"repositories": repositories, "unreadable": unreadable}
 
 
 def classify(inv, allowlist):
-    """Splitst afwijkingen in hard en zacht volgens 7.7.
-
-    Hard: een onbekende of niet-goedgekeurde workflow-schrijver, een fork- of
-    PR-pad waarlangs onbetrouwbare code op de gedeelde labels kan starten, een
-    Actions-enabled repository die niet in de allowlist staat, of iets dat na
-    geslaagde readiness alsnog onleesbaar blijkt.
-    Zacht: een nieuwe repository waarop Actions uitstaat.
-    """
+    """Splitst afwijkingen in hard en zacht volgens 7.7."""
     verdict = Verdict()
     verdict.unreadable.extend(inv.get("unreadable", []))
 
@@ -1277,7 +1577,6 @@ def classify(inv, allowlist):
 
     for repo in inv["repositories"]:
         name = repo["full_name"]
-        verdict.unreadable.extend(repo.get("unreadable", []))
         entry = approved_repos.get(name)
 
         if entry is None:
@@ -1299,12 +1598,23 @@ def classify(inv, allowlist):
                     f"{name}: niet-goedgekeurde workflow-schrijver {writer}")
 
         for trigger in repo.get("risky_triggers", []):
-            verdict.hard.append(
-                f"{name}: workflowtrigger {trigger} kan onbetrouwbare code op de gedeelde labels starten")
+            if repo.get("gebruikt_gedeeld_label"):
+                verdict.hard.append(
+                    f"{name}: trigger {trigger} in een workflow die een gedeeld runnerlabel "
+                    f"gebruikt; onbetrouwbare code kan zo op de pool starten")
+            else:
+                verdict.soft.append(
+                    f"{name}: trigger {trigger} aanwezig maar zonder gedeeld runnerlabel; "
+                    f"binnen 24 uur beoordelen")
 
         if repo["has_actions"] and repo["workflow_source"] is None:
             verdict.soft.append(
                 f"{name}: Actions staat aan maar er is geen workflowmap gevonden")
+
+        if repo.get("gebruikt_gedeeld_label") and not repo.get("branch_protection"):
+            verdict.soft.append(
+                f"{name}: gebruikt de gedeelde labels maar heeft geen branch-protection "
+                f"op {repo.get('default_branch')}; binnen 24 uur beoordelen")
 
     return verdict
 ```
@@ -1312,7 +1622,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 9 tests, 0 failures.
+Expected: PASS — 24 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -1372,6 +1682,15 @@ class ForgejoClient:
     def collaborators(self, full_name):
         return self._get(f"/repos/{full_name}/collaborators") or []
 
+    def collaborator_permission(self, full_name, login):
+        return self._get(f"/repos/{full_name}/collaborators/{login}/permission") or {}
+
+    def teams(self, full_name):
+        return self._get(f"/repos/{full_name}/teams") or []
+
+    def team_members(self, team_id):
+        return self._get(f"/teams/{team_id}/members") or []
+
     def branch_protections(self, full_name):
         return self._get(f"/repos/{full_name}/branch_protections") or []
 
@@ -1413,9 +1732,25 @@ def load_allowlist(path):
     return doc
 
 
+def load_shared_labels(path):
+    """Leest de labelnamen uit labels.txt. Een regel heeft de vorm
+    `naam:docker://image@sha256:...`; alleen het deel voor de eerste dubbele punt
+    is de labelnaam waarop een workflow `runs-on` kan matchen."""
+    namen = []
+    for regel in open(path, encoding="utf-8"):
+        regel = regel.strip()
+        if not regel or regel.startswith("#"):
+            continue
+        namen.append(regel.split(":", 1)[0])
+    return tuple(namen)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--allowlist", required=True)
+    ap.add_argument("--labels", required=True,
+                    help="pad naar labels.txt; de labelnamen bepalen of een workflow "
+                         "de gedeelde pool kan bereiken")
     ap.add_argument("--out", required=True)
     ap.add_argument("--emit-allowlist", action="store_true",
                     help="print een allowlist-voorstel uit de meting en wijzig niets")
@@ -1427,8 +1762,12 @@ def main():
         return 30
 
     client = ForgejoClient(os.environ.get("FORGEJO_URL", "https://git.jp-visser.nl"), token)
+    shared_labels = load_shared_labels(args.labels)
+    if not shared_labels:
+        print("fail-closed: geen gedeelde labels gelezen uit labels.txt", file=sys.stderr)
+        return 30
     try:
-        inv = trust_scope.inventory(client)
+        inv = trust_scope.inventory(client, shared_labels)
     except Unreadable as exc:
         print(f"fail-closed: {exc}", file=sys.stderr)
         return 30
@@ -1498,12 +1837,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALLOWLIST="${ALLOWLIST:-$SCRIPT_DIR/../trusted-actions-scope.yml}"
+LABELS="${LABELS:-$SCRIPT_DIR/../labels.txt}"
 OUT="${1:-}"
 [ -n "$OUT" ] || { printf 'gebruik: verify-trust-scope.sh UITVOERMAP\n' >&2 ; exit 2 ; }
 [ -n "${FORGEJO_TOKEN:-}" ] || { printf 'FORGEJO_TOKEN ontbreekt\n' >&2 ; exit 30 ; }
 
 mkdir -p "$OUT"
-exec python3 "$SCRIPT_DIR/trust_scope_cli.py" --allowlist "$ALLOWLIST" --out "$OUT"
+exec python3 "$SCRIPT_DIR/trust_scope_cli.py" --allowlist "$ALLOWLIST" \
+  --labels "$LABELS" --out "$OUT"
 ```
 
 - [ ] **Step 8: Schrijf de allowlist met de vandaag bekende toestand**
@@ -1527,11 +1868,14 @@ repositories: []
 
 ```bash
 source ~/.zshenv
-bash forgejo-runner/scripts/verify-trust-scope.sh \
-  docs/forgejo-runner-pool/evidence/stap-a/trust || true
+EV=docs/forgejo-runner-pool/evidence/stap-a
+# De labelnamen komen uit Task 2 step 7; labels.txt uit stap B bestaat nog niet.
+LABELS="$EV/shared-label-names.txt" \
+  bash forgejo-runner/scripts/verify-trust-scope.sh "$EV/trust" || true
 python3 forgejo-runner/scripts/trust_scope_cli.py \
   --allowlist forgejo-runner/trusted-actions-scope.yml \
-  --out docs/forgejo-runner-pool/evidence/stap-a/trust \
+  --labels "$EV/shared-label-names.txt" \
+  --out "$EV/trust" \
   --emit-allowlist > /tmp/voorstel-allowlist.yml
 diff forgejo-runner/trusted-actions-scope.yml /tmp/voorstel-allowlist.yml || true
 ```
@@ -1543,10 +1887,17 @@ De repo's `janpeter/scrum4me-server` en `janpeter/max2` horen hier expliciet bij
 - [ ] **Step 10: Bewijs dat de gate fail-closed is**
 
 ```bash
-FORGEJO_TOKEN="" bash forgejo-runner/scripts/verify-trust-scope.sh /tmp/leeg ; echo "exit=$?"
+EV=docs/forgejo-runner-pool/evidence/stap-a
+FORGEJO_TOKEN="" LABELS="$EV/shared-label-names.txt" \
+  bash forgejo-runner/scripts/verify-trust-scope.sh /tmp/leeg ; echo "exit=$?"
+
+# En zonder labelnamen evenmin: dan kan de gate niet bepalen welke workflows de pool bereiken.
+LABELS=/dev/null bash forgejo-runner/scripts/verify-trust-scope.sh /tmp/leeg ; echo "exit=$?"
 ```
 
-Expected: `exit=30`. De gate mag zonder token nooit groen worden.
+Expected: beide aanroepen geven `exit=30`. De gate mag zonder token en zonder labelnamen nooit groen worden.
+
+Na Task 16 draait dezelfde gate nogmaals met `LABELS=forgejo-runner/labels.txt`; de labelnamen daarin moeten identiek zijn aan `shared-label-names.txt`. Wijken ze af, dan is het labelcontract gebroken en is dat een harde bevinding vóór stap C.
 
 - [ ] **Step 11: Commit**
 
@@ -2130,12 +2481,54 @@ cat "$EV/caps.md"
 
 Expected: beide hosts GROEN. Is een host ROOD, dan is dat volgens §7.8 een NO-GO voor identieke caps en stopt stap A hier. Lagere caps op alleen `max2` zijn niet toegestaan; de uitweg is een beperktere workload of een nieuw architectuurbesluit, en dat is JP's beslissing.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Schrijf `caps.env`, het machineleesbare formaat dat `preflight.sh` sourcet**
+
+`caps.md` is voor mensen; `preflight.sh` uit Task 10 sourcet een shellbestand en verwacht exact de namen `RUNNER_CPU`, `RUNNER_MEM_BYTES`, `DIND_CPU` en `DIND_MEM_BYTES`. Compose gebruikt in Task 16 een ander schema (`RUNNER_CPUS`, `RUNNER_MEM`, …); `caps.env` levert daarom beide blokken, zodat er nergens handmatig hoeft te worden omgerekend.
+
+```bash
+EV=docs/forgejo-runner-pool/evidence/stap-a
+python3 - <<'PY' > "$EV/caps.env"
+import csv, pathlib, sys
+sys.path.insert(0, "forgejo-runner/scripts")
+import compute_caps
+
+ev = pathlib.Path("docs/forgejo-runner-pool/evidence/stap-a")
+samples = list(csv.DictReader(open(ev / "workload-scrum4me-server.tsv"), delimiter="\t"))
+caps = compute_caps.compute(samples)
+
+print("# Gegenereerd door Task 9 uit workload-scrum4me-server.tsv. Niet handmatig bewerken.")
+print("# Namen zoals preflight.sh ze sourcet:")
+print(f"RUNNER_CPU={caps.runner_cpu}")
+print(f"RUNNER_MEM_BYTES={caps.runner_mem_bytes}")
+print(f"RUNNER_PIDS={caps.runner_pids}")
+print(f"DIND_CPU={caps.dind_cpu}")
+print(f"DIND_MEM_BYTES={caps.dind_mem_bytes}")
+print(f"DIND_PIDS={caps.dind_pids}")
+print("# Namen zoals compose.yaml ze verwacht (Task 16):")
+print(f"RUNNER_CPUS={caps.runner_cpu}")
+print(f"RUNNER_MEM={caps.runner_mem_bytes}")
+print(f"DIND_CPUS={caps.dind_cpu}")
+print(f"DIND_MEM={caps.dind_mem_bytes}")
+PY
+cat "$EV/caps.env"
+```
+
+Expected: elf regels, elke waarde niet-leeg. Controleer daarna dat `preflight.sh` dit bestand daadwerkelijk kan sourcen:
+
+```bash
+bash -c 'set -euo pipefail; source docs/forgejo-runner-pool/evidence/stap-a/caps.env; \
+  printf "%s %s %s %s\n" "$RUNNER_CPU" "$RUNNER_MEM_BYTES" "$DIND_CPU" "$DIND_MEM_BYTES"'
+```
+
+Expected: vier waarden. Faalt dit, dan faalt de gate van Task 10 op zijn invoer in plaats van op zijn drempels.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add forgejo-runner/scripts/compute_caps.py forgejo-runner/tests/test_compute_caps.py \
-        docs/forgejo-runner-pool/evidence/stap-a/caps.md
-git commit -m "feat(stap-a): caps berekenen en headroomgate op beide hosts"
+        docs/forgejo-runner-pool/evidence/stap-a/caps.md \
+        docs/forgejo-runner-pool/evidence/stap-a/caps.env
+git commit -m "feat(stap-a): caps berekenen, caps.env genereren en headroomgate op beide hosts"
 ```
 
 ---
@@ -2149,7 +2542,7 @@ De laatste gate van stap A en de poortwachter van iedere mutatie daarna. §7.8 n
 - Test: `forgejo-runner/tests/test_preflight.bats`
 
 **Interfaces:**
-- Consumes: `host-facts-<host>.tsv` uit Task 8, `caps.env` afgeleid uit Task 9, en `allowed-job-images.txt` uit Task 16 wanneer die bestaat
+- Consumes: `host-facts-<host>.tsv` uit Task 8, `caps.env` zoals Task 9 step 6 die genereert (met exact de variabelen `RUNNER_CPU`, `RUNNER_MEM_BYTES`, `DIND_CPU`, `DIND_MEM_BYTES`), en `allowed-job-images.txt` uit Task 16 wanneer die bestaat
 - Produces: exitcode `0` als alle vier drempels halen, `40` als er één faalt; een regel per drempel op stdout met `OK` of `FAIL`.
 
 - [ ] **Step 1: Schrijf de falende test**
@@ -2308,6 +2701,8 @@ shellcheck forgejo-runner/scripts/preflight.sh
 EV=docs/forgejo-runner-pool/evidence/stap-a
 for H in scrum4me-srv max2; do
   scp forgejo-runner/scripts/preflight.sh "janpeter@$H:/tmp/"
+  # caps.env komt uit Task 9 step 6 en moet mee: preflight sourcet hem.
+  scp "$EV/caps.env" "janpeter@$H:/tmp/s4m-capture/caps.env"
   ssh "janpeter@$H" "bash /tmp/preflight.sh --facts /tmp/s4m-capture/host-facts-\$(hostname).tsv \
     --caps /tmp/s4m-capture/caps.env" | tee "$EV/preflight-$H.txt"
 done
@@ -3755,13 +4150,21 @@ RUNNER_IMAGE=code.forgejo.org/forgejo/runner@sha256:VUL_IN
 DIND_IMAGE=docker@sha256:VUL_IN
 JOB_IMAGE=catthehacker/ubuntu@sha256:VUL_IN
 
-# Resourcecaps uit caps.md (7.8). Identiek op beide hosts.
+# Resourcecaps. Neem deze niet handmatig over: Task 9 step 6 genereert
+# evidence/stap-a/caps.env met exact deze namen naast de preflight-namen.
 RUNNER_CPUS=VUL_IN
 RUNNER_MEM=VUL_IN
 RUNNER_PIDS=VUL_IN
 DIND_CPUS=VUL_IN
 DIND_MEM=VUL_IN
 DIND_PIDS=VUL_IN
+```
+
+Vul het capsdeel mechanisch vanuit `caps.env`, zodat de twee naamgevingsschema's niet uit elkaar kunnen lopen:
+
+```bash
+grep -E '^(RUNNER|DIND)_(CPUS|MEM|PIDS)=' \
+  docs/forgejo-runner-pool/evidence/stap-a/caps.env >> forgejo-runner/.env
 ```
 
 ```text
@@ -4436,6 +4839,16 @@ set -euo pipefail
 BUNDLE="${1:-}"
 [ -d "$BUNDLE" ] || { printf 'gebruik: bundle-hash.sh BUNDELMAP\n' >&2 ; exit 2 ; }
 
+# Ubuntu levert sha256sum, mac shasum. Gemeten 2026-08-31: shasum bestaat op
+# beide hosts en op mac, en beide commando's geven dezelfde uitvoerindeling.
+# De detectie is dus geen aanname over een ontbrekend commando maar een
+# garantie dat mac en host dezelfde hash produceren.
+if command -v sha256sum >/dev/null 2>&1; then
+  HASHER=(sha256sum)
+else
+  HASHER=(shasum -a 256)
+fi
+
 cd "$BUNDLE"
 find . -type f ! -name '.env' ! -path './tests/*' -print0 \
   | LC_ALL=C sort -z \
@@ -4444,17 +4857,11 @@ find . -type f ! -name '.env' ! -path './tests/*' -print0 \
       cat "$pad"
       printf '\0'
     done \
-  | shasum -a 256 \
+  | "${HASHER[@]}" \
   | awk '{print $1}'
 ```
 
-Let op: op de Ubuntu-hosts heet dit commando `sha256sum` en op mac `shasum -a 256`. Gebruik daarom in het script een detectie:
-
-```bash
-if command -v sha256sum >/dev/null 2>&1; then HASHER="sha256sum"; else HASHER="shasum -a 256"; fi
-```
-
-en vervang de vaste `shasum -a 256` door `$HASHER`. Zonder die detectie faalt de vergelijking tussen mac en host, en dat is precies de vergelijking waar §6.1 om vraagt.
+De hash dekt pad én inhoud, zodat een hernoeming hem verandert. `.env` en `tests/` blijven erbuiten: het eerste is hostlokaal, het tweede draait niet mee op de hosts.
 
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
@@ -4774,6 +5181,8 @@ Maak `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` met een tabel die
 | volledige labels en global scope | `runner-registration.json`, `evidence/stap-a/forgejo/runners-summary.tsv` |
 | alle zichtbare runnerrecords | `evidence/stap-a/forgejo/runners-summary.tsv` |
 | `T_requeue` | `evidence/stap-a/t-requeue.md` |
+| canonieke labelnamen uit de live `.runner` | `evidence/stap-a/shared-label-names.txt` |
+| machineleesbare caps voor `preflight.sh` | `evidence/stap-a/caps.env` |
 | NTP-status en klokskew op beide hosts | `evidence/stap-a/clock-scrum4me-server.txt`, `max2-clock.txt` |
 | trustscope-gate met `.forgejo`/`.github`-fallback en allowlist | `evidence/stap-a/trust/trust-inventory.json`, `trust-verdict.json`, `trusted-actions-scope.yml` |
 | vier readinessuitkomsten met stub/testharnas | `evidence/stap-a/testharnas-dekking.md` |
@@ -4826,4 +5235,29 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 
 **Consistentie van namen en typen.** `ro_docker` (Task 1) wordt gebruikt in Task 2, 7 en 8. `Confirmation`, `ReadinessClass` en `SEVERITY` (Task 11) worden gebruikt in Task 12 tot en met 15. `Fence` en `latch_verdict` (Task 13) in Task 15. `MaintenanceRecord` (Task 14) in `tick`. `assignment_nulbewijs` (Task 15) wordt in stap D en F aangeroepen en is hier alleen gedefinieerd en getest. `allowed-job-images.txt` (Task 16) wordt gelezen door `preflight.sh` (Task 10) en `scrub-dind.sh` (Task 18) — Task 10 is daarom geschreven met `--images` als optioneel argument, zodat hij vóór Task 16 al draaibaar is.
 
-**Bekende volgordeafhankelijkheid.** Task 10 (`preflight.sh`) verwijst naar `allowed-job-images.txt` uit Task 16. Dat is bewust: zonder dat bestand telt de schijfdrempel alleen de 20 GiB werkruimte, en met dat bestand telt hij de imagegroottes erbij op. Draai `preflight.sh` daarom na Task 16 nogmaals, vóór stap C.
+**Bekende volgordeafhankelijkheden.** Er zijn er twee, allebei bewust en allebei zonder blokkade:
+
+1. Task 10 (`preflight.sh`) leest `allowed-job-images.txt` uit Task 16. Zonder dat bestand telt de schijfdrempel alleen de 20 GiB werkruimte; met dat bestand telt hij de imagegroottes erbij op. Draai `preflight.sh` daarom na Task 16 nogmaals, vóór stap C.
+2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
+
+## Review record
+
+### Plan-review ronde 1 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `2bc76156-3a6e-4b1e-86a9-7acb9012584a`, `7288f68f-0050-43a0-aec8-6db689be7e47`
+**Replies:** `f47c4e29-a69a-4d7b-86a5-f32350283d52`, `5ece6245-bd69-4afe-ac00-cf26c56f5fb0`
+**Beoordeelde revisie:** 4829 regels, commit `c386825`, SHA-256 `1a313a4b2e470f39d7ce2dca1acfa7049791f70c7204118a25a1148e659e7647`
+**Verdicts:** Codex NO-GO; Claude NO-GO
+**Tellingen:** Codex 1 BLOCKER / 2 MAJOR / 0 MINOR; Claude 0 BLOCKER / 1 MAJOR / 2 MINOR
+
+Beide reviewers bevestigden de feitentabel en de API-beweringen tegen de draaiende instance. Alle zes bevindingen zijn tegen de boom nagemeten en volledig geaccepteerd; geen enkele is afgewezen.
+
+- **BLOCKER (codex): de trustgate mat niet wat §7.7 eist.** `RISKY_TRIGGERS` was gedeclareerd maar werd nergens gevuld, `branch_protections()` bestond op de client maar werd nooit aangeroepen, en teams werden helemaal niet opgehaald. Nagemeten: `grep risky_triggers` liet alleen lege lijsten in tests en één leesplek in `classify` zien; `grep branch_protections` alleen twee clientdefinities; `def teams` bestond niet. Verwerkt: `inventory()` haalt nu workflowbestanden op, decodeert ze fail-closed, vult `risky_triggers` en `gebruikt_gedeeld_label` via `scan_workflow`, verzamelt schrijvers uit collaborators én teams via `collaborator_permission` en `team_members`, en leest branch-protection op de default branch. `classify()` maakt een risicotrigger mét gedeeld label hard en zonder gedeeld label zacht, en meldt ontbrekende branch-protection als zacht. De testsuite groeide van 9 naar 24 tests.
+- **MAJOR (codex): `caps.env` werd geconsumeerd maar nooit geproduceerd.** Task 9 schreef alleen `caps.md`. Verwerkt: Task 9 heeft een nieuwe step die `caps.env` genereert met exact de namen die `preflight.sh` sourcet plus de Compose-namen, met een controle dat het bestand sourcebaar is; Task 10 kopieert het expliciet naar beide hosts en Task 16 vult `.env` er mechanisch uit.
+- **MAJOR (codex): de nep-`curl` van Task 4 maakte de groene toestand onbereikbaar.** De mock gaf ook ná de DELETE een record terug, waardoor het script terecht met exit 5 stopte en de test nooit kon slagen. Verwerkt: de fake is stateful geworden en geeft na de DELETE non-zero; er zijn twee tests bij die bewijzen dat een blijvend record wél tot exit 5 leidt en dat labels tot exit 6 leiden.
+- **MAJOR (claude): veiligheidskader 1 van de ephemeral-spike beschreef een mechanisme dat niet bestaat.** `RegisterRunnerOptions` kent alleen `description`, `ephemeral` en `name` — geen `labels`. De POST zette dus de naam, niet een label, en de mock verzon het label zodat de test het niet kon betrappen. Verwerkt: kader 1 beschrijft nu de werkelijke garantie (geen labels, dus geen `runs-on`-match), het script doet een harde assertie op het teruggelezen record en stopt met exit 6 als er toch labels blijken te zijn, en de mock geeft een lege labellijst.
+- **MINOR (claude): het containeraantal voor `max2` klopte niet** — 20 in het plan tegenover 19 gemeten. Verwerkt: gecorrigeerd naar 19 met de uitsplitsing 11 draaiend en 8 gestopt, en de kolomkop noemt nu het commando.
+- **MINOR (claude): `bundle-hash.sh` leverde de mac-variant in code en de draagbaarheidsfix alleen in proza.** De reviewer mat bovendien dat `shasum` op beide hosts bestaat, zodat de toelichting ook feitelijk misleidend was. Verwerkt: de `HASHER`-detectie staat nu in het codeblok zelf, met de meting als onderbouwing.
+
+Daarnaast is één volgordelus gesloten die door de BLOCKER-fix ontstond: de trustgate heeft labelnamen nodig, en die komen nu uit `shared-label-names.txt` dat Task 2 uit de live `.runner` haalt, niet uit `labels.txt` van stap B.
