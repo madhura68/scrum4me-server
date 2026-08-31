@@ -1383,6 +1383,26 @@ class TestVierenveertigVierNulVier(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("branch-protection" in u for u in verdict.unreadable))
 
+    def test_ontbrekende_permissierespons_is_fail_closed(self):
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            collaborators={"janpeter/app": [{"login": "eva"}]},
+            permissions={})   # geen permissierespons voor eva
+        verdict = trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("eva" in u for u in verdict.unreadable))
+
+    def test_permissierespons_zonder_rolvelden_is_fail_closed(self):
+        client = FakeClient(
+            [REPO_ACTIONS],
+            contents={("janpeter/app", ".forgejo/workflows"): []},
+            collaborators={"janpeter/app": [{"login": "eva"}]},
+            permissions={("janpeter/app", "eva"): {"user": {"login": "eva"}}})
+        verdict = trust_scope.classify(trust_scope.inventory(client, GEDEELDE_LABELS), ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("eva" in u for u in verdict.unreadable))
+
     def test_client_geeft_alleen_bij_missing_ok_none_terug(self):
         import urllib.error
         import trust_scope_cli
@@ -1588,8 +1608,15 @@ def _schrijvers(client, full_name, owner_login=None):
         login = collab.get("login")
         if not login:
             continue
-        perm = client.collaborator_permission(full_name, login) or {}
-        rol = str(perm.get("permission") or perm.get("role_name") or "").lower()
+        perm = client.collaborator_permission(full_name, login)
+        # De permissierespons is de beslissende meting voor deze identiteit.
+        # Ontbreekt hij of mist hij beide rolvelden, dan is dat onleesbaar en
+        # nooit "geen schrijfrecht": dat zou de collaborator stil uit writers
+        # laten verdwijnen.
+        if perm is None or not (perm.get("permission") or perm.get("role_name")):
+            raise Unreadable(
+                f"{full_name}: permissie van collaborator {login} niet uitleesbaar")
+        rol = str(perm.get("permission") or perm.get("role_name")).lower()
         if rol in ROLLEN_MET_SCHRIJFRECHT:
             schrijvers.add(login)
 
@@ -1737,7 +1764,7 @@ def classify(inv, allowlist):
 - [ ] **Step 4: Draai de test en bevestig dat hij slaagt**
 
 Run: `python3 -m unittest discover -s forgejo-runner/tests -p 'test_trust_scope.py' -v`
-Expected: PASS — 31 tests, 0 failures.
+Expected: PASS — 33 tests, 0 failures.
 
 - [ ] **Step 5: Bevestig dat de logica geen netwerk raakt**
 
@@ -1790,10 +1817,18 @@ class ForgejoClient:
             raise Unreadable(f"{path}: {exc}") from exc
 
     def repos(self):
+        """Alle zichtbare repositories, gepagineerd.
+
+        Een onverwachte vorm is hier extra gevaarlijk: een stilzwijgend lege
+        lijst betekent "niets te toetsen" en zou de trustgate groen maken
+        zonder een enkele repository te hebben gemeten.
+        """
         out, page = [], 1
         while True:
             data = self._get("/repos/search", {"limit": 50, "page": page})
-            items = (data or {}).get("data", [])
+            if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+                raise Unreadable(f"/repos/search pagina {page}: onverwachte respons")
+            items = data["data"]
             out.extend(items)
             if len(items) < 50:
                 return out
@@ -5390,6 +5425,25 @@ Uitgevoerd na het schrijven, tegen het migratieontwerp.
 2. Task 6 (trustgate) heeft de gedeelde labelnamen nodig. Die komen **niet** uit `labels.txt` van Task 16, maar uit `shared-label-names.txt` dat Task 2 step 7 uit de live `.runner` haalt. Na Task 16 draait de gate nogmaals met `labels.txt`, en de namen moeten dan identiek zijn.
 
 ## Review record
+
+### Plan-review ronde 4 — 31 augustus 2026
+
+**Reviewers:** `mac:codex` en `scrum4me-server:claude`
+**Requests:** `65c6e879-0b6c-458e-a7f9-308f01c2664c`, `69ede2e0-0547-4876-b5b9-09d11f16076e`
+**Replies:** `dbd6ed20-120f-46af-9dd4-df265f7f4a9a`, `f839934e-0220-4bae-914a-0904fec3a37a`
+**Beoordeelde revisie:** 5461 regels, commit `171b79e`, SHA-256 `f2401dd39982a0ddfd5c1acf6d3dfa5c7ff130cef56d48fce6af067107a45154`
+**Verdicts:** Codex NO-GO; Claude **GO**
+**Tellingen:** Codex 0 BLOCKER / 1 MAJOR / 0 MINOR; Claude 0 BLOCKER / 0 MAJOR / 0 MINOR
+
+Claude liep de fail-closed keten end-to-end na — van HTTP-status via `Unreadable`, de aggregatie in `inventory()`, `Verdict.ok` tot exitcode 30 — en vond geen defect. Codex bevestigde dat `_get()`, de beperking van `missing_ok` tot `contents()`, de verwijderde `or []`-fallbacks, de afvang van een 404 op een workflowbestand en het herstel van `urllib.request.urlopen` in een `finally` alle houden, en dat het tellerblok groen draait.
+
+**MAJOR (codex, geaccepteerd en nagemeten):** één fail-open pad was blijven staan. `_schrijvers()` valideerde `collaborators()`, `teams()`, `team_members()` en `branch_protections()` op `None`, maar niet `collaborator_permission()`: daar stond nog `perm = client.collaborator_permission(...) or {}`. Bij een `None`, een lege of een malformed permissierespons werd `rol` daardoor `""` en verdween de collaborator stil uit `writers` — dezelfde klasse als de ronde-3-MAJOR, één niveau dieper, en juist bij de beslissende meting voor een identiteit. Zelf nagemeten op regel 1591 van de beoordeelde revisie.
+
+Dit was de derde keer in deze loop dat een correctie op één plek werd toegepast en elders bleef staan. Bij het verwerken is daarom niet alleen de gemelde plek gerepareerd maar de hele gate opnieuw op dat patroon doorzocht, wat een **tweede, niet-gemelde exemplaar** opleverde:
+
+- `_schrijvers()` werpt nu `Unreadable` als de permissierespons ontbreekt of geen van beide rolvelden bevat.
+- `ForgejoClient.repos()` gebruikte `items = (data or {}).get("data", [])`. Een onverwachte respons leverde daar stilzwijgend een lege repolijst op — en een lege repolijst betekent "niets te toetsen" en dus een groene trustgate zonder ook maar één gemeten repository. `repos()` eist nu een dict met een lijst onder `data` en werpt anders `Unreadable`.
+- Twee tests erbij, Task 6 van 31 naar 33: een collaborator zonder permissierespons, en een permissierespons zonder rolvelden; beide moeten in `verdict.unreadable` eindigen en het oordeel rood maken.
 
 ### Plan-review ronde 3 — 31 augustus 2026
 
