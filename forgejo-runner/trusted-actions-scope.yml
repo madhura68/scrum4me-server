@@ -1,0 +1,12 @@
+# forgejo-runner/trusted-actions-scope.yml
+# Expliciete allowlist voor de global-scope runners (7.7 van het migratieontwerp).
+# Een identiteit is alleen trusted als JP haar bij naam heeft goedgekeurd.
+# Dit bestand wordt in Task 6 step 7 gevuld met de gemeten toestand en daarna
+# door JP goedgekeurd. Zolang approved_by leeg is, faalt de gate fail-closed.
+version: 1
+approved_by: ""
+approved_at: ""
+
+identities: []
+
+repositories: []
