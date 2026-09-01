@@ -4,7 +4,12 @@
 Exitcodes: 0 groen, 10 zachte afwijking, 20 harde afwijking, 30 onleesbaar.
 """
 
-import argparse, json, os, sys, urllib.error, urllib.request
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
 
 import trust_scope
 from trust_scope import Unreadable

@@ -1,5 +1,9 @@
 # forgejo-runner/tests/test_trust_scope.py
-import base64, unittest, sys, pathlib
+import base64
+import pathlib
+import sys
+import unittest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 import trust_scope
 

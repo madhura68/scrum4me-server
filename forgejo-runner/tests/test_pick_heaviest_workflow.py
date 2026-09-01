@@ -1,5 +1,8 @@
 # forgejo-runner/tests/test_pick_heaviest_workflow.py
-import unittest, sys, pathlib
+import pathlib
+import sys
+import unittest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 import pick_heaviest_workflow as p
 
