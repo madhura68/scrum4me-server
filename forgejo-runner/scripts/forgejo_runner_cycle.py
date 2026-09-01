@@ -81,3 +81,98 @@ class Confirmation:
 
     def reset(self):
         self.laatste, self.laatste_tijd = None, None
+
+
+class State(str, Enum):
+    SOURCE_WAIT = "SOURCE_WAIT"
+    CREDENTIAL_ERROR = "CREDENTIAL_ERROR"
+    WAITING = "WAITING"
+    RUNNING = "RUNNING"
+    DRAINING = "DRAINING"
+    SCRUBBING = "SCRUBBING"
+    QUARANTINED = "QUARANTINED"
+
+
+@dataclass(frozen=True)
+class Event:
+    kind: str
+    payload: dict
+    event_seq: int
+    mono: float
+    wall: float
+
+
+class EventLoop:
+    """Eén geserialiseerde bron van event_seq (§7.7).
+
+    De klok levert (monotoon, wandklok). Monotone tijd stuurt deadlines; de
+    wandklok gaat alleen mee in het auditspoor en beslist nooit iets.
+    """
+
+    def __init__(self, clock):
+        self._clock = clock
+        self._seq = 0
+        self.events = []
+
+    def submit(self, kind, payload=None):
+        self._seq += 1
+        mono, wall = self._clock()
+        event = Event(kind=kind, payload=payload or {}, event_seq=self._seq,
+                      mono=mono, wall=wall)
+        self.events.append(event)
+        return event
+
+
+class Controller:
+    """Toestandsmachine van §7.9. Start altijd in SOURCE_WAIT: bij boot bestaat
+    er nog geen runnerproces en is de bron nog niet bewezen ready."""
+
+    def __init__(self, loop, state=State.SOURCE_WAIT):
+        self.loop = loop
+        self.state = state
+        self.gates_groen = False
+        self.readiness = Confirmation()
+        self._laatste_exitcode = None
+
+    def on_event(self, event):
+        handler = getattr(self, f"_on_{event.kind}", None)
+        if handler is not None:
+            handler(event)
+
+    def _on_readiness(self, event):
+        bevestigd = self.readiness.observe(event.payload["klasse"], now=event.mono)
+        if bevestigd is None:
+            return
+        if bevestigd is ReadinessClass.READY:
+            # Alleen na twee geldige probes EN groene gates mag er een runner komen.
+            if self.gates_groen and self.state in (State.SOURCE_WAIT,
+                                                   State.CREDENTIAL_ERROR,
+                                                   State.QUARANTINED):
+                self.state = State.WAITING
+            return
+        if bevestigd is ReadinessClass.SOURCE_WAIT:
+            self.state = State.SOURCE_WAIT
+        elif bevestigd is ReadinessClass.CREDENTIAL_ERROR:
+            self.state = State.CREDENTIAL_ERROR
+        else:
+            self.state = State.QUARANTINED
+
+    def _on_job_accepted(self, event):
+        if self.state is State.WAITING:
+            self.state = State.RUNNING
+
+    def _on_child_exit(self, event):
+        self._laatste_exitcode = event.payload.get("code")
+        # Na iedere exit wordt geschrobd, ook na een fout: containment eerst.
+        self.state = State.SCRUBBING
+
+    def _on_scrub_done(self, event):
+        if not event.payload.get("ok"):
+            self.state = State.QUARANTINED
+            return
+        if self._laatste_exitcode not in (0, None):
+            # Non-zero bij --wait duidt op config-, initialisatie-, poller- of
+            # runtimefalen; heropenen mag dan niet (§7.9).
+            self.state = State.QUARANTINED
+            return
+        self.state = State.WAITING if self.gates_groen else State.SOURCE_WAIT
