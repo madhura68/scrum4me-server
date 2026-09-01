@@ -146,6 +146,43 @@ class Fence:
         return (now - self.gezet_op_mono) >= FENCE_MAX_AGE_SECONDS
 
 
+MAINTENANCE_MAX_DUUR_SECONDS = 1800.0
+
+
+@dataclass(frozen=True)
+class MaintenanceRecord:
+    """Vooraf gearmd control-plane-onderhoudsvenster (§7.7).
+
+    Geldigheid is bewust een wandklokinterval: het is een menselijk geplande
+    afspraak die op beide hosts identiek wordt gearmd. Fencedeadlines blijven
+    monotoon; die twee klokken worden nooit door elkaar gebruikt.
+    """
+
+    maintenance_id: str
+    start_utc: float
+    eind_utc: float
+
+    @classmethod
+    def parse(cls, data):
+        for veld in ("maintenance_id", "start_utc", "eind_utc"):
+            if veld not in data:
+                raise ValueError(f"maintenance-record mist {veld}")
+        if not str(data["maintenance_id"]).strip():
+            raise ValueError("maintenance_id mag niet leeg zijn")
+        duur = float(data["eind_utc"]) - float(data["start_utc"])
+        if duur <= 0:
+            raise ValueError("maintenance-record heeft geen positieve duur")
+        if duur > MAINTENANCE_MAX_DUUR_SECONDS:
+            raise ValueError(
+                f"maintenance-record duurt {duur}s, maximaal {MAINTENANCE_MAX_DUUR_SECONDS}s")
+        return cls(maintenance_id=str(data["maintenance_id"]),
+                   start_utc=float(data["start_utc"]),
+                   eind_utc=float(data["eind_utc"]))
+
+    def geldig_op(self, wall):
+        return self.start_utc <= wall < self.eind_utc
+
+
 _KLASSE_NAAR_STATE = {
     ReadinessClass.SOURCE_WAIT: State.SOURCE_WAIT,
     ReadinessClass.CREDENTIAL_ERROR: State.CREDENTIAL_ERROR,
@@ -170,6 +207,8 @@ class Controller:
         self.readiness = Confirmation()
         self.fence = None
         self.volgende_state = None
+        self.maintenance = None
+        self.algemene_readiness_bevestigd = False
         self._laatste_exitcode = None
 
     @property
@@ -244,13 +283,43 @@ class Controller:
         self.loop.submit("alarm", {"klasse": bevestigd, "reden": "bevestigde fouttoestand"})
         self._commit_of_onthoud(_KLASSE_NAAR_STATE[bevestigd])
 
-    def tick(self, now):
+    def _startupuitzondering_actief(self, wall):
+        """Binnen een geldig gearmd venster en zolang de algemene readiness nog
+        niet tweemaal geldig is, committeert de watchdog uitsluitend SOURCE_WAIT.
+
+        Dit verzacht uitsluitend de DEADLINECOMMIT. De gewone vierwegclassificatie
+        en de bevestigingsregel blijven binnen het venster onveranderd, zodat een
+        bevestigde 401/403 ook daar correct wordt gemeld (§7.7).
+        """
+        return (self.maintenance is not None
+                and self.maintenance.geldig_op(wall)
+                and not self.algemene_readiness_bevestigd)
+
+    def tick(self, now, wall=None):
         """Deadlinewatchdog: een onopgeloste fence ouder dan zestig seconden
-        commit deterministisch naar de zwaarste sinds latch waargenomen klasse."""
+        commit deterministisch naar de zwaarste sinds latch waargenomen klasse.
+
+        `now` is monotoon en stuurt de deadline; `wall` toetst alleen de
+        geldigheid van het maintenance-venster en valt terug op de wandklok van
+        het laatste event.
+        """
         if self.fence is None or not self.fence.verlopen(now):
             return
-        klasse = self.fence.zwaarste_klasse
-        self.loop.submit("alarm", {"klasse": klasse, "reden": "fence-deadline bereikt"})
+        if wall is None:
+            wall = self.loop.events[-1].wall if self.loop.events else 0.0
+
+        if self._startupuitzondering_actief(wall):
+            klasse = ReadinessClass.SOURCE_WAIT
+            verwacht = True
+        else:
+            klasse = self.fence.zwaarste_klasse
+            verwacht = False
+
+        self.loop.submit("alarm", {"klasse": klasse,
+                                   "reden": "fence-deadline bereikt",
+                                   "verwacht": verwacht,
+                                   "maintenance_id": (self.maintenance.maintenance_id
+                                                      if self.maintenance else None)})
         self.fence = None
         self.readiness.reset()
         self._commit_of_onthoud(_KLASSE_NAAR_STATE[klasse])
