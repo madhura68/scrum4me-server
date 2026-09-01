@@ -123,6 +123,41 @@ class EventLoop:
         return event
 
 
+@dataclass
+class Fence:
+    """Schedulingfence (§7.7). Gezet op de eerste afwijkende probe; blokkeert
+    iedere childstart tot hij bevestigd of veilig gewist is."""
+
+    fence_seq: int
+    gezet_op_mono: float
+    eerste_klasse: object
+    zwaarste_klasse: object = None
+
+    def __post_init__(self):
+        self.zwaarste_klasse = self.eerste_klasse
+
+    def observe(self, klasse):
+        if klasse is ReadinessClass.READY:
+            return
+        if SEVERITY[klasse] > SEVERITY[self.zwaarste_klasse]:
+            self.zwaarste_klasse = klasse
+
+    def verlopen(self, now):
+        return (now - self.gezet_op_mono) >= FENCE_MAX_AGE_SECONDS
+
+
+_KLASSE_NAAR_STATE = {
+    ReadinessClass.SOURCE_WAIT: State.SOURCE_WAIT,
+    ReadinessClass.CREDENTIAL_ERROR: State.CREDENTIAL_ERROR,
+    ReadinessClass.PROTOCOL: State.QUARANTINED,
+}
+
+# Toestanden waarin een job nog onderweg is. §7.9 wil dat een vóór-latch job
+# gecontroleerd eindigt; een fouttoestand die tijdens zo'n job wordt bevestigd
+# wordt daarom vastgelegd als volgende_state en pas na de scrub van kracht.
+_JOB_IN_UITVOERING = (State.RUNNING, State.SCRUBBING)
+
+
 class Controller:
     """Toestandsmachine van §7.9. Start altijd in SOURCE_WAIT: bij boot bestaat
     er nog geen runnerproces en is de bron nog niet bewezen ready."""
@@ -131,31 +166,94 @@ class Controller:
         self.loop = loop
         self.state = state
         self.gates_groen = False
+        self.nulbewijs_ok = False
         self.readiness = Confirmation()
+        self.fence = None
+        self.volgende_state = None
         self._laatste_exitcode = None
+
+    @property
+    def mag_child_starten(self):
+        """Een fence blokkeert onvoorwaardelijk; een unit-restart omzeilt hem nooit."""
+        return self.fence is None and self.gates_groen and self.state in (
+            State.WAITING, State.SOURCE_WAIT)
+
+    def latch_verdict(self, event):
+        """Alleen een lokaal event met event_seq strikt kleiner dan fence_seq is
+        vóór-latch. Alles daarbuiten is fail-closed op/na-latch (§7.7)."""
+        if self.fence is None:
+            return "op-of-na"
+        return "voor" if event.event_seq < self.fence.fence_seq else "op-of-na"
 
     def on_event(self, event):
         handler = getattr(self, f"_on_{event.kind}", None)
         if handler is not None:
             handler(event)
 
+    def _commit_of_onthoud(self, state):
+        """Een lopende job niet abrupt afbreken (§7.9): tijdens RUNNING of
+        SCRUBBING wordt de geselecteerde volgende toestand alleen vastgelegd."""
+        if self.state in _JOB_IN_UITVOERING:
+            self.volgende_state = state
+        else:
+            self.state = state
+
     def _on_readiness(self, event):
-        bevestigd = self.readiness.observe(event.payload["klasse"], now=event.mono)
+        klasse = event.payload["klasse"]
+
+        if klasse is not ReadinessClass.READY:
+            if self.fence is None:
+                self.fence = Fence(fence_seq=event.event_seq,
+                                   gezet_op_mono=event.mono,
+                                   eerste_klasse=klasse)
+                # Informatief, geen alarm: reviewronde 8 wilde de fence direct
+                # maar de ruis niet.
+                self.loop.submit("fence_set", {"fence_seq": self.fence.fence_seq,
+                                               "klasse": klasse})
+                if self.state is State.WAITING:
+                    self.state = State.DRAINING
+            else:
+                self.fence.observe(klasse)
+        elif self.fence is not None:
+            self.fence.observe(klasse)
+
+        bevestigd = self.readiness.observe(klasse, now=event.mono)
         if bevestigd is None:
             return
+
         if bevestigd is ReadinessClass.READY:
-            # Alleen na twee geldige probes EN groene gates mag er een runner komen.
+            if self.fence is not None:
+                # Herstel na een afwijking. §7.7 eist hier naast twee geldige
+                # probes ook het assignment-nulbewijs en groene gates.
+                if self.nulbewijs_ok and self.gates_groen:
+                    self.fence = None
+                    self.volgende_state = None
+                    self.state = State.WAITING
+                return
+            # Koude start: er is geen gestopte runner waarvoor een nulbewijs
+            # bestaat. §7.7 spreekt daarom van het "eventueel uitgestelde"
+            # nulbewijs; zonder deze tak komt een verse host nooit uit
+            # SOURCE_WAIT.
             if self.gates_groen and self.state in (State.SOURCE_WAIT,
                                                    State.CREDENTIAL_ERROR,
                                                    State.QUARANTINED):
                 self.state = State.WAITING
             return
-        if bevestigd is ReadinessClass.SOURCE_WAIT:
-            self.state = State.SOURCE_WAIT
-        elif bevestigd is ReadinessClass.CREDENTIAL_ERROR:
-            self.state = State.CREDENTIAL_ERROR
-        else:
-            self.state = State.QUARANTINED
+
+        self.fence = None
+        self.loop.submit("alarm", {"klasse": bevestigd, "reden": "bevestigde fouttoestand"})
+        self._commit_of_onthoud(_KLASSE_NAAR_STATE[bevestigd])
+
+    def tick(self, now):
+        """Deadlinewatchdog: een onopgeloste fence ouder dan zestig seconden
+        commit deterministisch naar de zwaarste sinds latch waargenomen klasse."""
+        if self.fence is None or not self.fence.verlopen(now):
+            return
+        klasse = self.fence.zwaarste_klasse
+        self.loop.submit("alarm", {"klasse": klasse, "reden": "fence-deadline bereikt"})
+        self.fence = None
+        self.readiness.reset()
+        self._commit_of_onthoud(_KLASSE_NAAR_STATE[klasse])
 
     def _on_job_accepted(self, event):
         if self.state is State.WAITING:
@@ -174,5 +272,15 @@ class Controller:
             # Non-zero bij --wait duidt op config-, initialisatie-, poller- of
             # runtimefalen; heropenen mag dan niet (§7.9).
             self.state = State.QUARANTINED
+            return
+        if self.volgende_state is not None:
+            # Tijdens de job is een fouttoestand bevestigd of door de
+            # deadlinewatchdog gecommit; die geldt nu de job voorbij is.
+            self.state, self.volgende_state = self.volgende_state, None
+            return
+        if self.fence is not None:
+            # Onopgeloste fence: heropenen zou hem langs de scrubroute
+            # omzeilen, terwijl hij onvoorwaardelijk hoort te blokkeren.
+            self.state = State.DRAINING
             return
         self.state = State.WAITING if self.gates_groen else State.SOURCE_WAIT
