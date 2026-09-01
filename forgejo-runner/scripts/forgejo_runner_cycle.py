@@ -189,6 +189,25 @@ _KLASSE_NAAR_STATE = {
     ReadinessClass.PROTOCOL: State.QUARANTINED,
 }
 
+NULBEWIJS_INTERVAL_SECONDS = 10.0
+
+
+def assignment_nulbewijs(snapshots):
+    """Sluit het FetchTask-ambiguïteitsvenster (§7.9).
+
+    Vereist twee opeenvolgende snapshots, minimaal NULBEWIJS_INTERVAL_SECONDS
+    uit elkaar, waarin geen enkele job aan deze runner is toegewezen of loopt.
+    Minder bewijs is geen bewijs: de functie is fail-closed.
+    """
+    if len(snapshots) < 2:
+        return False
+    vorige, laatste = snapshots[-2], snapshots[-1]
+    if (laatste["mono"] - vorige["mono"]) < NULBEWIJS_INTERVAL_SECONDS:
+        return False
+    return all(s.get("assigned", 0) == 0 and s.get("running", 0) == 0
+               for s in (vorige, laatste))
+
+
 # Toestanden waarin een job nog onderweg is. §7.9 wil dat een vóór-latch job
 # gecontroleerd eindigt; een fouttoestand die tijdens zo'n job wordt bevestigd
 # wordt daarom vastgelegd als volgende_state en pas na de scrub van kracht.
@@ -209,13 +228,44 @@ class Controller:
         self.volgende_state = None
         self.maintenance = None
         self.algemene_readiness_bevestigd = False
+        self.drain_gevraagd = False
         self._laatste_exitcode = None
+
+    @staticmethod
+    def cycle_stappen():
+        """De bindende cyclus uit §7.9, als lijst zodat de volgorde testbaar is."""
+        return [
+            "trustgate",
+            "controleer_dind_health",
+            "controleer_toegestane_images",
+            "start_runner_one_job_wait",
+            "wacht_op_child_exit",
+            "bewijs_geen_runnerproces",
+            "scrub",
+            "bewijs_schoon",
+            "start_runner_volgende_cyclus",
+        ]
+
+    def drain(self, now):
+        """Geplande stop. Vanuit WAITING direct stoppen; vanuit RUNNING de job
+        terminaal laten worden en daarna geen nieuwe cyclus starten (§7.9)."""
+        self.drain_gevraagd = True
+        if self.state is State.WAITING:
+            self.state = State.DRAINING
 
     @property
     def mag_child_starten(self):
-        """Een fence blokkeert onvoorwaardelijk; een unit-restart omzeilt hem nooit."""
-        return self.fence is None and self.gates_groen and self.state in (
-            State.WAITING, State.SOURCE_WAIT)
+        """Een fence blokkeert onvoorwaardelijk; een unit-restart omzeilt hem nooit.
+
+        Een gevraagde drain blokkeert net zo hard: §7.9 zegt dat een geplande
+        stop verhindert dat de controller opnieuw een runner start. Zonder die
+        voorwaarde zou een drain vanuit SOURCE_WAIT bij bronherstel stilzwijgend
+        worden vergeten.
+        """
+        return (self.fence is None
+                and not self.drain_gevraagd
+                and self.gates_groen
+                and self.state in (State.WAITING, State.SOURCE_WAIT))
 
     def latch_verdict(self, event):
         """Alleen een lokaal event met event_seq strikt kleiner dan fence_seq is
@@ -261,6 +311,10 @@ class Controller:
             return
 
         if bevestigd is ReadinessClass.READY:
+            if self.drain_gevraagd:
+                # Een geplande stop overleeft bronherstel; alleen intrekken van
+                # de drain mag weer een runner opleveren (§7.9).
+                return
             if self.fence is not None:
                 # Herstel na een afwijking. §7.7 eist hier naast twee geldige
                 # probes ook het assignment-nulbewijs en groene gates.
@@ -325,6 +379,11 @@ class Controller:
         self._commit_of_onthoud(_KLASSE_NAAR_STATE[klasse])
 
     def _on_job_accepted(self, event):
+        if self.fence is not None and self.latch_verdict(event) == "op-of-na":
+            # Fail-closed: stoppen, cancel of requeue, daarna scrub en nulbewijs.
+            self.loop.submit("cancel_en_redispatch", {"event_seq": event.event_seq})
+            self.state = State.DRAINING
+            return
         if self.state is State.WAITING:
             self.state = State.RUNNING
 
@@ -346,6 +405,9 @@ class Controller:
             # Tijdens de job is een fouttoestand bevestigd of door de
             # deadlinewatchdog gecommit; die geldt nu de job voorbij is.
             self.state, self.volgende_state = self.volgende_state, None
+            return
+        if self.drain_gevraagd:
+            self.state = State.DRAINING
             return
         if self.fence is not None:
             # Onopgeloste fence: heropenen zou hem langs de scrubroute
