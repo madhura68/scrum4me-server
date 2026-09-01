@@ -1,0 +1,4 @@
+vcpu: FAIL — som 12.5 boven 50% van 8
+geheugen: FAIL — som 6442450944 boven 50% van 10592337920
+schijf: OK — 29% vrij en 139233034240 bytes >= 21474836480 nodig
+inodes: OK — 75% vrij
