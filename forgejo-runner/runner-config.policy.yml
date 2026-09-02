@@ -1,0 +1,27 @@
+# forgejo-runner/runner-config.policy.yml
+# Gedeelde policy: geldt byte-identiek op beide hosts. Bevat nooit een UUID,
+# token of hostnaam; render-config.sh voegt het hostspecifieke deel toe.
+log:
+  level: info
+
+runner:
+  capacity: 1                 # §4: een job tegelijk per DinD
+  timeout: 3h
+  shutdown_timeout: 3m
+  fetch_timeout: 5s
+  fetch_interval: 2s
+  envs:
+    DOCKER_HOST: tcp://dind.internal:2375   # §7.5, job- en stepcontainers
+
+cache:
+  enabled: false              # §7.9: geen state tussen jobs
+
+container:
+  network: ""
+  privileged: false           # jobcontainers nooit privileged
+  docker_host: "-"            # §7.5: gebruik DOCKER_HOST, mount geen socket
+  valid_volumes: []
+  options: --add-host=dind.internal:host-gateway
+
+host:
+  workdir_parent: /tmp/forgejo-runner
