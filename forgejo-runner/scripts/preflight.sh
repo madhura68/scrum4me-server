@@ -56,7 +56,8 @@ VRIJ_PCT="$(fact docker_root_free_pct)"
 VRIJ_BYTES="$(fact docker_root_free_bytes)"
 IMAGES_BYTES=0
 if [ -n "$IMAGES" ] && [ -f "$IMAGES" ]; then
-  IMAGES_BYTES="$(awk '{som += $2} END {print som + 0}' "$IMAGES")"
+  # Alleen regels "digest<TAB>bytes"; commentaar en lege regels tellen niet mee.
+  IMAGES_BYTES="$(awk '!/^[[:space:]]*(#|$)/ && NF >= 2 {som += $2} END {print som + 0}' "$IMAGES")"
 fi
 NODIG=$((IMAGES_BYTES + WERKRUIMTE_BYTES))
 if [ "$VRIJ_PCT" -ge 20 ] && [ "$VRIJ_BYTES" -ge "$NODIG" ]; then

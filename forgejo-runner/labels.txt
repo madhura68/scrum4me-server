@@ -1,0 +1,5 @@
+# forgejo-runner/labels.txt
+# Canonieke geordende labellijst. De labelnaam blijft gelijk aan de live
+# installatie (runner-registration.json, Task 2); de imageverwijzing is
+# digest-gepind (§7.4).
+ubuntu-latest:docker://catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43

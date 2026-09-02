@@ -1,0 +1,7 @@
+# forgejo-runner/allowed-job-images.txt
+# Digests die de scrub mag behouden, met per regel de uitgepakte grootte in
+# bytes op linux/amd64: het hoogste van de layersom (docker image history
+# --human=false) en de rootfs-meting (du -sbx / in de container), dus
+# conservatief voor de schijfgate. preflight.sh telt deze groottes op bij de
+# vereiste vrije schijfruimte. Regels die met # beginnen tellen niet mee.
+catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43	1729048576

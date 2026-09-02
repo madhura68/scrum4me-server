@@ -1,0 +1,63 @@
+# forgejo-runner/compose.yaml
+# Gedeelde runner- en DinD-stack. Byte-identiek op beide hosts.
+# De runnerservice staat onder het profiel "cycle": `docker compose up -d` start
+# uitsluitend DinD, en alleen de cyclecontroller maakt per job een runner aan.
+
+services:
+  dind:
+    image: ${DIND_IMAGE}
+    restart: always
+    privileged: true          # bewuste keuze, §7.6; alleen hier, nooit op jobcontainers
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--tls=false"]
+    environment:
+      - DOCKER_TLS_CERTDIR=
+    networks:
+      - runner-control
+    volumes:
+      - dind-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "-H", "tcp://127.0.0.1:2375", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    cpus: ${DIND_CPUS}
+    mem_limit: ${DIND_MEM}
+    pids_limit: ${DIND_PIDS}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  runner:
+    image: ${RUNNER_IMAGE}
+    profiles: ["cycle"]
+    restart: "no"             # de controller is de enige eigenaar van de levenscyclus
+    depends_on:
+      dind:
+        condition: service_healthy
+    environment:
+      - DOCKER_HOST=tcp://dind:2375
+    networks:
+      - runner-control
+    volumes:
+      - ./runner-config.yml:/etc/forgejo-runner/config.yml:ro
+      - /opt/forgejo-runner/credentials/forgejo-token:/run/forgejo-runner-credentials/forgejo-token:ro
+    cpus: ${RUNNER_CPUS}
+    mem_limit: ${RUNNER_MEM}
+    pids_limit: ${RUNNER_PIDS}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  runner-control:
+    driver: bridge
+    internal: false           # DinD moet images kunnen pullen; geen hostpoorten
+
+volumes:
+  dind-data:
+    name: forgejo-runner-dind-data

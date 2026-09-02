@@ -94,6 +94,18 @@ ruime_host() {
   [ "$status" -eq 2 ]
 }
 
+@test "commentaar- en lege regels in de allowlist tellen niet mee" {
+  # De echte allowed-job-images.txt draagt uitleg bovenin. Een commentaarregel
+  # met een getal als tweede veld mag de schijfgate niet vervuilen.
+  ruime_host
+  sed -i.bak 's/^docker_root_free_bytes.*/docker_root_free_bytes	23622320128/' "$FACTS"  # 22 GiB
+  printf '# allowlist 999999999999 bytes\n\n%s\n' "catthehacker/ubuntu@sha256:abc 1073741824" > "$IMAGES"
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"schijf: OK"* ]]
+  [[ "$output" == *">= 22548578304 nodig"* ]]   # 1 GiB image + 20 GiB werkruimte
+}
+
 @test "images zijn optioneel; dan telt alleen de werkruimte" {
   ruime_host
   run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS"
