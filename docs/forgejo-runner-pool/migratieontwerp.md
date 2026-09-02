@@ -671,7 +671,11 @@ Na de dubbele GO van R11 zijn zes post-GO-wijzigingen aangebracht. Zij wijzigen 
 3. **Controller in Python (§6, §7.9).** De toestandsmachine met geserialiseerde eventloop, `event_seq`, schedulingfence, bevestigingsdrempel en deadlinewatchdog is als shellscript niet betrouwbaar te bouwen. De controller is nu `scripts/forgejo_runner_cycle.py`; het stub-/testharnas uit stap A is zijn unittestsuite en een stap-A-gate. Overige scripts blijven shell.
 4. **Quarantaine is convergent, niet gecommandeerd (§6, §7.7).** De tekst impliceerde op één plek een quarantaineopdracht van host naar host terwijl geen kanaal, authenticatie of faalmodus was beschreven. Vastgelegd is nu dat er geen kanaal bestaat en er ook geen komt: beide controllers oordelen onafhankelijk over dezelfde bron. Het resterende gevolg — een instancebrede trustbevinding is een gemeenschappelijke faalmodus die de hele pool stilzet — is expliciet aanvaard.
 5. **Eerlijke variabelentelling en cacheregressie (§2, §7.8, §9, §10, stap A).** De claim dat fase 1 "slechts één hoofdeigenschap" verandert klopte niet: registratiemodel, levenscyclus, stateretentie, caps, digest-pinning en trustgate wijzigen tegelijk. De onderbouwing verwijst nu naar de gefaseerde volgorde van §8. Omdat de scrub de cache verwijdert waarop de huidige circa 121 GB DinD-state wijst, is jobduur toegevoegd als baselinemeting in stap A, als stabiliteitscriterium in §9 en als monitoringmeetpunt in §10.
-6. **Redactioneel.** De dubbele kop `## 14. Acceptatie van dit ontwerp` is opgelost; delta-review R11 staat nu waar hij hoort, in het Review record. `T_requeue` wordt in stap A expliciet als eerste bepaald omdat de uitkomst een hele tak in §7.9 aan- of uitzet.
+6. **Redactioneel.** De dubbele kop `### Uitvoering van stap A en B — 2 september 2026
+
+Stap A en B uit §8 zijn uitgevoerd volgens `docs/forgejo-runner-pool/implementatieplan-stap-a-b.md` (dubbele GO in plan-review ronde 7), op branch `feat/forgejo-runner-pool-stap-a-b` van de canonieke repo; laatste bundelcommit vóór deze notitie `07bc827`. Afsluitrapport: `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` — 117 bats- en 161 unittests groen, shellcheck schoon, tellercontrole groen, secret-scan actief als pre-commit hook met blokkeringsbewijs. Eén bewijsrij staat nog open (gezondheidsopname van de productiecontainers vóór aanvang, hostmeting via de s4m-queue uitgezet). Aan dit ontwerp is verder niets gewijzigd; de open besluiten vóór stap C staan in het afsluitrapport.
+
+## 14. Acceptatie van dit ontwerp` is opgelost; delta-review R11 staat nu waar hij hoort, in het Review record. `T_requeue` wordt in stap A expliciet als eerste bepaald omdat de uitkomst een hele tak in §7.9 aan- of uitzet.
 
 ### Delta-review R12 — ronde 1 van maximaal 5 — 31 augustus 2026
 
@@ -721,6 +725,10 @@ Geen resterende bevindingen. De reviewer bevestigde dat §6.1 en stap A dezelfde
 **Bekend en uitgesteld gevolg:** bij stap G komt de gate wél in werking op `scrum4me-server` en faalt hij daar op zowel vCPU als geheugen (`evidence/stap-a/preflight-scrum4me-server.txt`, exit 40). De ondergrenzen alléén (DinD 4 GiB + runner 1 GiB = 5 GiB) overschrijden de 50%-headroom (4,322 GiB van de onder last gemeten 8,644 GiB `MemAvailable`) al met 0,678 GiB; het knelpunt is geheugen, niet de gekozen marge. Stap G is daarmee geblokkeerd tot die host is ontlast of tot een expliciet besluit bij stap G. Dat besluit wordt hier niet vooruitgenomen en `preflight.sh` wordt er niet voor versoepeld. Stap A tot en met F raakt het niet.
 
 **Correctie in het stap-A-bewijs:** de eerste versie van `evidence/stap-a/caps.md` noemde óók `max2` ROOD. Dat was fout: de gate van `max2` was daar getoetst tegen de laagste `MemAvailable` van **`scrum4me-server`** in plaats van tegen die van `max2` zelf. De fout zat in een ad-hoc aanroep, niet in `compute_caps.py`. Het bestand is opnieuw gegenereerd via `preflight.sh` (Task 10), zodat het oordeel per host reproduceerbaar is.
+
+### Uitvoering van stap A en B — 2 september 2026
+
+Stap A en B uit §8 zijn uitgevoerd volgens `docs/forgejo-runner-pool/implementatieplan-stap-a-b.md` (dubbele GO in plan-review ronde 7), op branch `feat/forgejo-runner-pool-stap-a-b` van de canonieke repo; laatste bundelcommit vóór deze notitie `07bc827`. Afsluitrapport: `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` — 117 bats- en 161 unittests groen, shellcheck schoon, tellercontrole groen, secret-scan actief als pre-commit hook met blokkeringsbewijs. Eén bewijsrij staat nog open (gezondheidsopname van de productiecontainers vóór aanvang, hostmeting via de s4m-queue uitgezet). Aan dit ontwerp is verder niets gewijzigd; de open besluiten vóór stap C staan in het afsluitrapport.
 
 ## 14. Acceptatie van dit ontwerp
 
