@@ -59,3 +59,8 @@ voor ROOD), maar dat blijft een gevolgtrekking en geen meting.
 
 Dit wordt gesloten wanneer `preflight.sh` in stap D op `max2` zelf draait: die
 gate loopt vóór iedere mutatie en beslist daar op de dan geldende waarde.
+
+Aanvulling 2 september: de opname in `productiecontainers-voor.txt` laat zien
+dat de video-editor-stack op `max2` ten tijde van de hostmeting níét draaide.
+De 19,585 GiB is dus zonder die last gemeten; komt die stack terug, dan is de
+marge kleiner dan hier berekend.

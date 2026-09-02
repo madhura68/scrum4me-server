@@ -1,7 +1,7 @@
 # Afsluitgate van stap A en stap B
 
 **Datum:** 2 september 2026
-**Branch:** `feat/forgejo-runner-pool-stap-a-b`, stand vóór deze commit: `07bc827`
+**Branch:** `feat/forgejo-runner-pool-stap-a-b`, stand vóór het afsluiten: `bad244c`
 **Plan:** `docs/forgejo-runner-pool/implementatieplan-stap-a-b.md` (22 taken)
 **Bundelhash op deze stand:** `c4a47ae3cdc68c241fb491fa3babfcf6e024f4935c062de3f12837ba7a73fbe0` (`bash forgejo-runner/scripts/bundle-hash.sh forgejo-runner`)
 
@@ -14,13 +14,12 @@
 | `shellcheck -x forgejo-runner/scripts/*.sh` | schoon |
 | mechanische tellercontrole van het plan | `tellers kloppen`, exit 0 |
 | secret-scan over bundel + bewijs | exit 0; pre-commit hook actief in beide werkbomen |
-| bewijsbestanden uit de tabel hieronder | 24 van 25 aanwezig; **één rij open**, zie onder |
+| bewijsbestanden uit de tabel hieronder | 25 van 25 aanwezig |
 
-**Stap A en B zijn uitgevoerd. Eén bewijsrij staat nog open** en is niet stil
-afgevinkt: de gezondheidsopname van de productiecontainers vóór aanvang. Die
-meting kan alleen op de hosts zelf worden gedaan en is als read-only taak via de
-s4m-queue uitgezet (zie de rij). Zolang die reply niet is verwerkt, is stap A op
-dit punt formeel niet af; al het overige is af.
+**Stap A en B zijn uitgevoerd en alle bewijsrijen zijn gedekt.** De laatste rij
+(gezondheid van de productiecontainers) is op 2 september via read-only
+hostmetingen gesloten; die opname leverde één bevinding voor JP op (zie de rij
+en `productiecontainers-voor.txt`).
 
 ## Eis uit §8 stap A en B → bewijs
 
@@ -41,7 +40,7 @@ dit punt formeel niet af; al het overige is af.
 | piekmeting en caps | `workload-scrum4me-server.tsv` (84 samples), `caps.md` |
 | jobduurbaseline | `jobduur-baseline.md` |
 | hostfeiten en headroom op beide hosts | `host-facts-*.tsv`, `caps.md`, `preflight-scrum4me-server.txt` (ROOD, exit 40), `preflight-max2.txt` (GROEN, exit 0); besluit JP in R13: doorgaan, gate geldt pas bij stap G |
-| productiecontainers gezond vóór aanvang | **OPEN** — `productiecontainers-voor.txt` bestaat nog niet. Read-only meting uitgezet via s4m-queue: `scrum4me-server:claude` bericht `fbce8ac1-733f-4d58-a5ad-1608fe176f37`, `max2:claude` bericht `27f613b8-465a-4e3a-9edb-cd2a3a78452b`. Geen host is tot nu toe gemuteerd, dus een opname nu geldt nog als "vóór aanvang" |
+| productiecontainers gezond vóór aanvang | `productiecontainers-voor.txt` — beide hosts 0 unhealthy, alle gecheckte containers healthy. **Bevinding**: op max2 ligt de video-editor-stack al 10 dagen plat (2× exit 137); de gemeten headroom van max2 is dus zónder die stack — issue op het max2-product, oordeel JP |
 | registry-gevalideerde digests | `resolved-digests.tsv`; beide images.json-pins bestaan nog op de registry; `runner:12` is verschoven naar v12.13.2, gepind blijft v12.10.1 |
 | Compose statisch gevalideerd | `tests/test_compose_contract.bats` (15), `docker compose config` OK |
 | bundel gescand op secrets | `secret-scan-blokkeringsbewijs.txt`; scan over bundel + bewijs exit 0 |
