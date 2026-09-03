@@ -92,19 +92,21 @@ setup() {
   [[ "$output" != *"b.yml"* ]]
 }
 
-@test "een regel met de marker secret-scan: fixture wordt als testfixture overgeslagen" {
-  printf 'token: %s  # secret-scan: fixture\n' "$TOKEN40" > "$WERK/fixture.yml"
-  run bash "$SCRIPT" "$WERK/fixture.yml"
-  [ "$status" -eq 0 ]
+@test "de marker secret-scan: fixture verleent GEEN bypass: een echte token blijft geblokkeerd" {
+  # Regressie voor de MAJOR uit reviewronde 1 (mac:codex): de marker zat in een
+  # globale line-exclusie, waardoor 'TOKEN=<40 hex>  # secret-scan: fixture' in
+  # een willekeurig bestand de gate passeerde. De marker-uitzondering is
+  # verwijderd; de tokenregel wordt ongeacht een bijgevoegde marker geblokkeerd.
+  printf 'RUNNER_REGISTRATION_TOKEN=%s  # secret-scan: fixture\n' "$TOKEN40" > "$WERK/marker.env"
+  run bash "$SCRIPT" "$WERK/marker.env"
+  [ "$status" -eq 70 ]
 }
 
-@test "de fixture-marker redt geen private sleutel en geen secretbestand" {
-  printf -- "-----BEGIN %s PRIVATE KEY----- # secret-scan: fixture\n" OPENSSH > "$WERK/id"
-  run bash "$SCRIPT" "$WERK/id"
-  [ "$status" -eq 70 ]
-  echo "x # secret-scan: fixture" > "$WERK/forgejo-token"
-  run bash "$SCRIPT" "$WERK/forgejo-token"
-  [ "$status" -eq 70 ]
+@test "een korte, duidelijk-nep tokenwaarde (<20 tekens) is geen secret" {
+  # De redactor-fixtures gebruiken voortaan zo'n waarde i.p.v. een marker.
+  printf 'RUNNER_REGISTRATION_TOKEN=%s\n' "FAKE-TEST-TOKEN" > "$WERK/fixture.env"
+  run bash "$SCRIPT" "$WERK/fixture.env"
+  [ "$status" -eq 0 ]
 }
 
 @test "de echte bundel en het stap-A-bewijs zijn schoon" {

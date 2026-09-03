@@ -10,7 +10,7 @@ case "$1 $2" in
   "image inspect")
     echo '[{"Id":"sha256:aaa","RepoTags":["code.forgejo.org/forgejo/runner:12"],"RepoDigests":["code.forgejo.org/forgejo/runner@sha256:1111"]}]' ;;
   "container inspect")
-    echo '[{"Name":"/scrum4me-forgejo-runner","State":{"Health":{"Status":"healthy"}},"Config":{"Env":["RUNNER_REGISTRATION_TOKEN=SECRETTESTTOKEN1234567890","DOCKER_HOST=tcp://dind:2376"],"Cmd":["/bin/sh","-c","forgejo-runner register --instance https://x --token SECRETTESTTOKEN1234567890"]},"Args":["-c","forgejo-runner register --token SECRETTESTTOKEN1234567890"],"Mounts":[{"Type":"volume","Name":"anon123","Source":"/var/lib/docker/volumes/anon123/_data","Destination":"/data"}]}]' ;;  # secret-scan: fixture
+    echo '[{"Name":"/scrum4me-forgejo-runner","State":{"Health":{"Status":"healthy"}},"Config":{"Env":["RUNNER_REGISTRATION_TOKEN=FAKE-TEST-TOKEN","DOCKER_HOST=tcp://dind:2376"],"Cmd":["/bin/sh","-c","forgejo-runner register --instance https://x --token FAKE-TEST-TOKEN"]},"Args":["-c","forgejo-runner register --token FAKE-TEST-TOKEN"],"Mounts":[{"Type":"volume","Name":"anon123","Source":"/var/lib/docker/volumes/anon123/_data","Destination":"/data"}]}]' ;;
   "volume ls") echo 'anon123' ;;
   "network ls") echo 'bridge' ;;
   *) echo "{}" ;;
@@ -57,5 +57,5 @@ EOS
   bash "$SCRIPT" --runner scrum4me-forgejo-runner --dind scrum4me-forgejo-dind --out "$out"
   # de token uit env EN de inline --token in het commando moeten weg zijn
   grep -q '<GEREDIGEERD>' "$out/containers.json"
-  ! grep -q 'SECRETTESTTOKEN1234567890' "$out/containers.json"
+  ! grep -q 'FAKE-TEST-TOKEN' "$out/containers.json"
 }

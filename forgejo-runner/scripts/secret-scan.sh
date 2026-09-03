@@ -35,12 +35,13 @@ for pad in "${bestanden[@]}"; do
   #    RUNNER_REGISTRATION_TOKEN=... in env-vorm. Digests, UUID's en de
   #    token_url-placeholder vallen bewust buiten: die staan legitiem in de
   #    bundel. De waarde mag niet met / beginnen: dan is het een pad, zoals
-  #    de bindmount van het tokenbestand in compose.yaml. Een regel met de
-  #    marker "secret-scan: fixture" is een bewuste testfixture (bv. de test
-  #    van de redactor) en wordt hier overgeslagen; de marker redt nooit een
-  #    private sleutel of een secretbestand.
+  #    de bindmount van het tokenbestand in compose.yaml.
+  #    GEEN inhoud-gebaseerde uitzondering: een marker die met de regel
+  #    meereist zou de gate laten omzeilen door hem aan een echte tokenregel
+  #    toe te voegen. Testfixtures die een token nodig hebben gebruiken daarom
+  #    een waarde die te kort is (<20 tekens) of duidelijk geen echt secret.
   if grep -niE '(token|secret|password)"?[[:space:]]*[:=][[:space:]]*"?[A-Za-z0-9_+-][A-Za-z0-9_/+-]{19,}' "$pad" \
-     | grep -vE 'sha256:|token_url|[0-9a-f]{8}-[0-9a-f]{4}-|secret-scan: fixture' >/dev/null; then
+     | grep -vE 'sha256:|token_url|[0-9a-f]{8}-[0-9a-f]{4}-' >/dev/null; then
     printf 'secret-scan: %s bevat een tokenachtige waarde\n' "$pad" >&2
     TREFFER=1 ; continue
   fi
