@@ -1,0 +1,24 @@
+[Unit]
+Description=Forgejo Runner cyclecontroller (een job per runnerproces)
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/forgejo-runner
+ExecStart=/usr/bin/python3 /opt/forgejo-runner/scripts/forgejo_runner_cycle.py --config /opt/forgejo-runner/controller.toml
+# De controller houdt zijn eigen toestand vast; een restart begint altijd
+# opnieuw in SOURCE_WAIT en doorloopt alle gates. Een unit-restart omzeilt
+# nooit een fence of een quarantaine.
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=300
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

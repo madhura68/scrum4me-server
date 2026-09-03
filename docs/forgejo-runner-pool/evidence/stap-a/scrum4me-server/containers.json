@@ -1,0 +1,536 @@
+[
+  {
+    "AppArmorProfile": "docker-default",
+    "Args": [
+      "-c",
+      "set -e\nif [ ! -f /data/.runner ]; then\n  forgejo-runner register \\\n    --no-interactive \\\n    --instance https://git.jp-visser.nl \\\n    --token \"<GEREDIGEERD>\" \\\n    --name scrum4me-srv-runner \\\n    --labels \"ubuntu-latest:docker://catthehacker/ubuntu:act-latest\"\nfi\nexec forgejo-runner daemon --config /etc/forgejo-runner/config.yaml\n"
+    ],
+    "Config": {
+      "AttachStderr": true,
+      "AttachStdin": false,
+      "AttachStdout": true,
+      "Cmd": [
+        "set -e\nif [ ! -f /data/.runner ]; then\n  forgejo-runner register \\\n    --no-interactive \\\n    --instance https://git.jp-visser.nl \\\n    --token \"<GEREDIGEERD>\" \\\n    --name scrum4me-srv-runner \\\n    --labels \"ubuntu-latest:docker://catthehacker/ubuntu:act-latest\"\nfi\nexec forgejo-runner daemon --config /etc/forgejo-runner/config.yaml\n"
+      ],
+      "Domainname": "",
+      "Entrypoint": [
+        "sh",
+        "-c"
+      ],
+      "Env": [
+        "DOCKER_TLS_VERIFY=1",
+        "RUNNER_REGISTRATION_TOKEN=<GEREDIGEERD>",
+        "DOCKER_HOST=tcp://dind:2376",
+        "DOCKER_CERT_PATH=/certs/client",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HOME=/data"
+      ],
+      "Hostname": "db841ee52612",
+      "Image": "code.forgejo.org/forgejo/runner:12",
+      "Labels": {
+        "com.docker.compose.config-hash": "b36cfde1bc856451809e072b69d2699db97c93f11b354b6e020fd2e393538b71",
+        "com.docker.compose.container-number": "1",
+        "com.docker.compose.depends_on": "forgejo:service_started:false,dind:service_started:false",
+        "com.docker.compose.image": "sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533",
+        "com.docker.compose.oneoff": "False",
+        "com.docker.compose.project": "forgejo",
+        "com.docker.compose.project.config_files": "/srv/scrum4me/forgejo/docker-compose.yml",
+        "com.docker.compose.project.working_dir": "/srv/scrum4me/forgejo",
+        "com.docker.compose.replace": "scrum4me-forgejo-runner",
+        "com.docker.compose.service": "runner",
+        "com.docker.compose.version": "5.1.4",
+        "maintainer": "contact@forgejo.org",
+        "org.opencontainers.image.authors": "Forgejo",
+        "org.opencontainers.image.description": "A runner for Forgejo Actions.",
+        "org.opencontainers.image.documentation": "https://forgejo.org/docs/latest/admin/actions/#forgejo-runner",
+        "org.opencontainers.image.licenses": "GPL-3.0-or-later",
+        "org.opencontainers.image.source": "https://code.forgejo.org/forgejo/runner",
+        "org.opencontainers.image.title": "Forgejo Runner",
+        "org.opencontainers.image.url": "https://forgejo.org",
+        "org.opencontainers.image.vendor": "Forgejo",
+        "org.opencontainers.image.version": "12.10.1"
+      },
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "1000:1000",
+      "Volumes": {
+        "/data": {}
+      },
+      "WorkingDir": "/data"
+    },
+    "Created": "2026-06-18T15:49:47.924856474Z",
+    "Driver": "overlayfs",
+    "ExecIDs": null,
+    "HostConfig": {
+      "AutoRemove": false,
+      "Binds": [
+        "forgejo_runner-data:/data:rw",
+        "forgejo_dind-certs-client:/certs/client:ro",
+        "/srv/scrum4me/forgejo/runner-config.yaml:/etc/forgejo-runner/config.yaml:ro"
+      ],
+      "BlkioDeviceReadBps": null,
+      "BlkioDeviceReadIOps": null,
+      "BlkioDeviceWriteBps": null,
+      "BlkioDeviceWriteIOps": null,
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": null,
+      "CapAdd": null,
+      "CapDrop": null,
+      "Cgroup": "",
+      "CgroupParent": "",
+      "CgroupnsMode": "private",
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "ContainerIDFile": "",
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpuShares": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "Devices": null,
+      "Dns": [],
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": [],
+      "GroupAdd": null,
+      "IOMaximumBandwidth": 0,
+      "IOMaximumIOps": 0,
+      "Init": true,
+      "IpcMode": "private",
+      "Isolation": "",
+      "Links": null,
+      "LogConfig": {
+        "Config": {
+          "max-file": "3",
+          "max-size": "10m"
+        },
+        "Type": "json-file"
+      },
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware",
+        "/sys/devices/system/cpu/cpu0/thermal_throttle",
+        "/sys/devices/system/cpu/cpu1/thermal_throttle",
+        "/sys/devices/system/cpu/cpu2/thermal_throttle",
+        "/sys/devices/system/cpu/cpu3/thermal_throttle",
+        "/sys/devices/system/cpu/cpu4/thermal_throttle",
+        "/sys/devices/system/cpu/cpu5/thermal_throttle",
+        "/sys/devices/system/cpu/cpu6/thermal_throttle",
+        "/sys/devices/system/cpu/cpu7/thermal_throttle"
+      ],
+      "Memory": 0,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "NanoCpus": 0,
+      "NetworkMode": "forgejo_forgejo-internal",
+      "OomKillDisable": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "PidsLimit": null,
+      "PortBindings": {},
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "ReadonlyRootfs": false,
+      "RestartPolicy": {
+        "MaximumRetryCount": 0,
+        "Name": "always"
+      },
+      "Runtime": "runc",
+      "SecurityOpt": null,
+      "ShmSize": 67108864,
+      "UTSMode": "",
+      "Ulimits": null,
+      "UsernsMode": "",
+      "VolumeDriver": "",
+      "VolumesFrom": null
+    },
+    "HostnamePath": "/var/lib/docker/containers/db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680/hostname",
+    "HostsPath": "/var/lib/docker/containers/db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680/hosts",
+    "Id": "db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680",
+    "Image": "sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533",
+    "ImageManifestDescriptor": {
+      "digest": "sha256:2526722b27436a097ae884479ec44309634d5ec34e4090bf19fd54bf8beee14d",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 1052
+    },
+    "LogPath": "/var/lib/docker/containers/db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680/db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680-json.log",
+    "MountLabel": "",
+    "Mounts": [
+      {
+        "Destination": "/certs/client",
+        "Driver": "local",
+        "Mode": "ro",
+        "Name": "forgejo_dind-certs-client",
+        "Propagation": "",
+        "RW": false,
+        "Source": "/var/lib/docker/volumes/forgejo_dind-certs-client/_data",
+        "Type": "volume"
+      },
+      {
+        "Destination": "/data",
+        "Driver": "local",
+        "Mode": "rw",
+        "Name": "forgejo_runner-data",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/forgejo_runner-data/_data",
+        "Type": "volume"
+      },
+      {
+        "Destination": "/etc/forgejo-runner/config.yaml",
+        "Mode": "ro",
+        "Propagation": "rprivate",
+        "RW": false,
+        "Source": "/srv/scrum4me/forgejo/runner-config.yaml",
+        "Type": "bind"
+      }
+    ],
+    "Name": "/scrum4me-forgejo-runner",
+    "NetworkSettings": {
+      "Networks": {
+        "forgejo_forgejo-internal": {
+          "Aliases": [
+            "scrum4me-forgejo-runner",
+            "runner"
+          ],
+          "DNSNames": [
+            "scrum4me-forgejo-runner",
+            "runner",
+            "db841ee52612"
+          ],
+          "DriverOpts": null,
+          "EndpointID": "fc22a20bcc96d26087779c7c0d7e241b5f351ed1deef1b60d88dd25b516feea6",
+          "Gateway": "172.19.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "172.19.0.4",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "f6:14:17:d0:15:f1",
+          "NetworkID": "2e065bae9457cf0f4b5dcd792fe43132a19447623193c697e6587fd680a68928"
+        }
+      },
+      "Ports": {},
+      "SandboxID": "8d35d75d286bb3cd03541586a65ecaa75ee369c83a1706c5646727756c46a577",
+      "SandboxKey": "/var/run/docker/netns/8d35d75d286b"
+    },
+    "Path": "sh",
+    "Platform": "linux",
+    "ProcessLabel": "",
+    "ResolvConfPath": "/var/lib/docker/containers/db841ee52612c5cda23a6c35e981f3f7650a50504334f917d0fc3368da69c680/resolv.conf",
+    "RestartCount": 0,
+    "State": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "2026-08-31T11:43:56.310130122Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 2719997,
+      "Restarting": false,
+      "Running": true,
+      "StartedAt": "2026-08-31T11:43:56.472416849Z",
+      "Status": "running"
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    }
+  },
+  {
+    "AppArmorProfile": "unconfined",
+    "Args": [],
+    "Config": {
+      "AttachStderr": true,
+      "AttachStdin": false,
+      "AttachStdout": true,
+      "Cmd": null,
+      "Domainname": "",
+      "Entrypoint": [
+        "dockerd-entrypoint.sh"
+      ],
+      "Env": [
+        "DOCKER_TLS_SAN=DNS:dind",
+        "DOCKER_TLS_CERTDIR=/certs",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "DOCKER_VERSION=29.4.3",
+        "DOCKER_BUILDX_VERSION=0.33.0",
+        "DOCKER_COMPOSE_VERSION=5.1.3",
+        "DIND_COMMIT=8d9e3502aba39127e4d12196dae16d306f76993d"
+      ],
+      "ExposedPorts": {
+        "2375/tcp": {},
+        "2376/tcp": {}
+      },
+      "Hostname": "db913c11b7fb",
+      "Image": "docker:dind",
+      "Labels": {
+        "com.docker.compose.config-hash": "e19bb07ff8892eeff1b802c39b504300ff3c9af083f97323e131f8496715fd98",
+        "com.docker.compose.container-number": "1",
+        "com.docker.compose.depends_on": "",
+        "com.docker.compose.image": "sha256:685b91dca8eab7de1dce1c303dbb7a763e4082d6a60db10968adf3295fbd2495",
+        "com.docker.compose.oneoff": "False",
+        "com.docker.compose.project": "forgejo",
+        "com.docker.compose.project.config_files": "/srv/scrum4me/forgejo/docker-compose.yml",
+        "com.docker.compose.project.working_dir": "/srv/scrum4me/forgejo",
+        "com.docker.compose.replace": "scrum4me-forgejo-dind",
+        "com.docker.compose.service": "dind",
+        "com.docker.compose.version": "5.1.4"
+      },
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "",
+      "Volumes": {
+        "/var/lib/docker": {}
+      },
+      "WorkingDir": "/"
+    },
+    "Created": "2026-06-18T15:49:47.700994063Z",
+    "Driver": "overlayfs",
+    "ExecIDs": null,
+    "HostConfig": {
+      "AutoRemove": false,
+      "Binds": [
+        "forgejo_dind-certs-ca:/certs/ca:rw",
+        "forgejo_dind-certs-client:/certs/client:rw"
+      ],
+      "BlkioDeviceReadBps": null,
+      "BlkioDeviceReadIOps": null,
+      "BlkioDeviceWriteBps": null,
+      "BlkioDeviceWriteIOps": null,
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": null,
+      "CapAdd": null,
+      "CapDrop": null,
+      "Cgroup": "",
+      "CgroupParent": "",
+      "CgroupnsMode": "private",
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "ContainerIDFile": "",
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpuShares": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "Devices": null,
+      "Dns": [],
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": [],
+      "GroupAdd": null,
+      "IOMaximumBandwidth": 0,
+      "IOMaximumIOps": 0,
+      "IpcMode": "private",
+      "Isolation": "",
+      "Links": null,
+      "LogConfig": {
+        "Config": {
+          "max-file": "3",
+          "max-size": "10m"
+        },
+        "Type": "json-file"
+      },
+      "MaskedPaths": null,
+      "Memory": 0,
+      "MemoryReservation": 0,
+      "MemorySwap": 0,
+      "MemorySwappiness": null,
+      "Mounts": [
+        {
+          "Source": "08b52fdd43d7b93ab619983de6bc18744e91cab4fd10759fa40bfdb1de7bc6ee",
+          "Target": "/var/lib/docker",
+          "Type": "volume"
+        }
+      ],
+      "NanoCpus": 0,
+      "NetworkMode": "forgejo_forgejo-internal",
+      "OomKillDisable": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "PidsLimit": null,
+      "PortBindings": {},
+      "Privileged": true,
+      "PublishAllPorts": false,
+      "ReadonlyPaths": null,
+      "ReadonlyRootfs": false,
+      "RestartPolicy": {
+        "MaximumRetryCount": 0,
+        "Name": "always"
+      },
+      "Runtime": "runc",
+      "SecurityOpt": [
+        "label=disable"
+      ],
+      "ShmSize": 67108864,
+      "UTSMode": "",
+      "Ulimits": null,
+      "UsernsMode": "",
+      "VolumeDriver": "",
+      "VolumesFrom": null
+    },
+    "HostnamePath": "/var/lib/docker/containers/db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b/hostname",
+    "HostsPath": "/var/lib/docker/containers/db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b/hosts",
+    "Id": "db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b",
+    "Image": "sha256:685b91dca8eab7de1dce1c303dbb7a763e4082d6a60db10968adf3295fbd2495",
+    "ImageManifestDescriptor": {
+      "annotations": {
+        "com.docker.official-images.bashbrew.arch": "amd64",
+        "org.opencontainers.image.base.digest": "sha256:bd856b0b9684b059ef942f0bfe9f3c4246358637a778c29e66e4e74e995ed606",
+        "org.opencontainers.image.base.name": "docker:29-cli",
+        "org.opencontainers.image.created": "2026-05-08T16:41:10Z",
+        "org.opencontainers.image.revision": "85f809403de527c7b1e193435392ab0c58041613",
+        "org.opencontainers.image.source": "https://github.com/docker-library/docker.git#85f809403de527c7b1e193435392ab0c58041613:29/dind",
+        "org.opencontainers.image.url": "https://hub.docker.com/_/docker",
+        "org.opencontainers.image.version": "29.4.3-dind"
+      },
+      "digest": "sha256:f67b1b3e59ec7db970a5c905fc97904e31ee16534c0241bd7f372b18ca53e7e2",
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      },
+      "size": 4004
+    },
+    "LogPath": "/var/lib/docker/containers/db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b/db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b-json.log",
+    "MountLabel": "",
+    "Mounts": [
+      {
+        "Destination": "/certs/ca",
+        "Driver": "local",
+        "Mode": "rw",
+        "Name": "forgejo_dind-certs-ca",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/forgejo_dind-certs-ca/_data",
+        "Type": "volume"
+      },
+      {
+        "Destination": "/certs/client",
+        "Driver": "local",
+        "Mode": "rw",
+        "Name": "forgejo_dind-certs-client",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/forgejo_dind-certs-client/_data",
+        "Type": "volume"
+      },
+      {
+        "Destination": "/var/lib/docker",
+        "Driver": "local",
+        "Mode": "z",
+        "Name": "08b52fdd43d7b93ab619983de6bc18744e91cab4fd10759fa40bfdb1de7bc6ee",
+        "Propagation": "",
+        "RW": true,
+        "Source": "/var/lib/docker/volumes/08b52fdd43d7b93ab619983de6bc18744e91cab4fd10759fa40bfdb1de7bc6ee/_data",
+        "Type": "volume"
+      }
+    ],
+    "Name": "/scrum4me-forgejo-dind",
+    "NetworkSettings": {
+      "Networks": {
+        "forgejo_forgejo-internal": {
+          "Aliases": [
+            "scrum4me-forgejo-dind",
+            "dind"
+          ],
+          "DNSNames": [
+            "scrum4me-forgejo-dind",
+            "dind",
+            "db913c11b7fb"
+          ],
+          "DriverOpts": null,
+          "EndpointID": "7f071cbd93d2317254992dddd514324d282a0943e82506fe84f65b1e8db1ec07",
+          "Gateway": "172.19.0.1",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "GwPriority": 0,
+          "IPAMConfig": null,
+          "IPAddress": "172.19.0.2",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "Links": null,
+          "MacAddress": "de:39:0c:4c:ba:9f",
+          "NetworkID": "2e065bae9457cf0f4b5dcd792fe43132a19447623193c697e6587fd680a68928"
+        }
+      },
+      "Ports": {
+        "2375/tcp": null,
+        "2376/tcp": null
+      },
+      "SandboxID": "1ee00ed53c51061c4ba40768dc843a3e4c0fb371318cd126ecd4be76f8e3f2e8",
+      "SandboxKey": "/var/run/docker/netns/1ee00ed53c51"
+    },
+    "Path": "dockerd-entrypoint.sh",
+    "Platform": "linux",
+    "ProcessLabel": "",
+    "ResolvConfPath": "/var/lib/docker/containers/db913c11b7fb5acfe84fa880deb40e8d32ade62fc27507a06aaf0aa74593e93b/resolv.conf",
+    "RestartCount": 0,
+    "State": {
+      "Dead": false,
+      "Error": "",
+      "ExitCode": 0,
+      "FinishedAt": "2026-08-21T06:57:03.385263467Z",
+      "OOMKilled": false,
+      "Paused": false,
+      "Pid": 8148,
+      "Restarting": false,
+      "Running": true,
+      "StartedAt": "2026-08-21T06:57:48.430716779Z",
+      "Status": "running"
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    }
+  }
+]

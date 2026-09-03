@@ -1,0 +1,2 @@
+scope	id	uuid	name	status	version	ephemeral	owner_id	repo_id	labels
+global	3	eb12fdc6-7a76-43e2-b265-5334c91472e6	scrum4me-srv-runner	idle	v12.10.1	False	0	0	ubuntu-latest

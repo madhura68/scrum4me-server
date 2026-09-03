@@ -1,0 +1,33 @@
+host	scrum4me-server
+doel	audit en corroboratie; event_seq blijft de enige voor/na-fencebeslisser (7.7)
+
+## timedatectl
+               Local time: Mon 2026-08-31 22:57:31 CEST
+           Universal time: Mon 2026-08-31 20:57:31 UTC
+                 RTC time: Mon 2026-08-31 20:57:31
+                Time zone: Europe/Amsterdam (CEST, +0200)
+System clock synchronized: yes
+              NTP service: active
+          RTC in local TZ: no
+
+## chrony
+Reference ID    : B97DBE7B (ntp-nts-3.ps5.canonical.com)
+Stratum         : 3
+Ref time (UTC)  : Mon Aug 31 20:52:04 2026
+System time     : 0.000222459 seconds fast of NTP time
+Last offset     : +0.000163956 seconds
+RMS offset      : 0.000327959 seconds
+Frequency       : 25.342 ppm slow
+Residual freq   : +0.007 ppm
+Skew            : 0.057 ppm
+Root delay      : 0.023898773 seconds
+Root dispersion : 0.000836983 seconds
+Update interval : 1041.1 seconds
+Leap status     : Normal
+
+## skew tegen de Forgejo Date-header
+remote_date	mon, 31 aug 2026 20:57:31 gmt
+lokaal_midden_ms	1788209851825
+rondreis_ms	108
+skew_ms	825
+let_op	de Date-header heeft secondeprecisie; een skew onder 1000 ms is niet betekenisvol

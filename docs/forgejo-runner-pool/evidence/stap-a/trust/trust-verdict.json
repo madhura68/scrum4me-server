@@ -1,0 +1,37 @@
+{
+  "hard": [
+    "janpeter/DigiPlein: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/inspannings-monitor: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/Media-Organizer: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/Ops-dashboard: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/s4m-queue: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "s4us-smoke-bot/s4us-smoke: Actions staat aan maar de repository staat niet in de allowlist",
+    "janpeter/Scrum4Me: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/scrum4me-copilot: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/scrum4me-docker: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/scrum4me-mcp: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/scrum4me-shared: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/scrum4me-workers: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/Scrum4Us: trigger pull_request in een workflow die een gedeeld runnerlabel gebruikt; onbetrouwbare code kan zo op de pool starten",
+    "janpeter/test: Actions staat aan maar de repository staat niet in de allowlist",
+    "janpeter/test-mirror-001: Actions staat aan maar de repository staat niet in de allowlist"
+  ],
+  "soft": [
+    "janpeter/DigiPlein: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/ImageInventory: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/inspannings-monitor: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/jp-visser: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/max2: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/Media-Organizer: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/private-mcp: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/s4m-queue: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/Scraper: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/scrum4me-copilot: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/scrum4me-server: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/Scrum4Us: gebruikt de gedeelde labels maar heeft geen branch-protection op main; binnen 24 uur beoordelen",
+    "janpeter/SiteScraper: Actions staat aan maar er is geen workflowmap gevonden",
+    "janpeter/Video-editor: Actions staat aan maar er is geen workflowmap gevonden"
+  ],
+  "unreadable": [],
+  "ok": false
+}

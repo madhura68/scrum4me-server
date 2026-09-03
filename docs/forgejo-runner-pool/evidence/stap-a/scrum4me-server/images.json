@@ -1,0 +1,138 @@
+[
+    {
+        "Id": "sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533",
+        "RepoTags": [
+            "code.forgejo.org/forgejo/runner:12"
+        ],
+        "RepoDigests": [
+            "code.forgejo.org/forgejo/runner@sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-05-05T17:03:23.461822476Z",
+        "Config": {
+            "User": "1000:1000",
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "HOME=/data"
+            ],
+            "Cmd": [
+                "/bin/forgejo-runner"
+            ],
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Labels": {
+                "maintainer": "contact@forgejo.org",
+                "org.opencontainers.image.authors": "Forgejo",
+                "org.opencontainers.image.description": "A runner for Forgejo Actions.",
+                "org.opencontainers.image.documentation": "https://forgejo.org/docs/latest/admin/actions/#forgejo-runner",
+                "org.opencontainers.image.licenses": "GPL-3.0-or-later",
+                "org.opencontainers.image.source": "https://code.forgejo.org/forgejo/runner",
+                "org.opencontainers.image.title": "Forgejo Runner",
+                "org.opencontainers.image.url": "https://forgejo.org",
+                "org.opencontainers.image.vendor": "Forgejo",
+                "org.opencontainers.image.version": "12.10.1"
+            },
+            "ArgsEscaped": true
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 18155176,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:29df493baa13de438d6d2ece3a8333032e0b7b9b9d8cce4ee82194da255f61e1",
+                "sha256:ecd72973c77fe2e6d093e9a2cb3a1a602ac9cae77b4a6b67a1b0116d4429b0c7",
+                "sha256:43a0d52adf488b86cb2605428a2d944638c49e1ceded6815ec9b7a24b74531e0",
+                "sha256:23d215d99b0c39919a7b3cff170cd190a46f6e8e81a3e393394b21fc7aa69698"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-05-15T10:04:58.164748013Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533",
+            "size": 1609
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "code.forgejo.org/forgejo/runner"
+                }
+            ]
+        }
+    },
+    {
+        "Id": "sha256:685b91dca8eab7de1dce1c303dbb7a763e4082d6a60db10968adf3295fbd2495",
+        "RepoTags": [
+            "docker:dind"
+        ],
+        "RepoDigests": [
+            "docker@sha256:685b91dca8eab7de1dce1c303dbb7a763e4082d6a60db10968adf3295fbd2495"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-05-08T16:41:42.122615971Z",
+        "Config": {
+            "ExposedPorts": {
+                "2375/tcp": {},
+                "2376/tcp": {}
+            },
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DOCKER_VERSION=29.4.3",
+                "DOCKER_BUILDX_VERSION=0.33.0",
+                "DOCKER_COMPOSE_VERSION=5.1.3",
+                "DOCKER_TLS_CERTDIR=/certs",
+                "DIND_COMMIT=8d9e3502aba39127e4d12196dae16d306f76993d"
+            ],
+            "Entrypoint": [
+                "dockerd-entrypoint.sh"
+            ],
+            "Volumes": {
+                "/var/lib/docker": {}
+            },
+            "WorkingDir": "/"
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 140960275,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:29df493baa13de438d6d2ece3a8333032e0b7b9b9d8cce4ee82194da255f61e1",
+                "sha256:e30e08844d86d0b7bdec4e4924989ffe2057ef3026a0e118a4aae29b4aeebbc3",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:482616e5aef7ac68384097c65542521d6c0476a940da80144cd947b13a9a042e",
+                "sha256:ed4137afe7168371e1d4e48924e6e2ce83455f42eef6630c4a57d49540d33c5c",
+                "sha256:2b31ae352dd96d6a6f5abd64dd2c794d7eebaa498f09fd209c0f4d25a6e6bdf9",
+                "sha256:bae47f456a5a936644b339942f41750287d20066bcae7426a4b99536733ecb4e",
+                "sha256:58bbff58ffbfb49fed7cf320a66c88d28c23d18dbe38f806758e0e2951f8571b",
+                "sha256:a9ec6f20069a3a36968bfdcfbc6659ad19bba849116e8c3042cfe08eb5a1fafe",
+                "sha256:6e1b907cf462d2bde9de21593a0826bb74f5c4d2f061492a2eea0ce0a3f744d8",
+                "sha256:efaab36ecd41eb052b81ca5e25f5f960584c07904173be1c3aa3d6fa104dce3b",
+                "sha256:8e67d67b93c8f65b896e3391d84107e5497c3ad3ea3fa2a36e2b6e51cfb5eded",
+                "sha256:568eedd648df39c1e9afc44f1d97f293bc41a463887decda875e12c28e58c21d",
+                "sha256:e3dbcc02b60458b5d2b478ce19daec380b6622a1f6b9a5fd3f20c5fdd6d967c2",
+                "sha256:2c692055220ef488a799f56ab8d64e6cd0732c117630fa9b1a65f98d2bdf511b",
+                "sha256:6ba0d8c7f5fedc5818dc10551558d62a565d98817d47f77a0c213f4549abeed9"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-05-15T08:51:14.366033877Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:685b91dca8eab7de1dce1c303dbb7a763e4082d6a60db10968adf3295fbd2495",
+            "size": 5165
+        },
+        "Identity": {
+            "Pull": [
+                {
+                    "Repository": "docker.io/library/docker"
+                }
+            ]
+        }
+    }
+]

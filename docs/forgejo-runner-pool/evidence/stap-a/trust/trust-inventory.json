@@ -1,0 +1,693 @@
+{
+  "repositories": [
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/DigiPlein",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/verify.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/ImageInventory",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/inspannings-monitor",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".github/workflows",
+      "workflows": [
+        ".github/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/jp-visser",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/max2",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Media-Organizer",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "main",
+          "created_at": "2026-07-07T17:05:42+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": false,
+          "enable_push": true,
+          "enable_push_whitelist": false,
+          "enable_status_check": true,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "main",
+          "status_check_contexts": [
+            "CI / Root app checks (pull_request)",
+            "CI / Ops-agent checks (pull_request)",
+            "CI / Deploy artifact checks (pull_request)",
+            "CI / Docker image build (pull_request)"
+          ],
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-07-09T19:40:05+02:00"
+        }
+      ],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Ops-dashboard",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/private-mcp",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/s4m-queue",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "s4us-smoke-bot/s4us-smoke",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "s4us-smoke-bot",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "s4us-smoke-bot"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Scraper",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "main",
+          "created_at": "2026-06-10T14:25:48+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": true,
+          "enable_push": true,
+          "enable_push_whitelist": true,
+          "enable_status_check": false,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [
+            "janpeter"
+          ],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [
+            "janpeter"
+          ],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "main",
+          "status_check_contexts": null,
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-06-10T14:25:48+02:00"
+        }
+      ],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Scrum4Me",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".github/workflows",
+      "workflows": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/neon-backup.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-copilot",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "master",
+          "created_at": "2026-06-10T14:25:49+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": true,
+          "enable_push": true,
+          "enable_push_whitelist": true,
+          "enable_status_check": false,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [
+            "janpeter"
+          ],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [
+            "janpeter"
+          ],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "master",
+          "status_check_contexts": null,
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-06-10T14:25:49+02:00"
+        }
+      ],
+      "default_branch": "master",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-docker",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "main",
+          "created_at": "2026-06-10T14:25:48+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": true,
+          "enable_push": true,
+          "enable_push_whitelist": true,
+          "enable_status_check": false,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [
+            "janpeter"
+          ],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [
+            "janpeter"
+          ],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "main",
+          "status_check_contexts": null,
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-06-10T14:25:48+02:00"
+        }
+      ],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-mcp",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-server",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "main",
+          "created_at": "2026-06-10T14:25:48+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": true,
+          "enable_push": true,
+          "enable_push_whitelist": true,
+          "enable_status_check": false,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [
+            "janpeter"
+          ],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [
+            "janpeter"
+          ],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "main",
+          "status_check_contexts": null,
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-06-10T14:25:48+02:00"
+        }
+      ],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-shared",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [
+        {
+          "apply_to_admins": false,
+          "approvals_whitelist_teams": [],
+          "approvals_whitelist_username": [],
+          "block_on_official_review_requests": false,
+          "block_on_outdated_branch": false,
+          "block_on_rejected_reviews": false,
+          "branch_name": "main",
+          "created_at": "2026-06-10T14:25:49+02:00",
+          "dismiss_stale_approvals": false,
+          "enable_approvals_whitelist": false,
+          "enable_merge_whitelist": true,
+          "enable_push": true,
+          "enable_push_whitelist": true,
+          "enable_status_check": false,
+          "ignore_stale_approvals": false,
+          "merge_whitelist_teams": [],
+          "merge_whitelist_usernames": [
+            "janpeter"
+          ],
+          "protected_file_patterns": "",
+          "push_whitelist_deploy_keys": false,
+          "push_whitelist_teams": [],
+          "push_whitelist_usernames": [
+            "janpeter"
+          ],
+          "require_signed_commits": false,
+          "required_approvals": 0,
+          "rule_name": "main",
+          "status_check_contexts": null,
+          "unprotected_file_patterns": "",
+          "updated_at": "2026-06-10T14:25:49+02:00"
+        }
+      ],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/scrum4me-workers",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/ci.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Scrum4Us",
+      "gebruikt_gedeeld_label": true,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [
+        "pull_request"
+      ],
+      "unreadable": [],
+      "workflow_source": ".forgejo/workflows",
+      "workflows": [
+        ".forgejo/workflows/deploy.yml",
+        ".forgejo/workflows/verify.yml"
+      ],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/SiteScraper",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/test",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": false,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/test-mirror-001",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter",
+        "s4m-codex-reviewer"
+      ]
+    },
+    {
+      "branch_protection": [],
+      "default_branch": "main",
+      "fork": false,
+      "full_name": "janpeter/Video-editor",
+      "gebruikt_gedeeld_label": false,
+      "has_actions": true,
+      "internal": false,
+      "owner": "janpeter",
+      "private": true,
+      "risky_triggers": [],
+      "unreadable": [],
+      "workflow_source": null,
+      "workflows": [],
+      "writers": [
+        "janpeter"
+      ]
+    }
+  ],
+  "unreadable": []
+}

@@ -1,0 +1,4 @@
+vcpu: OK — som 12.5 binnen 50% van 28
+geheugen: OK — som 6442450944 binnen 50% van 21029359616
+schijf: OK — 27% vrij en 255698653184 bytes >= 21474836480 nodig
+inodes: OK — 93% vrij

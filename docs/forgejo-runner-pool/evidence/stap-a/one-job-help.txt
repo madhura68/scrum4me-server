@@ -1,0 +1,17 @@
+Run only one job
+
+Usage:
+  forgejo-runner one-job [flags]
+
+Flags:
+      --fetch-interval duration   specifies the interval duration for fetching resources.
+      --handle string             request the job attempt with the given handle (Forgejo >= 15)
+  -h, --help                      help for one-job
+      --label stringArray         labels of the runner (repeatable)
+      --token-url string          URL where the runner token can be loaded from
+      --url string                URL of the Forgejo instance to connect to
+      --uuid string               UUID of the runner
+  -w, --wait                      waits until task has been assigned
+
+Global Flags:
+  -c, --config string   Config file path

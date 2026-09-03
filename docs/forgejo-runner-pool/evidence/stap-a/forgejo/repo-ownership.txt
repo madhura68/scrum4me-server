@@ -1,0 +1,7 @@
+# Repository-eigendom (org vs. user), gemeten 2026-08-31T20:30:43Z
+# Methode: GET /api/v1/repos/{owner}/{repo}/teams — HTTP 405 met 'repo is not owned by an organization' = user-owned.
+
+janpeter/scrum4me-server	HTTP 405	USER-OWNED (405, zoals verwacht)
+	 body: {"message":"repo is not owned by an organization","url":"https://git.jp-visser.nl/api/swagger"}
+janpeter/max2	HTTP 405	USER-OWNED (405, zoals verwacht)
+	 body: {"message":"repo is not owned by an organization","url":"https://git.jp-visser.nl/api/swagger"}

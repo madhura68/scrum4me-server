@@ -1,0 +1,3 @@
+code.forgejo.org/forgejo/runner:12	code.forgejo.org/forgejo/runner@sha256:eb6e7bc21973382d261e6eb883dbd27b8cb56939d33a3bfd79a1352b7f9a33a0
+docker:dind	docker@sha256:3ef33f2e220b79ed3ef3b99d81746f06f306cd6340e2cb7331d17ae996e74cb6
+catthehacker/ubuntu:act-latest	catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43

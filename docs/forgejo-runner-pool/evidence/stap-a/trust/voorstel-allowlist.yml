@@ -1,0 +1,102 @@
+version: 1
+approved_by: ""
+approved_at: ""
+
+identities:
+  - name: janpeter
+  - name: s4m-codex-reviewer
+  - name: s4us-smoke-bot
+
+repositories:
+  - full_name: janpeter/DigiPlein
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/ImageInventory
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Media-Organizer
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Ops-dashboard
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scraper
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scrum4Me
+    actions_enabled: true
+    workflow_source: .github/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Scrum4Us
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/SiteScraper
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/Video-editor
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/inspannings-monitor
+    actions_enabled: true
+    workflow_source: .github/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/jp-visser
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/max2
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/private-mcp
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/s4m-queue
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-copilot
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-docker
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-mcp
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-server
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
+  - full_name: janpeter/scrum4me-shared
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/scrum4me-workers
+    actions_enabled: true
+    workflow_source: .forgejo/workflows
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/test
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: janpeter/test-mirror-001
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter, s4m-codex-reviewer]
+  - full_name: s4us-smoke-bot/s4us-smoke
+    actions_enabled: true
+    workflow_source: null
+    writers: [s4us-smoke-bot]

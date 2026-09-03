@@ -1,0 +1,97 @@
+# Gezondheid van de productiecontainers vóór aanvang (§8 stap A)
+
+Read-only opnames via de s4m-queue op 2 september 2026 (`docker ps -a`, geen
+mutaties). scrum4me-server: bericht fbce8ac1-733f-4d58-a5ad-1608fe176f37,
+reply 9334da08-8308-4b94-8e0f-861e99cebb63. max2: bericht
+27f613b8-465a-4e3a-9edb-cd2a3a78452b, reply deb1df5c-49de-47c7-b047-e2f7ce1ea220.
+Geen host is tot nu toe gemuteerd; deze opname telt dus als "vóór aanvang".
+Kolommen: naam, image, status, state. Een "Up" zonder "(healthy)" betekent dat
+de container geen healthcheck definieert, niet dat een check faalt.
+
+## Uitkomst
+
+| Host | running | unhealthy | niet-running | Oordeel |
+|---|---|---|---|---|
+| scrum4me-server | 22 | 0 | 1 (dev-container, exit 0, 6 weken oud) | gezond |
+| max2 | 11 | 0 | 8 (3 one-shot migraties exit 0; 5 = video-editor-stack, 10 dagen plat) | gezond voor de productiediensten; video-editor-stack ligt plat, zie bevinding |
+
+## Bevindingen voor JP (niets hersteld)
+
+- **max2, video-editor-stack plat sinds ~10 dagen**: cpu-worker en reconciler
+  Exited(137) = SIGKILL, web Exited(143) = SIGTERM, gpu-worker en postgres
+  Exited(0). Twee harde kills wijzen op OOM-killer of een niet-reagerende stop;
+  `docker inspect --format '{{.State.OOMKilled}}'` zou het uitwijzen en is
+  bewust niet gedraaid (read-only opdracht). Vermoedelijk bewust geparkeerd
+  (go-live geparkeerd bij restore); dat oordeel is aan JP. Geregistreerd als
+  issue op het max2-product.
+- **Gevolg voor het headroombewijs (§7.8)**: de `MemAvailable` van max2 in
+  `host-facts-max2.tsv` (19,6 GiB) is gemeten terwijl de video-editor-stack
+  níét draaide. Komt die stack terug, dan daalt de headroom met de omvang van
+  die stack. De gate gaat pas ROOD onder 12,0 GiB (marge 7,59 GiB); of de
+  video-editor-stack daarin past is niet gemeten. `preflight.sh` op max2 in
+  stap D beslist op de dan geldende waarde.
+- scrum4me-server, `scrum4us-dev-postgres-1` Exited(0) 6 weken geleden:
+  dev-stack, geen productie, geen bevinding.
+
+## scrum4me-server
+
+host: scrum4me-server  datum: 2026-09-02T19:34:44Z
+scrum4me-workers	scrum4me-workers:latest	Up 37 hours (healthy)	running
+scrum4me-agent-codex	scrum4me-agent-codex:local	Up 37 hours (healthy)	running
+compose-worker-docs-1	scrum4me-agent-runner:idea	Up 37 hours	running
+compose-worker-deploy-2	scrum4me-agent-runner:idea	Up 37 hours	running
+compose-worker-deploy-1	scrum4me-agent-runner:idea	Up 37 hours	running
+compose-worker-idea-52	scrum4me-agent-runner:idea	Up 37 hours	running
+compose-worker-idea-51	scrum4me-agent-runner:idea	Up 37 hours	running
+scrum4me-ops-dashboard	ops-dashboard:latest	Up 7 days	running
+scrum4us-worker	scrum4us-worker	Up 10 days	running
+scrum4us-cleanup-sidecar	scrum4us-cleanup-sidecar	Up 10 days	running
+scrum4us-core-api	scrum4us-core-api	Up 10 days (healthy)	running
+scrum4us-postgres	pgvector/pgvector:0.8.5-pg17-trixie	Up 12 days	running
+scrum4us-tei	8de25e75ce39	Up 12 days	running
+scrum4me-caddy	caddy:2	Up 12 days	running
+scrum4me-postgres	postgres:17	Up 12 days	running
+scrum4us-litellm	c2b7aba0e3eb	Up 12 days (healthy)	running
+scrum4us-dev-postgres-1	postgres:17	Exited (0) 6 weeks ago	exited
+scrum4me-mcp-http	scrum4me-mcp-http:latest	Up 12 days (healthy)	running
+digiplein	digiplein:latest	Up 12 days (healthy)	running
+scrum4me-copilot	scrum4me-copilot:latest	Up 12 days (healthy)	running
+scrum4me-forgejo-runner	code.forgejo.org/forgejo/runner:12	Up 2 days	running
+scrum4me-forgejo-dind	docker:dind	Up 12 days	running
+scrum4me-forgejo	codeberg.org/forgejo/forgejo:15.0.2	Up 12 days	running
+--- unhealthy ---
+--- niet-running ---
+scrum4us-dev-postgres-1	Exited (0) 6 weeks ago
+
+## max2
+
+host: max2  datum: 2026-09-02T19:40:54Z
+scrum4me-agent-codex	scrum4me-agent-codex:local	Up 2 days (healthy)	running
+scrum4me-worker-idea-2	scrum4me-agent-runner:idea	Up 2 days (healthy)	running
+scrum4me-worker-idea-1	scrum4me-agent-runner:idea	Up 2 days (healthy)	running
+scrum4me-caddy	caddy:2	Up 2 days	running
+scrum4me-postgres	postgres:17	Up 2 days	running
+media-organizer-web	media-organizer-web	Up 12 days	running
+media-organizer-migrate-1	media-organizer-migrate	Exited (0) 12 days ago	exited
+media-organizer-postgres	postgres:17	Up 12 days (healthy)	running
+scrum4me-ops-dashboard	ops-dashboard:latest	Up 12 days	running
+scrum4me-workers	scrum4me-workers:latest	Up 12 days (healthy)	running
+video-editor-video-editor-cpu-worker-1	533850903820	Exited (137) 10 days ago	exited
+video-editor-video-editor-gpu-worker-1	f0960fd13340	Exited (0) 10 days ago	exited
+video-editor-video-editor-reconciler-1	26b1baceeb88	Exited (137) 10 days ago	exited
+video-editor-video-editor-web-1	02469b1be048	Exited (143) 10 days ago	exited
+video-editor-video-editor-migrate-1	e14642ef0e04	Exited (0) 5 weeks ago	exited
+video-editor-video-editor-postgres-1	postgres:17-alpine	Exited (0) 10 days ago	exited
+tei-gpu	aedf3b34836d	Up 12 days	running
+scraper	scraper-scraper	Up 12 days	running
+scraper-migrate-1	scraper-migrate	Exited (0) 7 weeks ago	exited
+--- unhealthy ---
+--- niet-running ---
+media-organizer-migrate-1	Exited (0) 12 days ago
+video-editor-video-editor-cpu-worker-1	Exited (137) 10 days ago
+video-editor-video-editor-gpu-worker-1	Exited (0) 10 days ago
+video-editor-video-editor-reconciler-1	Exited (137) 10 days ago
+video-editor-video-editor-web-1	Exited (143) 10 days ago
+video-editor-video-editor-migrate-1	Exited (0) 5 weeks ago
+video-editor-video-editor-postgres-1	Exited (0) 10 days ago
+scraper-migrate-1	Exited (0) 7 weeks ago

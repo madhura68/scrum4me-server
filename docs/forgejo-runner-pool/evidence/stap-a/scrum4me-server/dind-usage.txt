@@ -1,0 +1,2 @@
+mountpoint	/var/lib/docker/volumes/08b52fdd43d7b93ab619983de6bc18744e91cab4fd10759fa40bfdb1de7bc6ee/_data
+118489236325	/var/lib/docker/volumes/08b52fdd43d7b93ab619983de6bc18744e91cab4fd10759fa40bfdb1de7bc6ee/_data
