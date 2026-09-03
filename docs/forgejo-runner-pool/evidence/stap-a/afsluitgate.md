@@ -74,3 +74,23 @@ padvals-positief (§6.1, ISS-8). Details per taak in
   CLI/main-loop met echte probes en Docker-aansturing (niet in Task 11–15
   gespecificeerd). Vóór stap D expliciet plannen.
 - **Headroomgate scrum4me-server ROOD**: geldt pas bij stap G (besluit R13).
+
+## Onafhankelijke review (PR #10)
+
+De implementatie is via de adversariële review-loop (delta-variant, cross-model naar
+`mac:codex`) beoordeeld op PR #10.
+
+- **Ronde 1** (commit `96e0ac2`): 0 BLOCKER / 1 MAJOR / 1 MINOR → NO-GO.
+  - MAJOR: `secret-scan.sh` had de fixture-marker `secret-scan: fixture` in de globale
+    `grep -vE`-exclusie, waardoor een echte tokenregel met die marker (in welk bestand
+    dan ook) de gate passeerde. Gereproduceerd en gefixt: de marker-uitzondering is
+    volledig verwijderd; de redactor-fixture gebruikt nu een korte, duidelijk-nep
+    waarde; er is een regressietest toegevoegd.
+  - MINOR: twee klokbewijzen eindigden op CRLF (`\r`); `git diff --check` faalde. CR
+    verwijderd.
+- **Ronde 2** (commit `0f5586c`): 0 BLOCKER / 0 MAJOR / 0 MINOR → **GO**. De reviewer
+  reproduceerde de bypass (control én bypass nu exit 70), bevestigde
+  `git diff --check` schoon, en draaide de volledige suite (161 unittests, 117 bats,
+  shellcheck, bundelscan) groen. Geen regressies.
+
+De branch is daarmee door onafhankelijke review; de merge-beslissing ligt bij JP.
