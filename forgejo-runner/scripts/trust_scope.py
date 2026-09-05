@@ -298,9 +298,14 @@ def classify(inv, allowlist):
                     f"{name}: nieuwe repository zonder Actions; binnen 24 uur beoordelen")
             continue
 
-        if repo["has_actions"] and not entry.get("actions_enabled"):
+        # actions_enabled moet een echte boolean True zijn; een verkeerd getypte
+        # waarde (bv. de string "false", die de loader als truthy string bewaart)
+        # mag geen toestemming geven. `is not True` is bewust strenger dan een
+        # truthy-check: bool False EN elk niet-boolean type leiden tot hard.
+        if repo["has_actions"] and entry.get("actions_enabled") is not True:
             verdict.hard.append(
-                f"{name}: Actions staat aan terwijl de allowlist uitgaat van uit")
+                f"{name}: Actions staat aan maar de allowlist bevestigt actions_enabled "
+                f"niet als True (drift of ongeldig type)")
 
         for writer in repo.get("writers", []):
             if writer not in approved_identities:

@@ -694,6 +694,58 @@ class TestAckViaLoader(unittest.TestCase):
         self.assertEqual(verdict.accepted, [])
         self.assertTrue(any("pull_request" in h for h in verdict.hard))
 
+    def _classify_actions_regel(self, actions_regel, has_actions=True):
+        yml = (
+            'version: 1\n'
+            'approved_by: "janpeter"\n'
+            'identities:\n'
+            '  - name: janpeter\n'
+            'repositories:\n'
+            '  - full_name: janpeter/app\n'
+            f'    {actions_regel}\n'
+            '    workflow_source: .forgejo/workflows\n'
+            '    writers: [janpeter]\n'
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+            fh.write(yml)
+            path = fh.name
+        try:
+            allowlist = trust_scope_cli.load_allowlist(path)
+        finally:
+            pathlib.Path(path).unlink()
+        inv = {"repositories": [{
+            "full_name": "janpeter/app", "has_actions": has_actions,
+            "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
+            "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [{"branch_name": "main"}],
+            "default_branch": "main", "unreadable": [],
+        }], "unreadable": []}
+        return trust_scope.classify(inv, allowlist)
+
+    def test_actions_enabled_bool_true_is_groen(self):
+        v = self._classify_actions_regel("actions_enabled: true")
+        self.assertTrue(v.ok, f"onverwacht rood: {v.hard}")
+
+    def test_actions_enabled_bool_false_bij_actieve_actions_is_hard(self):
+        v = self._classify_actions_regel("actions_enabled: false")
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
+    def test_gequote_actions_enabled_false_is_niet_truthy(self):
+        # Regressie voor de MAJOR uit reviewronde 2 (mac:codex): de gequote
+        # string "false" mag geen toestemming geven en de harde Actions-drift
+        # niet maskeren.
+        v = self._classify_actions_regel('actions_enabled: "false"')
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
+    def test_gequote_actions_enabled_true_is_fail_closed(self):
+        # Een gequote boolean is een config-typo; alleen bool True geeft
+        # toestemming, dus fail-closed hard.
+        v = self._classify_actions_regel('actions_enabled: "true"')
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
 
 if __name__ == "__main__":
     unittest.main()
