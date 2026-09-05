@@ -309,9 +309,22 @@ def classify(inv, allowlist):
 
         # §7.7 (ISS-9-delta): een risky-trigger op een gedeeld label is HARD, tenzij
         # JP hem voor deze repo expliciet heeft bevestigd. Fail-closed: alleen een
-        # echte lijst telt; een verkeerd getypt veld (bv. een string) accepteert nooit.
-        ack_raw = entry.get("risky_triggers_acknowledged", [])
-        acknowledged = set(ack_raw) if isinstance(ack_raw, list) else set()
+        # lijst waarvan elk lid een bekende risky-trigger is telt als bevestiging.
+        # Iedere andere vorm — een string (ook een gequote "[...]" die de loader
+        # als lijst zou kunnen lezen), een dict, of een lijst met een onbekend of
+        # niet-string lid — accepteert nooit en laat de kruising hard, met een
+        # zachte melding zodat de misconfiguratie niet stil blijft.
+        ack_raw = entry.get("risky_triggers_acknowledged")
+        if ack_raw in (None, [], ()):
+            acknowledged = set()
+        elif isinstance(ack_raw, list) and all(t in RISKY_TRIGGERS for t in ack_raw):
+            acknowledged = set(ack_raw)
+        else:
+            acknowledged = set()
+            verdict.soft.append(
+                f"{name}: risky_triggers_acknowledged is ongeldig (verwacht een lijst van "
+                f"bekende triggers {list(RISKY_TRIGGERS)}); fail-closed genegeerd, de kruising "
+                f"blijft hard")
         for trigger in repo.get("risky_triggers", []):
             if repo.get("gebruikt_gedeeld_label"):
                 if trigger in acknowledged:
