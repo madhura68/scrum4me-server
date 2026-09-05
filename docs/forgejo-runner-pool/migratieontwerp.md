@@ -739,6 +739,19 @@ Geen resterende bevindingen. De reviewer bevestigde dat §6.1 en stap A dezelfde
 
 Stap A en B uit §8 zijn uitgevoerd volgens `docs/forgejo-runner-pool/implementatieplan-stap-a-b.md` (dubbele GO in plan-review ronde 7), op branch `feat/forgejo-runner-pool-stap-a-b` van de canonieke repo; laatste bundelcommit vóór deze notitie `07bc827`. Afsluitrapport: `docs/forgejo-runner-pool/evidence/stap-a/afsluitgate.md` — 117 bats- en 161 unittests groen, shellcheck schoon, tellercontrole groen, secret-scan actief als pre-commit hook met blokkeringsbewijs. De laatste bewijsrij (gezondheidsopname van de productiecontainers vóór aanvang) is dezelfde dag via read-only hostmetingen gesloten; daarbij bleek dat de video-editor-stack op `max2` al tien dagen plat ligt, wat de gemeten headroom van die host beïnvloedt — vastgelegd als issue op het max2-product, oordeel aan JP. Aan dit ontwerp is verder niets gewijzigd; de open besluiten vóór stap C staan in het afsluitrapport.
 
+### Delta-review R14 — ISS-9 `risky_triggers_acknowledged` — GO — 5 september 2026
+
+**Aanleiding:** ISS-9 — 12 repo's kruisen `pull_request` + het gedeelde `ubuntu-latest`-label; `classify()` merkte dat altijd als HARD aan, dus de trustgate bleef rood en blokkeerde stap C. Besluit JP (optie A): de kruising per repo bevestigen, niet de tool verzachten of de scope beperken — scope-limiting hielp niet, want alle 12 zijn `janpeter`'s eigen repo's en de runnerscope is hiërarchisch.
+
+**Wijziging (§7.6/§7.7):** een per-repo `risky_triggers_acknowledged` in `trusted-actions-scope.yml`; `classify()` merkt een bevestigde kruising aan als `accepted` in plaats van `hard`, fail-closed bij een ongeldig veld. De rationale is een **bewuste risico-acceptatie** door JP, gegrond op de gemeten `[service] DISABLE_REGISTRATION = true` plus de per-repo fork-PR-approvalgate — nadrukkelijk **niet** op `DEFAULT_ALLOW_ONLY_CONTRIBUTORS_TO_TRIGGER_ACTIONS`, die in Forgejo 15.0.2 niet bestaat (gemeten tegen binary en upstream-bron).
+
+**Review (delta-variant, `mac:codex`, cross-model), branch `fix/iss-9-risky-triggers-acknowledged`:**
+- Ronde 1 (`4ffed07`): NO-GO — 2 MAJOR + 1 MINOR. Een gequote YAML-scalar `"[pull_request]"` werd door de eigen mini-YAML-loader alsnog een lijst en omzeilde de fail-closed; de rationale leidde te veel af uit `DISABLE_REGISTRATION`; alleen het buitenste type van het ack-veld werd gecheckt.
+- Ronde 2 (`0227b72`): NO-GO — 1 MAJOR. De bredere loaderfix uit ronde 1 maakte `actions_enabled: "false"` truthy en maskeerde de Actions-drift.
+- Ronde 3 (`488b224`): **GO** — 0/0/0. De reviewer draaide de echte allowlist door de echte CLI (offline inventarisatie): **20 repo's, 12 accepted, 0 hard, 8 soft, `ok=True`** — de gate is groen voor de bevestigde kruisingen; de 8 zachte meldingen (Actions-enabled zonder workflowbron) zijn geen regressie.
+
+De branch is daarmee door onafhankelijke review. ISS-9 blijft open tot de merge; de merge-beslissing ligt bij JP.
+
 ## 14. Acceptatie van dit ontwerp
 
 Dit ontwerp kreeg dubbele GO voor de delta-review na rondecap 10 (R11). De route is daarmee goedgekeurd: eerst een stabiele Forgejo Runner 12.10.1-tweemachinepool op `scrum4me-server` en `max2`, daarna pas een afzonderlijke rolling Runner 13-fase.
