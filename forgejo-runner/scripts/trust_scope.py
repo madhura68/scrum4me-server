@@ -23,6 +23,10 @@ class Verdict:
     hard: list = field(default_factory=list)
     soft: list = field(default_factory=list)
     unreadable: list = field(default_factory=list)
+    # Risicovolle kruisingen die JP per repo expliciet heeft bevestigd
+    # (risky_triggers_acknowledged). Aanvaard restrisico, geen harde afwijking;
+    # blokkeert de gate niet, maar wordt apart geregistreerd voor de audit (§7.7).
+    accepted: list = field(default_factory=list)
 
     @property
     def ok(self):
@@ -303,11 +307,21 @@ def classify(inv, allowlist):
                 verdict.hard.append(
                     f"{name}: niet-goedgekeurde workflow-schrijver {writer}")
 
+        # §7.7 (ISS-9-delta): een risky-trigger op een gedeeld label is HARD, tenzij
+        # JP hem voor deze repo expliciet heeft bevestigd. Fail-closed: alleen een
+        # echte lijst telt; een verkeerd getypt veld (bv. een string) accepteert nooit.
+        ack_raw = entry.get("risky_triggers_acknowledged", [])
+        acknowledged = set(ack_raw) if isinstance(ack_raw, list) else set()
         for trigger in repo.get("risky_triggers", []):
             if repo.get("gebruikt_gedeeld_label"):
-                verdict.hard.append(
-                    f"{name}: trigger {trigger} in een workflow die een gedeeld runnerlabel "
-                    f"gebruikt; onbetrouwbare code kan zo op de pool starten")
+                if trigger in acknowledged:
+                    verdict.accepted.append(
+                        f"{name}: trigger {trigger} op een gedeeld runnerlabel is expliciet "
+                        f"bevestigd (risky_triggers_acknowledged); restrisico aanvaard per §7.6/§7.7")
+                else:
+                    verdict.hard.append(
+                        f"{name}: trigger {trigger} in een workflow die een gedeeld runnerlabel "
+                        f"gebruikt; onbetrouwbare code kan zo op de pool starten")
             else:
                 verdict.soft.append(
                     f"{name}: trigger {trigger} aanwezig maar zonder gedeeld runnerlabel; "

@@ -519,6 +519,69 @@ class TestClassificatie(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("pull_request_target" in h for h in verdict.hard))
 
+    def _allowlist_met_ack(self, ack):
+        return {
+            "repositories": [{"full_name": "janpeter/app", "actions_enabled": True,
+                              "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
+                              "risky_triggers_acknowledged": ack}],
+            "identities": [{"name": "janpeter"}],
+        }
+
+    def test_bevestigde_risicotrigger_op_gedeeld_label_is_accepted_niet_hard(self):
+        # ISS-9: JP bevestigt de kruising per repo (risky_triggers_acknowledged);
+        # dan is het een expliciet aanvaard restrisico, geen harde afwijking.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertTrue(verdict.ok, f"onverwacht rood: {verdict.hard}")
+        self.assertEqual(verdict.hard, [])
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_dekt_alleen_de_genoemde_trigger(self):
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request", "workflow_run"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("workflow_run" in h for h in verdict.hard))
+        self.assertFalse(any("pull_request" in h for h in verdict.hard))
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_verzacht_geen_andere_harde_afwijking(self):
+        # De ack geldt uitsluitend de risky-trigger-kruising, niet een onbekende schrijver.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True,
+                      writers=["janpeter", "vreemdeling"]),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_zonder_gedeeld_label_verandert_niets(self):
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=False),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertTrue(verdict.ok)
+        self.assertTrue(any("pull_request" in z for z in verdict.soft))
+        self.assertEqual(verdict.accepted, [])
+
+    def test_ack_als_string_ipv_lijst_is_fail_closed(self):
+        # Een verkeerd geconfigureerde ack (string i.p.v. lijst) mag NOOIT stil
+        # accepteren; hij valt terug op hard.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack("pull_request"))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+        self.assertEqual(verdict.accepted, [])
+
+    def test_geen_ack_veld_is_ongewijzigd_hard(self):
+        # Regressie: zonder het veld blijft de kruising hard (bestaand gedrag).
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+
     def test_risicotrigger_zonder_gedeeld_label_is_zacht(self):
         verdict = trust_scope.classify(
             self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=False), ALLOWLIST)

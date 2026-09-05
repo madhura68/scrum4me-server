@@ -230,7 +230,8 @@ def main():
     verdict = trust_scope.classify(inv, allowlist)
     with open(os.path.join(args.out, "trust-verdict.json"), "w", encoding="utf-8") as fh:
         json.dump({"hard": verdict.hard, "soft": verdict.soft,
-                   "unreadable": verdict.unreadable, "ok": verdict.ok},
+                   "unreadable": verdict.unreadable, "accepted": verdict.accepted,
+                   "ok": verdict.ok},
                   fh, indent=2, ensure_ascii=False)
 
     for item in verdict.unreadable:
@@ -239,6 +240,9 @@ def main():
         print(f"HARD: {item}", file=sys.stderr)
     for item in verdict.soft:
         print(f"ZACHT: {item}", file=sys.stderr)
+    # Aanvaarde kruisingen wijzigen de exitcode niet, maar worden altijd getoond.
+    for item in verdict.accepted:
+        print(f"AANVAARD: {item}", file=sys.stderr)
 
     if verdict.unreadable:
         return 30
