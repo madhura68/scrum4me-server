@@ -8,6 +8,7 @@ import logging
 import math
 import re
 import signal
+import subprocess
 import tomllib
 from collections import namedtuple
 from dataclasses import dataclass
@@ -168,7 +169,12 @@ class Runtime:
         self.readiness.observe(klasse, now)
         self.controller.on_event(self.loop.submit("readiness", {"klasse": klasse}))
         green, _ = self._trust_green()
-        self.controller.gates_groen = bool(green) and self.a.dind.healthy()
+        try:
+            healthy = self.a.dind.healthy()
+        except (subprocess.SubprocessError, OSError) as exc:
+            self.log.warning("dind health-check faalde: %r → ongezond", exc)
+            healthy = False
+        self.controller.gates_groen = bool(green) and healthy
 
     def _busy(self):
         return self.op is not None or self.child is not None
@@ -252,7 +258,10 @@ class Runtime:
             or (now - self._last_probe) >= self.cfg.retry_interval
         ):
             self._last_probe = now
-            self.a.dind.ensure_up()
+            try:
+                self.a.dind.ensure_up()
+            except (subprocess.SubprocessError, OSError) as exc:
+                self.log.warning("dind ensure_up faalde: %r", exc)
             self._readiness_and_gates(now)
         self.controller.tick(now, wall)
         self._reconcile_once()  # Taak 10

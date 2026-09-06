@@ -1,5 +1,5 @@
 # forgejo-runner/tests/test_cycle_runtime.py
-import hashlib, io, os, tempfile, unittest, urllib.error
+import hashlib, io, os, subprocess, tempfile, unittest, urllib.error
 from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen, build_runtime, State
 import cycle_adapters as ca
 
@@ -191,6 +191,23 @@ class TestStartupReconcile(unittest.TestCase):
             self.assertFalse(rt.clean_proven)                     # scrub nog niet bewezen
             rec.pops["scrub"].rc = 0; rt.tick()                   # scrub af → schoon
             self.assertTrue(rt.clean_proven)
+
+class TestDindHealthResilience(unittest.TestCase):
+    """I1: een gewedgede binnen-DinD mag de daemon niet crash-loopen (§7.4)."""
+    def test_healthy_subprocess_error_degrades_gates_no_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            def boom(): raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+            rt.a.dind.healthy = boom
+            rt.tick()                                        # mag niet crashen
+            self.assertFalse(rt.controller.gates_groen)       # fail-closed: ongezond
+    def test_ensure_up_subprocess_error_does_not_crash_tick(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            def boom(): raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+            rt.a.dind.ensure_up = boom
+            rt.tick()                                         # mag niet crashen
+            self.assertTrue(rt.controller.gates_groen)         # health-check zelf draait alsnog
 
 class TestStop(unittest.TestCase):
     def test_stop_with_child_no_new_scrub_exit_after_gone(self):
