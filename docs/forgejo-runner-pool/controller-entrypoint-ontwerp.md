@@ -121,8 +121,11 @@ start pas een child als óók §5.2 groen is.
 `controller.mag_child_starten` is een **noodzakelijke, geen voldoende** toestemming:
 het accepteert óók `SOURCE_WAIT`, en het hart kan `WAITING`/`QUARANTINED` bereiken
 langs paden die géén verse readiness of schone DinD bewijzen. De schil bewaart
-daarom twee eigen preconditions, allebei fail-closed en **geen van beide door
-readiness-herstel toe te kennen**:
+daarom twee eigen preconditions, allebei fail-closed, elk **alleen door zijn eigen
+bewijs** te herstellen (m2): `readiness_confirmed` uitsluitend door zijn eigen
+twee-waarnemingenbevestiging (nooit door een hart-statuswissel of een scrub);
+`clean_proven` uitsluitend door een geslaagde scrub+bewijs (nooit door
+readiness-herstel):
 
 - **`readiness_confirmed` (B1).** Sluit het gat dat `_on_scrub_done` (regel 417) bij
   groene gates rechtstreeks naar `WAITING` gaat en dat "de laatste probe was READY"
@@ -172,7 +175,9 @@ geslaagd schoonbewijs.
 identificeer via de compose-projectlabels of er een **beheerde runnercontainer**
 bestaat (achtergebleven na een SIGKILL/onschone stop; het ontbreken van een lokaal
 `Popen` bewijst dat niet). Bestaat er één → **fail-closed**: geen start, alarm, tot
-hij gecontroleerd is afgehandeld.
+hij gecontroleerd is afgehandeld. Controleer óók de **operatiemarker** (§6.4):
+aanwezig → DinD herstarten, volledige scrub, schoonbewijs, marker wissen; geen start
+tot dat rond is.
 
 Wanneer `state == WAITING` + `readiness_confirmed` (§5) en er nog geen child loopt:
 
@@ -234,11 +239,42 @@ blijven. Daarvoor een expliciet **publicatiecontract** (M3):
   verdict-JSON, regels 236–241, bevat die niet; de deploy-wrapper voegt ze toe).
 
 De controller-adapter `TrustVerdict` gate't groen **alleen** als: `ok==true`, én
-`now - measured_at ≤ verdict_max_age` (meettijd, **niet** de bestands-mtime, zodat
-kopiëren met verse mtime niet vals-vers wordt), én de binding gelijk is aan de
-target/labels/allowlist die de controller nu gebruikt. Anders → `gates_groen=False`
+`measured_at` een geldig tijdformaat heeft én `0 ≤ now - measured_at ≤ verdict_max_age`
+(de **ondergrens** weigert een meettijd in de toekomst — m3 — zodat een foutieve/
+toekomstige timestamp niet langdurig vals-vers blijft; getoetst op de **meettijd**,
+niet de bestands-mtime, zodat kopiëren met verse mtime niet vals-vers wordt), én de
+binding gelijk is aan de target/labels/allowlist die de controller nu gebruikt. Anders → `gates_groen=False`
 (§7.4). Gevolg + bewuste beperking: een repo-/allowlist-wijziging tussen deploys
 wordt pas bij een nieuw deploy-verdict gezien.
+
+### 6.4 Operatie-exclusiviteit in DinD (crashbestendig, M1)
+
+Pre-pull en scrub draaien via `docker compose exec dind …`; hun proces leeft onder
+DinD's PID 1 en **overleeft een SIGKILL van de controller** (DinD is `restart: always`
+met blijvend volume). Het lokale Popen-register (§5) en een schone-objectensnapshot
+bewijzen dus niet dat een oude DinD-side operatie is geëindigd. Daarom een
+crashbestendige uitvoeringsgrens:
+
+- **Operatiemarker (overleeft een crash):** vóór elke pull/scrub schrijft de schil
+  een markerbestand op een **apart, persistent controlepad** (een eigen mount, niet
+  het docker-datavolume, zodat de scrub het niet raakt) met operatienaam en
+  starttijd; ná afronding (succes óf fout) verwijdert hij de marker.
+- **Startup-uitsluiting (onderdeel van §6.1 stap 0):** is de marker bij start
+  aanwezig, dan is een operatie onderbroken en is de DinD-toestand onbekend. De schil
+  **herstart DinD** (`docker compose kill dind && docker compose up -d dind`) — dat
+  beëindigt élk achtergebleven operatieproces deterministisch — draait daarna een
+  **volledige scrub**, bewijst schoon, en verwijdert pas dán de marker. **Geen launch**
+  tot de marker door een bewezen-schone scrub gewist is. Afwezige marker → geen
+  onderbroken operatie, normaal door.
+- **Normale stop (§9):** loopt een operatie, dan staat de marker; de stop wacht
+  bounded op afronding + markerwis; bij SIGKILL blijft de marker staan voor de
+  volgende startup.
+
+Zo is de grens crashbestendig: een onderbroken operatie is bij herstart detecteerbaar
+(marker), de oude operatie wordt deterministisch beëindigd (DinD-herstart) vóór een
+nieuwe scrub én launch, en er start niets tot die uitsluiting bewezen is. De runtime
+is single-threaded, dus binnen één proces lopen nooit twee operaties tegelijk; de
+marker dekt uitsluitend het crash-/herstartgeval.
 
 ## 7. Toestandsbedrading — hoe de schil het hart voedt
 
@@ -323,7 +359,7 @@ child_stop_grace_seconds = 200            # ≈ runner-shutdown_timeout 3m + mar
 
 [trust]
 verdict_path = "/opt/forgejo-runner/trust-verdict.json"   # deploy-wrapper-artifact (§6.3)
-verdict_max_age_seconds = 86400                            # getoetst op measured_at, NIET op mtime
+verdict_max_age_seconds = 86400                            # 0 ≤ now-measured_at ≤ max_age; op measured_at, NIET mtime
 labels_file = "/opt/forgejo-runner/labels.txt"            # voor de labels_sha256-binding
 allowlist_file = "/opt/forgejo-runner/trusted-actions-scope.yml"  # voor de allowlist_sha256-binding
 
@@ -364,9 +400,10 @@ niet alleen naar het runner-child:
   geen actieve pull/scrub). Lukt dat niet binnen het budget → geen schone-stopclaim;
   systemd `SIGKILL` na 300 s is een onschone stop. De **volgende start** is dan
   veilig doordat (a) de startup-reconciliatie (§6.1 stap 0) een achtergebleven
-  runnercontainer fail-closed afvangt en (b) `clean_proven` bij programmastart
-  `False` is, zodat stap 8 eerst een geslaagde scrub+bewijs afdwingt — een
-  onderbroken oude scrub/pull kan zo nooit een nieuwe start overlappen.
+  runnercontainer fail-closed afvangt, (b) de operatiemarker (§6.4) een onderbroken
+  pull/scrub detecteert en via een DinD-herstart + volledige scrub deterministisch
+  uitsluit vóór een nieuwe scrub én launch, en (c) `clean_proven` bij programmastart
+  `False` is. Een onderbroken oude scrub/pull kan zo geen nieuwe start overlappen.
 
 > De runnerpolicy heeft `timeout: 3h` en `shutdown_timeout: 3m`
 > (`runner-config.policy.yml`). Een 3-uursjob past niet binnen systemds 300 s; deze
@@ -406,11 +443,14 @@ dunne slice is een alarm log-only (geen queue/Forgejo-sink).
      digest aan pull; ongeldige digest → geen start;
   10. **trust-verdict** (M3): niet-groen / verouderd op `measured_at` / binding-
       mismatch (target/labels/allowlist) / afwezig → geen start; verse gebonden groen
-      → wél; oud groen met verse **mtime** → nog steeds geweigerd;
+      → wél; oud groen met verse **mtime**, én een meettijd in de toekomst / ongeldig
+      tijdformaat → nog steeds geweigerd;
   11. **stop-contract** (M4): `SIGTERM` tijdens een lopende **pull** en tijdens een
       lopende **scrub** → bounded stop, geen exit-0-vóór-afronding; daarna schone
       herstart; `SIGTERM` met runner-child → child krijgt SIGTERM, exit 0 alleen na
-      bevestigd child-weg;
+      bevestigd child-weg; en **crash-uitsluiting (M1)**: operatiemarker aanwezig maar
+      geen lokaal Popen (client weg, DinD-side operatie leefde nog) → DinD-herstart +
+      volledige scrub vóór enige start, geen parallelle scrub/start;
   12. **niet-blokkerend** (M7): een hangende pull/scrub blokkeert watchdog + SIGTERM
       niet;
   13. **RunnerLifecycle-argv** (M4-ronde1): het gestarte commando bevat `one-job --wait`.
@@ -496,3 +536,23 @@ het ongewijzigde hart) en aanvaard:
   bij de volgende start (§5, §9; test 11).
 
 Verdict ronde 2: **NO-GO**. Fixes toegepast; ronde 3 opnieuw naar `mac:codex`.
+
+### Ronde 3 — commit `3e2be5a` — mac:codex — NO-GO (0 BLOCKER, 1 MAJOR, 2 MINOR)
+
+B1 en B2 bevestigd opgelost (codex reproduceerde de modelsporen op het echte hart);
+M3 implementeerbaar bevonden zonder de CLI te wijzigen. Resterend, geverifieerd en
+aanvaard:
+
+- **M1 (r3)** — een `docker compose exec dind` pull/scrub overleeft een
+  controller-SIGKILL (DinD PID 1, `restart: always`); het Popen-register is na een
+  crash weg en de reconciliatie zocht alleen runnercontainers, niet een verweesde
+  exec. Fix: §6.4 crashbestendige **operatiemarker** + DinD-herstart + volledige scrub
+  bij een onderbroken operatie, gewired in §6.1 stap 0 en §9; geen start tot de
+  uitsluiting bewezen is (test 11).
+- **m2 (r3)** — de §5.2-zin "geen van beide door readiness-herstel toe te kennen"
+  sprak `readiness_confirmed` tegen. Fix: elke vlag wordt alleen door zijn eigen bewijs
+  hersteld (§5.2).
+- **m3 (r3)** — de versheidsformule accepteerde een meettijd in de toekomst. Fix:
+  `0 ≤ now - measured_at ≤ verdict_max_age` + geldig tijdformaat (§6.3, §8, test 10).
+
+Verdict ronde 3: **NO-GO**. Fixes toegepast; ronde 4 opnieuw naar `mac:codex`.
