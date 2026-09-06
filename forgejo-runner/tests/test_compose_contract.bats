@@ -114,7 +114,7 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
 }
 
 @test "runner draagt one-job --wait; dind mount de allowlist read-only" {
-  run env RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
       DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "one-job"
