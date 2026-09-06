@@ -144,5 +144,23 @@ class TestStartCondition(unittest.TestCase):
             self.assertIn("scrub", rec.starts); self.assertIn("pull", rec.starts); self.assertIn("runner", rec.starts)
             self.assertTrue(rec.starts.index("runner") > rec.starts.index("pull") > rec.starts.index("scrub"))
 
+class TestCycle(unittest.TestCase):
+    def _ready(self, rt, rec, clock, n=8):
+        for _ in range(n): clock.advance(30.0); rt.tick()   # scrub/pull auto rc0
+    def test_exit0_scrub_ok_waiting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
+            self.assertIn("runner", rec.starts)
+            rec.pops["runner"].rc = 0                            # runner exit 0
+            clock.advance(30.0); rt.tick()                       # child_exit → scrub gestart
+            clock.advance(30.0); rt.tick()                       # scrub (auto rc0) verwerkt
+            self.assertTrue(rt.clean_proven)                     # schoonbewijs vóór de volgende launch
+    def test_scrub_fail_blocks_next_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
+            rec.pops["runner"].rc = 0; rec.auto["scrub"] = 50   # post-exit scrub faalt
+            for _ in range(3): clock.advance(30.0); rt.tick()
+            self.assertFalse(rt.clean_proven); self.assertFalse(rt._may_start())   # geen start op vuile DinD (B2)
+
 if __name__ == "__main__":
     unittest.main()
