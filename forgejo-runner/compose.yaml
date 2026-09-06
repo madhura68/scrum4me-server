@@ -15,6 +15,7 @@ services:
       - runner-control
     volumes:
       - dind-data:/var/lib/docker
+      - ./allowed-job-images.txt:/etc/forgejo-runner/allowed-job-images.txt:ro
     healthcheck:
       test: ["CMD", "docker", "-H", "tcp://127.0.0.1:2375", "info"]
       interval: 10s
@@ -34,6 +35,7 @@ services:
     image: ${RUNNER_IMAGE}
     profiles: ["cycle"]
     restart: "no"             # de controller is de enige eigenaar van de levenscyclus
+    command: ["one-job", "--wait"]
     depends_on:
       dind:
         condition: service_healthy

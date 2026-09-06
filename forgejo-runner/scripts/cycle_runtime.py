@@ -1,5 +1,6 @@
 # forgejo-runner/scripts/cycle_runtime.py
 """Runtime-schil rond forgejo_runner_cycle.py (dunne bring-up)."""
+import argparse, os, sys
 import logging
 import math
 import re
@@ -91,6 +92,7 @@ class Runtime:
         self._digests=[]; self._pull_queue=[]; self._loaded=False
         self._blocked=False; self._stop=False; self._reconciled=False
         self._last_probe=None; self._stop_deadline=None
+        self._ev_cursor=0
 
     def _load_digests(self):
         if not self._loaded:
@@ -174,6 +176,13 @@ class Runtime:
         self._advance_child()
         self._drive_cycle()
         if self._may_start(): self._start_runner()
+        self._drain_events()
+
+    def _drain_events(self):
+        while getattr(self, "_ev_cursor", 0) < len(self.loop.events):
+            ev = self.loop.events[self._ev_cursor]; self._ev_cursor = getattr(self, "_ev_cursor", 0) + 1
+            if ev.kind in ("alarm", "fence_set", "cancel_en_redispatch"):
+                self.log.warning("hart-event %s seq=%s payload=%s", ev.kind, ev.event_seq, ev.payload)
 
     def _reconcile_once(self):
         if self._reconciled or self._stop: return    # geen reconcile/mutatie tijdens stop (M4)
@@ -223,3 +232,33 @@ class Runtime:
                         self.log.warning("stop: grens overschreden — onschone stop")
                     return self._stop_result(overshoot)
             _t.sleep(self.cfg.poll_interval)
+
+def _build_adapters(cfg):
+    from cycle_adapters import (Clock, TransportProbe, DindHealth, RunnerLifecycle,
+                                PullOp, ScrubOp, Reconcile, TrustVerdictReader)
+    scrub = os.path.join(os.path.dirname(__file__), "scrub-dind.sh")
+    allow = "/etc/forgejo-runner/allowed-job-images.txt"
+    return Clock(), Adapters(
+        probe=TransportProbe(cfg.forgejo_base_url, cfg.probe_timeout),
+        dind=DindHealth(cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout),
+        runner=RunnerLifecycle(cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout),
+        pull=PullOp(cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout),
+        scrub=ScrubOp(cfg.compose_file, cfg.project, scrub, allow, timeout=cfg.subprocess_timeout),
+        reconcile=Reconcile(cfg.compose_file, cfg.project, cfg.marker_path, timeout=cfg.subprocess_timeout),
+        trust=TrustVerdictReader(cfg.trust_verdict_path, cfg.labels_file, cfg.allowlist_file))
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", required=True); ap.add_argument("--check", action="store_true")
+    args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        cfg = load_config(args.config)
+    except (OSError, ValueError) as exc:
+        print(f"config-fout: {exc}", file=sys.stderr); return 2
+    logging.basicConfig(level=getattr(logging, cfg.log_level, logging.INFO),
+                        format="%(asctime)s %(levelname)s %(message)s")
+    clock, adapters = _build_adapters(cfg)
+    controller = Controller(EventLoop(clock))
+    rt = Runtime(cfg, controller, controller.loop, adapters, clock, logging.getLogger("cycle"))
+    if args.check: return 0
+    return rt.run()

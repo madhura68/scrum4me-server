@@ -220,5 +220,24 @@ class TestStop(unittest.TestCase):
             rt.child = rec._mk("runner"); rt.child.rc = None
             self.assertEqual(rt._stop_result(overshoot=True), 1)   # geen succes bij deadline
 
+class TestMain(unittest.TestCase):
+    def test_check_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # vervang de padverwijzingen door bestaande dummies zodat --check niet op IO struikelt
+            cfg_path = write_toml(tmp)
+            self.assertEqual(cr.main(["--config", cfg_path, "--check"]), 0)
+    def test_missing_config(self):
+        self.assertNotEqual(cr.main(["--config", "/nope.toml"]), 0)
+
+class TestLogging(unittest.TestCase):
+    def test_alarm_events_are_logged(self):
+        import logging
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                rt.loop.submit("alarm", {"klasse": "X", "reden": "test"})
+                rt._drain_events()
+            self.assertTrue(any("alarm" in m for m in cm.output))
+
 if __name__ == "__main__":
     unittest.main()

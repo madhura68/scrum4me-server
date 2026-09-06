@@ -112,3 +112,12 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
   run grep -vE '^(RUNNER_IMAGE|DIND_IMAGE|JOB_IMAGE|RUNNER_CPUS|RUNNER_MEM|RUNNER_PIDS|DIND_CPUS|DIND_MEM|DIND_PIDS)=' <(inhoud "$ENV_EXAMPLE")
   [ "$status" -ne 0 ]
 }
+
+@test "runner draagt one-job --wait; dind mount de allowlist read-only" {
+  run env RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+      DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "one-job"
+  echo "$output" | grep -q -- "--wait"                                           # command compleet
+  echo "$output" | grep -A3 "target: /etc/forgejo-runner/allowed-job-images.txt" | grep -q "read_only: true"  # juist DEZE mount read-only
+}
