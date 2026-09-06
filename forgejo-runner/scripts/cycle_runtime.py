@@ -1,5 +1,6 @@
 # forgejo-runner/scripts/cycle_runtime.py
 """Runtime-schil rond forgejo_runner_cycle.py (dunne bring-up)."""
+import math
 import re
 import tomllib
 from dataclasses import dataclass
@@ -49,3 +50,17 @@ def parse_allowed_images(text):
         if not _DIGEST_RE.match(digest): raise ValueError(f"ongeldige digest-regel: {raw!r}")
         out.append(digest)
     return out
+
+def verdict_green(verdict, now_wall, cfg, labels_sha, allowlist_sha):
+    if not isinstance(verdict, dict): return False, "verdict is geen object"
+    if verdict.get("ok") is not True: return False, "ok is niet true"
+    m = verdict.get("measured_at")
+    if isinstance(m, bool) or not isinstance(m, (int, float)) or not math.isfinite(m):
+        return False, "measured_at ontbreekt/ongeldig/niet-eindig"
+    age = now_wall - float(m)
+    if age < 0: return False, "measured_at ligt in de toekomst"
+    if age > cfg.trust_verdict_max_age: return False, "verdict is te oud"
+    if verdict.get("forgejo_target") != cfg.forgejo_base_url: return False, "target-binding mismatch"
+    if verdict.get("labels_sha256") != labels_sha: return False, "labels-binding mismatch"
+    if verdict.get("allowlist_sha256") != allowlist_sha: return False, "allowlist-binding mismatch"
+    return True, "groen"
