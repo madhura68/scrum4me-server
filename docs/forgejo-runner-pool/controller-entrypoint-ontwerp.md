@@ -273,8 +273,11 @@ crashbestendige uitvoeringsgrens:
 Zo is de grens crashbestendig: een onderbroken operatie is bij herstart detecteerbaar
 (marker), de oude operatie wordt deterministisch beëindigd (DinD-herstart) vóór een
 nieuwe scrub én launch, en er start niets tot die uitsluiting bewezen is. De runtime
-is single-threaded, dus binnen één proces lopen nooit twee operaties tegelijk; de
-marker dekt uitsluitend het crash-/herstartgeval.
+dwingt **één actieve muterende fase tegelijk** af: zolang een pull/scrub/runner-child
+loopt, pollt de loop alleen díe fase en start hij geen volgende muterende fase, en de
+marker wordt niet overschreven of gewist namens een andere nog-actieve operatie (m1 —
+single-threaded zijn is op zich géén garantie, want één thread kan meerdere
+niet-blokkerende Popens starten). De marker dekt daarbovenop het crash-/herstartgeval.
 
 ## 7. Toestandsbedrading — hoe de schil het hart voedt
 
@@ -450,7 +453,9 @@ dunne slice is een alarm log-only (geen queue/Forgejo-sink).
       herstart; `SIGTERM` met runner-child → child krijgt SIGTERM, exit 0 alleen na
       bevestigd child-weg; en **crash-uitsluiting (M1)**: operatiemarker aanwezig maar
       geen lokaal Popen (client weg, DinD-side operatie leefde nog) → DinD-herstart +
-      volledige scrub vóór enige start, geen parallelle scrub/start;
+      volledige scrub vóór enige start, geen parallelle scrub/start; herhaalde
+      poll-iteraties tijdens een hangende operatie starten geen tweede Popen
+      (exclusieve fase, m1);
   12. **niet-blokkerend** (M7): een hangende pull/scrub blokkeert watchdog + SIGTERM
       niet;
   13. **RunnerLifecycle-argv** (M4-ronde1): het gestarte commando bevat `one-job --wait`.
@@ -556,3 +561,19 @@ aanvaard:
   `0 ≤ now - measured_at ≤ verdict_max_age` + geldig tijdformaat (§6.3, §8, test 10).
 
 Verdict ronde 3: **NO-GO**. Fixes toegepast; ronde 4 opnieuw naar `mac:codex`.
+
+### Ronde 4 — commit `f3343ab` — mac:codex — GO (0 BLOCKER, 0 MAJOR, 1 MINOR)
+
+Alle ronde-3-bevindingen (M1/m2/m3) bevestigd opgelost tegen de boom. Eén MINOR,
+**post-GO toegepast** (verduidelijkt een al voorgeschreven invariant, geen herreview
+nodig):
+
+- **m1 (r4)** — de onderbouwing "single-threaded, dus nooit twee operaties tegelijk"
+  klopt niet (één thread kan meerdere niet-blokkerende Popens starten); de
+  exclusiviteitseis zelf blijft geldig. Fix: §6.4 maakt de één-actieve-muterende-fase-
+  invariant expliciet; test 11 toetst dat herhaalde polls tijdens een hangende
+  operatie geen tweede Popen starten.
+
+Verdict ronde 4: **GO**. De **spec-fase is afgerond** na 4 rondes (delta-variant,
+één cross-model reviewer `mac:codex`, per JP-instructie). Implementatie, mounts en
+herstelproeven volgen in de plan-/bouwfase.
