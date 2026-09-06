@@ -161,6 +161,7 @@ class TestCycle(unittest.TestCase):
             rec.pops["runner"].rc = 0; rec.auto["scrub"] = 50   # post-exit scrub faalt
             for _ in range(3): clock.advance(30.0); rt.tick()
             self.assertFalse(rt.clean_proven); self.assertFalse(rt._may_start())   # geen start op vuile DinD (B2)
+            self.assertFalse(rt.controller.mag_child_starten)   # hart quarantineert op scrub_done(ok=False): de echte B2-blokkade
 
 if __name__ == "__main__":
     unittest.main()
