@@ -1,5 +1,5 @@
 """Neveneffect-adapters voor de cyclecontroller-runtime (dunne bring-up)."""
-import json, signal, subprocess, time, urllib.request, urllib.error
+import hashlib, json, os, signal, subprocess, time, urllib.request, urllib.error
 
 class Clock:
     def __call__(self): return time.monotonic(), time.time()
@@ -65,3 +65,42 @@ class ScrubOp(_Compose):
         finally:
             fh.close()
     def poll(self, p): return p.poll()
+
+class ReconcileError(Exception): pass
+
+class Reconcile(_Compose):
+    def __init__(self, cf, proj, marker_path, **kw):
+        super().__init__(cf, proj, **kw); self._marker = marker_path
+    def _checked(self, args):
+        cp = self._run(self._b + args, self._t)
+        if cp.returncode != 0:
+            raise ReconcileError(f"{' '.join(args)}: rc={cp.returncode} {cp.stderr.strip()}")
+        return cp
+    def leftover_runners(self):
+        cp = self._checked(["ps", "-q", "runner"])
+        return [ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()]
+    def marker_present(self): return os.path.exists(self._marker)
+    def write_marker(self, op):
+        os.makedirs(os.path.dirname(self._marker), exist_ok=True)
+        tmp = self._marker + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"op": op}, fh)
+        os.replace(tmp, self._marker)
+    def clear_marker(self):
+        try: os.remove(self._marker)
+        except FileNotFoundError: pass
+    def restart_dind(self):
+        self._checked(["kill", "dind"]); self._checked(["up", "-d", "dind"])
+
+class TrustVerdictReader:
+    def __init__(self, vp, lf, af): self._vp=vp; self._lf=lf; self._af=af
+    def read(self):
+        try:
+            with open(self._vp, "rb") as fh: verdict = json.load(fh)
+        except (FileNotFoundError, ValueError): verdict = None
+        return verdict, _sha256(self._lf), _sha256(self._af)
+
+def _sha256(path):
+    try:
+        with open(path, "rb") as fh: return hashlib.sha256(fh.read()).hexdigest()
+    except FileNotFoundError: return ""

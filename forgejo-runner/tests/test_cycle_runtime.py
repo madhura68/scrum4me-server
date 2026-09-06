@@ -1,5 +1,5 @@
 # forgejo-runner/tests/test_cycle_runtime.py
-import io, os, tempfile, unittest, urllib.error
+import hashlib, io, os, tempfile, unittest, urllib.error
 from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen
 import cycle_adapters as ca
 
@@ -96,6 +96,39 @@ class TestDockerAdapters(unittest.TestCase):
         self.assertIn("--endpoint", argv); self.assertIn("tcp://127.0.0.1:2375", argv)
         self.assertIn("--allow", argv); self.assertIn("/etc/forgejo-runner/allowed-job-images.txt", argv)
         self.assertIn("stdin", kw)          # script via stdin
+
+def _cp(out="", rc=0, err=""):
+    class C: pass
+    c = C(); c.returncode = rc; c.stdout = out; c.stderr = err; return c
+
+class TestReconcileAdapter(unittest.TestCase):
+    def test_leftover_ok(self):
+        rec = ca.Reconcile("/c","p","/m", run=lambda a,t: _cp("abc\n"))
+        self.assertEqual(rec.leftover_runners(), ["abc"])
+    def test_leftover_rc_error_raises(self):
+        rec = ca.Reconcile("/c","p","/m", run=lambda a,t: _cp("", rc=1, err="boom"))
+        with self.assertRaises(ca.ReconcileError): rec.leftover_runners()
+    def test_restart_kill_fail_raises(self):
+        calls = {"n": 0}
+        def run(a, t):
+            calls["n"] += 1; return _cp(rc=0) if "up" in a else _cp(rc=1)   # kill faalt
+        rec = ca.Reconcile("/c","p","/m", run=run)
+        with self.assertRaises(ca.ReconcileError): rec.restart_dind()
+    def test_marker_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk = os.path.join(tmp, "c", "m"); rec = ca.Reconcile("/c","p",mk, run=lambda a,t:_cp())
+            self.assertFalse(rec.marker_present()); rec.write_marker("scrub")
+            self.assertTrue(rec.marker_present()); rec.clear_marker(); self.assertFalse(rec.marker_present())
+    def test_verdict_reader_hashes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lp=os.path.join(tmp,"l");
+            with open(lp,"wb") as f: f.write(b"x")
+            ap=os.path.join(tmp,"a")
+            with open(ap,"wb") as f: f.write(b"y")
+            vp=os.path.join(tmp,"v")
+            with open(vp,"w") as f: f.write('{"ok":true}')
+            v, ls, as_ = ca.TrustVerdictReader(vp, lp, ap).read()
+            self.assertEqual(v, {"ok": True}); self.assertEqual(ls, hashlib.sha256(b"x").hexdigest())
 
 if __name__ == "__main__":
     unittest.main()
