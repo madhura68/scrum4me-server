@@ -1,6 +1,6 @@
 # forgejo-runner/tests/test_cycle_runtime.py
 import hashlib, io, os, tempfile, unittest, urllib.error
-from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen
+from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen, build_runtime, State
 import cycle_adapters as ca
 
 class TestConfig(unittest.TestCase):
@@ -129,6 +129,20 @@ class TestReconcileAdapter(unittest.TestCase):
             with open(vp,"w") as f: f.write('{"ok":true}')
             v, ls, as_ = ca.TrustVerdictReader(vp, lp, ap).read()
             self.assertEqual(v, {"ok": True}); self.assertEqual(ls, hashlib.sha256(b"x").hexdigest())
+
+class TestStartCondition(unittest.TestCase):
+    def test_no_start_before_confirmed_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            rt.tick()                                   # één probe → onbevestigd
+            self.assertNotIn("runner", rec.starts)
+    def test_start_after_confirmed_clean_pulled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            for _ in range(8):
+                clock.advance(30.0); rt.tick()          # scrub/pull voltooien vanzelf (auto rc0)
+            self.assertIn("scrub", rec.starts); self.assertIn("pull", rec.starts); self.assertIn("runner", rec.starts)
+            self.assertTrue(rec.starts.index("runner") > rec.starts.index("pull") > rec.starts.index("scrub"))
 
 if __name__ == "__main__":
     unittest.main()

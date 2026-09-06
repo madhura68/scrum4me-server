@@ -1,5 +1,5 @@
 # forgejo-runner/tests/_harness.py
-import pathlib, sys
+import collections, dataclasses, os, pathlib, signal, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import cycle_runtime as cr          # noqa: E402
@@ -36,7 +36,6 @@ level = "INFO"
 """
 
 def write_toml(tmp, data=VALID_TOML):
-    import os
     p = os.path.join(tmp, "controller.toml")
     with open(p, "wb") as fh:
         fh.write(data)
@@ -53,3 +52,47 @@ class FakePopen:
     def __init__(self, argv=None, rc=None): self.argv = argv or []; self.rc = rc; self.signals = []
     def poll(self): return self.rc
     def send_signal(self, s): self.signals.append(s)
+
+FakeAdapters = collections.namedtuple("FakeAdapters", "probe dind runner pull scrub reconcile trust")
+
+class Recorder:
+    """Elke start levert een VERSE FakePopen — geen exitcode-erfenis (M3). scrub/pull
+    voltooien standaard rc=0 op de volgende _advance_op; de runner blijft lopen
+    (rc=None) tot een test hem afrondt. Stuur via `auto[kind]` (rc bij start) of
+    `pops[kind].rc` (na de start)."""
+    def __init__(self):
+        self.starts = []; self.pops = {}; self.auto = {"scrub": 0, "pull": 0, "runner": None}
+    def _mk(self, kind):
+        self.starts.append(kind); p = FakePopen([kind], rc=self.auto[kind])
+        self.pops[kind] = p; return p
+
+def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
+                  leftover=None, marker=False, digests=("img@sha256:"+"a"*64,)):
+    clock = FakeClock(); rec = Recorder()
+    pd = ({"kind":"general","error":None,"status":200,"schema_ok":True} if klasse=="READY"
+          else {"kind":"general","error":"x","status":None,"schema_ok":False})
+    probe = type("P", (), {"probe": staticmethod(lambda: pd)})()
+    dind = type("D", (), {"ensure_up": staticmethod(lambda: None), "healthy": staticmethod(lambda: healthy)})()
+    runner = type("R", (), {"start": lambda s: rec._mk("runner"),
+                            "request_stop": lambda s, p: p.send_signal(signal.SIGTERM),
+                            "poll": lambda s, p: p.poll()})()
+    pull = type("Pu", (), {"start": lambda s, d: rec._mk("pull"), "poll": lambda s, p: p.poll()})()
+    scrub = type("Sc", (), {"start": lambda s: rec._mk("scrub"), "poll": lambda s, p: p.poll()})()
+    mkst = {"m": marker}                          # stateful marker zodat tests hem observeren (M1)
+    reconcile = type("Re", (), {"leftover_runners": staticmethod(lambda: list(leftover or [])),
+                                "marker_present": staticmethod(lambda: mkst["m"]),
+                                "write_marker": staticmethod(lambda op: mkst.__setitem__("m", True)),
+                                "clear_marker": staticmethod(lambda: mkst.__setitem__("m", False)),
+                                "restart_dind": staticmethod(lambda: None)})()
+    trust = type("T", (), {"read": staticmethod(lambda: ({"ok": verdict_ok}, "LS", "AS"))})()
+    ad = FakeAdapters(probe, dind, runner, pull, scrub, reconcile, trust)
+    # ECHT tijdelijk allowed-images-bestand zodat _load_digests de test-digests leest (M3)
+    img = os.path.join(tmp, "allowed.txt")
+    with open(img, "w") as f:
+        f.write("# test\n" + "".join(f"{d}\t1\n" for d in digests))
+    cfg = dataclasses.replace(cr.load_config(write_toml(tmp)), allowed_images_file=img)
+    loop = EventLoop(clock); controller = Controller(loop)
+    import logging as _lg
+    rt = cr.Runtime(cfg, controller, loop, ad, clock, _lg.getLogger("t"))
+    rt._trust_green = lambda: (verdict_ok, "test")     # verdict-binding buiten scope in loop-tests
+    return rt, controller, rec, clock

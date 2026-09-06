@@ -1,11 +1,15 @@
 # forgejo-runner/scripts/cycle_runtime.py
 """Runtime-schil rond forgejo_runner_cycle.py (dunne bring-up)."""
+import logging
 import math
 import re
+import signal
 import tomllib
+from collections import namedtuple
 from dataclasses import dataclass
 
-from forgejo_runner_cycle import ReadinessClass, CONFIRM_SECONDS
+from forgejo_runner_cycle import (
+    Controller, EventLoop, ReadinessClass, State, classify_probe, CONFIRM_SECONDS)
 
 @dataclass(frozen=True)
 class Config:
@@ -75,3 +79,100 @@ class ReadinessConfirmed:
             self._first = None; self.confirmed = False; return
         if self._first is None: self._first = mono
         elif (mono - self._first) >= self._confirm: self.confirmed = True
+
+Adapters = namedtuple("Adapters", "probe dind runner pull scrub reconcile trust")
+
+class Runtime:
+    def __init__(self, cfg, controller, loop, adapters, clock, log):
+        self.cfg=cfg; self.controller=controller; self.loop=loop; self.a=adapters
+        self.clock=clock; self.log=log
+        self.readiness=ReadinessConfirmed(); self.clean_proven=False
+        self.child=None; self.op=None            # op = (kind, Popen)
+        self._digests=[]; self._pull_queue=[]; self._loaded=False
+        self._blocked=False; self._stop=False; self._reconciled=False
+        self._last_probe=None; self._stop_deadline=None
+
+    def _load_digests(self):
+        if not self._loaded:
+            with open(self.cfg.allowed_images_file, encoding="utf-8") as fh:
+                self._digests = parse_allowed_images(fh.read())
+            self._pull_queue = list(self._digests)   # óók de EERSTE cyclus pre-pullt (M2)
+            self._loaded = True
+
+    def _trust_green(self):
+        verdict, ls, as_ = self.a.trust.read()
+        return verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
+
+    def _readiness_and_gates(self, now):
+        klasse = classify_probe(self.a.probe.probe())
+        self.readiness.observe(klasse, now)
+        self.controller.on_event(self.loop.submit("readiness", {"klasse": klasse}))
+        green, _ = self._trust_green()
+        self.controller.gates_groen = bool(green) and self.a.dind.healthy()
+
+    def _busy(self): return self.op is not None or self.child is not None
+
+    def _may_start(self):
+        return (not self._blocked and not self._stop and not self._busy()
+                and self.controller.mag_child_starten
+                and self.controller.state == State.WAITING
+                and self.readiness.confirmed and self.clean_proven and not self._pull_queue)
+
+    def _begin_op(self, kind, digest=None):
+        self.a.reconcile.write_marker(kind)
+        p = self.a.pull.start(digest) if kind == "pull" else self.a.scrub.start()
+        self.op = (kind, p)
+
+    def _advance_op(self):
+        if self.op is None: return
+        kind, p = self.op
+        rc = (self.a.pull.poll(p) if kind == "pull" else self.a.scrub.poll(p))
+        if rc is None: return
+        self.op = None
+        if rc is not None and rc >= 0:           # normaal geëindigd → DinD-side klaar → marker weg;
+            self.a.reconcile.clear_marker()      # rc<0 (door signaal gedood) → onzeker einde → marker bewaren (M1/M4)
+        if kind == "scrub":
+            self.controller.on_event(self.loop.submit("scrub_done", {"ok": rc == 0}))
+            self.clean_proven = (rc == 0)
+            self.log.info("cyclus: scrub ok=%s", rc == 0)
+            if rc != 0: self.log.warning("scrub faalde rc=%s", rc)
+        else:  # pull
+            if rc == 0:
+                if self._pull_queue: self._pull_queue.pop(0)
+            else:
+                self._blocked = True; self.log.warning("pre-pull faalde rc=%s → geblokkeerd", rc)
+
+    def _advance_child(self):
+        if self.child is None: return
+        rc = self.a.runner.poll(self.child)
+        if rc is None: return
+        self.child = None
+        self.log.info("cyclus: runner exit rc=%s", rc)
+        self.controller.on_event(self.loop.submit("child_exit", {"code": rc}))
+        self._pull_queue = list(self._digests)          # volgende cyclus opnieuw pre-pullen
+        if not self._stop:
+            self._begin_op("scrub")                     # §7.9: scrub na élke exit
+
+    def _drive_cycle(self):
+        if self._blocked or self._stop or self._busy() or self.child is not None: return
+        if not self.clean_proven: self._begin_op("scrub"); return
+        if self._pull_queue: self._begin_op("pull", self._pull_queue[0]); return
+
+    def _start_runner(self):
+        self.clean_proven = False
+        self.child = self.a.runner.start()
+        self.log.info("cyclus: runner gestart")
+
+    def tick(self):
+        self._load_digests()
+        now, wall = self.clock()
+        if self._last_probe is None or (now - self._last_probe) >= self.cfg.retry_interval:
+            self._last_probe = now; self.a.dind.ensure_up(); self._readiness_and_gates(now)
+        self.controller.tick(now, wall)
+        self._reconcile_once()          # Taak 10
+        self._advance_op()
+        self._advance_child()
+        self._drive_cycle()
+        if self._may_start(): self._start_runner()
+
+    def _reconcile_once(self): pass     # Taak 10
