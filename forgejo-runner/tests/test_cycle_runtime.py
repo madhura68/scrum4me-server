@@ -1,6 +1,6 @@
 # forgejo-runner/tests/test_cycle_runtime.py
 import io, os, tempfile, unittest, urllib.error
-from _harness import cr, write_toml, VALID_TOML, RC, classify_probe
+from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen
 import cycle_adapters as ca
 
 class TestConfig(unittest.TestCase):
@@ -73,6 +73,29 @@ class TestProbe(unittest.TestCase):
     def test_readtimeout(self):
         def o(r, timeout): raise TimeoutError("read timed out")
         self.assertEqual(classify_probe(self._p(o)), RC.SOURCE_WAIT)
+
+class TestDockerAdapters(unittest.TestCase):
+    def setUp(self):
+        self.spawned = []; self.popen = lambda argv, **kw: self.spawned.append((argv, kw)) or FakePopen(argv)
+    def test_runner_argv(self):
+        ca.RunnerLifecycle("/c", "p", popen=self.popen).start()
+        self.assertEqual(self.spawned[-1][0],
+            ["docker","compose","-f","/c","-p","p","--profile","cycle","run","--rm","runner"])
+    def test_pull_argv_has_endpoint(self):
+        ca.PullOp("/c","p", popen=self.popen).start("img@sha256:"+"a"*64)
+        argv = self.spawned[-1][0]
+        self.assertEqual(argv[:8], ["docker","compose","-f","/c","-p","p","exec","-T"])
+        self.assertIn("-H", argv); self.assertIn("tcp://127.0.0.1:2375", argv)
+        self.assertIn("pull", argv); self.assertIn("img@sha256:"+"a"*64, argv)
+    def test_scrub_argv_and_opens_script(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = os.path.join(tmp, "scrub.sh")
+            with open(sc, "wb") as f: f.write(b"#!/bin/sh\n")
+            ca.ScrubOp("/c","p", sc, "/etc/forgejo-runner/allowed-job-images.txt", popen=self.popen).start()
+        argv, kw = self.spawned[-1]
+        self.assertIn("--endpoint", argv); self.assertIn("tcp://127.0.0.1:2375", argv)
+        self.assertIn("--allow", argv); self.assertIn("/etc/forgejo-runner/allowed-job-images.txt", argv)
+        self.assertIn("stdin", kw)          # script via stdin
 
 if __name__ == "__main__":
     unittest.main()
