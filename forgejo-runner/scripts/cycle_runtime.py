@@ -5,6 +5,8 @@ import re
 import tomllib
 from dataclasses import dataclass
 
+from forgejo_runner_cycle import ReadinessClass, CONFIRM_SECONDS
+
 @dataclass(frozen=True)
 class Config:
     forgejo_base_url: str; probe_timeout: float
@@ -64,3 +66,12 @@ def verdict_green(verdict, now_wall, cfg, labels_sha, allowlist_sha):
     if verdict.get("labels_sha256") != labels_sha: return False, "labels-binding mismatch"
     if verdict.get("allowlist_sha256") != allowlist_sha: return False, "allowlist-binding mismatch"
     return True, "groen"
+
+class ReadinessConfirmed:
+    def __init__(self, confirm_seconds=CONFIRM_SECONDS):
+        self._confirm = confirm_seconds; self._first = None; self.confirmed = False
+    def observe(self, klasse, mono):
+        if klasse is not ReadinessClass.READY:
+            self._first = None; self.confirmed = False; return
+        if self._first is None: self._first = mono
+        elif (mono - self._first) >= self._confirm: self.confirmed = True

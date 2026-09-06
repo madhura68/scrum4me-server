@@ -1,6 +1,6 @@
 # forgejo-runner/tests/test_cycle_runtime.py
 import os, tempfile, unittest
-from _harness import cr, write_toml, VALID_TOML
+from _harness import cr, write_toml, VALID_TOML, RC
 
 class TestConfig(unittest.TestCase):
     def test_load_valid(self):
@@ -40,6 +40,18 @@ class TestVerdict(unittest.TestCase):
     def test_bool_ts(self): self.assertFalse(cr.verdict_green(self._v(measured_at=True), 1500.0, self._cfg(), "LS", "AS")[0])
     def test_binding(self): self.assertFalse(cr.verdict_green(self._v(), 1500.0, self._cfg(), "OTHER", "AS")[0])
     def test_non_dict(self): self.assertFalse(cr.verdict_green(None, 1500.0, self._cfg(), "LS", "AS")[0])
+
+class TestReadinessConfirmed(unittest.TestCase):
+    def test_trace(self):
+        r = cr.ReadinessConfirmed()
+        r.observe(RC.READY, 0.0);  self.assertFalse(r.confirmed)
+        r.observe(RC.READY, 30.0); self.assertTrue(r.confirmed)
+        r.observe(RC.SOURCE_WAIT, 60.0); self.assertFalse(r.confirmed)
+        r.observe(RC.READY, 120.0); self.assertFalse(r.confirmed)
+        r.observe(RC.READY, 150.0); self.assertTrue(r.confirmed)
+    def test_too_close(self):
+        r = cr.ReadinessConfirmed(); r.observe(RC.READY, 0.0); r.observe(RC.READY, 1.0)
+        self.assertFalse(r.confirmed)
 
 if __name__ == "__main__":
     unittest.main()
