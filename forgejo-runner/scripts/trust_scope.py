@@ -23,6 +23,10 @@ class Verdict:
     hard: list = field(default_factory=list)
     soft: list = field(default_factory=list)
     unreadable: list = field(default_factory=list)
+    # Risicovolle kruisingen die JP per repo expliciet heeft bevestigd
+    # (risky_triggers_acknowledged). Aanvaard restrisico, geen harde afwijking;
+    # blokkeert de gate niet, maar wordt apart geregistreerd voor de audit (§7.7).
+    accepted: list = field(default_factory=list)
 
     @property
     def ok(self):
@@ -294,20 +298,48 @@ def classify(inv, allowlist):
                     f"{name}: nieuwe repository zonder Actions; binnen 24 uur beoordelen")
             continue
 
-        if repo["has_actions"] and not entry.get("actions_enabled"):
+        # actions_enabled moet een echte boolean True zijn; een verkeerd getypte
+        # waarde (bv. de string "false", die de loader als truthy string bewaart)
+        # mag geen toestemming geven. `is not True` is bewust strenger dan een
+        # truthy-check: bool False EN elk niet-boolean type leiden tot hard.
+        if repo["has_actions"] and entry.get("actions_enabled") is not True:
             verdict.hard.append(
-                f"{name}: Actions staat aan terwijl de allowlist uitgaat van uit")
+                f"{name}: Actions staat aan maar de allowlist bevestigt actions_enabled "
+                f"niet als True (drift of ongeldig type)")
 
         for writer in repo.get("writers", []):
             if writer not in approved_identities:
                 verdict.hard.append(
                     f"{name}: niet-goedgekeurde workflow-schrijver {writer}")
 
+        # §7.7 (ISS-9-delta): een risky-trigger op een gedeeld label is HARD, tenzij
+        # JP hem voor deze repo expliciet heeft bevestigd. Fail-closed: alleen een
+        # lijst waarvan elk lid een bekende risky-trigger is telt als bevestiging.
+        # Iedere andere vorm — een string (ook een gequote "[...]" die de loader
+        # als lijst zou kunnen lezen), een dict, of een lijst met een onbekend of
+        # niet-string lid — accepteert nooit en laat de kruising hard, met een
+        # zachte melding zodat de misconfiguratie niet stil blijft.
+        ack_raw = entry.get("risky_triggers_acknowledged")
+        if ack_raw in (None, [], ()):
+            acknowledged = set()
+        elif isinstance(ack_raw, list) and all(t in RISKY_TRIGGERS for t in ack_raw):
+            acknowledged = set(ack_raw)
+        else:
+            acknowledged = set()
+            verdict.soft.append(
+                f"{name}: risky_triggers_acknowledged is ongeldig (verwacht een lijst van "
+                f"bekende triggers {list(RISKY_TRIGGERS)}); fail-closed genegeerd, de kruising "
+                f"blijft hard")
         for trigger in repo.get("risky_triggers", []):
             if repo.get("gebruikt_gedeeld_label"):
-                verdict.hard.append(
-                    f"{name}: trigger {trigger} in een workflow die een gedeeld runnerlabel "
-                    f"gebruikt; onbetrouwbare code kan zo op de pool starten")
+                if trigger in acknowledged:
+                    verdict.accepted.append(
+                        f"{name}: trigger {trigger} op een gedeeld runnerlabel is expliciet "
+                        f"bevestigd (risky_triggers_acknowledged); restrisico aanvaard per §7.6/§7.7")
+                else:
+                    verdict.hard.append(
+                        f"{name}: trigger {trigger} in een workflow die een gedeeld runnerlabel "
+                        f"gebruikt; onbetrouwbare code kan zo op de pool starten")
             else:
                 verdict.soft.append(
                     f"{name}: trigger {trigger} aanwezig maar zonder gedeeld runnerlabel; "

@@ -2,10 +2,12 @@
 import base64
 import pathlib
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 import trust_scope
+import trust_scope_cli
 
 GEDEELDE_LABELS = ("ubuntu-latest",)
 
@@ -519,6 +521,97 @@ class TestClassificatie(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("pull_request_target" in h for h in verdict.hard))
 
+    def _allowlist_met_ack(self, ack):
+        return {
+            "repositories": [{"full_name": "janpeter/app", "actions_enabled": True,
+                              "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
+                              "risky_triggers_acknowledged": ack}],
+            "identities": [{"name": "janpeter"}],
+        }
+
+    def test_bevestigde_risicotrigger_op_gedeeld_label_is_accepted_niet_hard(self):
+        # ISS-9: JP bevestigt de kruising per repo (risky_triggers_acknowledged);
+        # dan is het een expliciet aanvaard restrisico, geen harde afwijking.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertTrue(verdict.ok, f"onverwacht rood: {verdict.hard}")
+        self.assertEqual(verdict.hard, [])
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_dekt_alleen_de_genoemde_trigger(self):
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request", "workflow_run"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("workflow_run" in h for h in verdict.hard))
+        self.assertFalse(any("pull_request" in h for h in verdict.hard))
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_verzacht_geen_andere_harde_afwijking(self):
+        # De ack geldt uitsluitend de risky-trigger-kruising, niet een onbekende schrijver.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True,
+                      writers=["janpeter", "vreemdeling"]),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_ack_zonder_gedeeld_label_verandert_niets(self):
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=False),
+            self._allowlist_met_ack(["pull_request"]))
+        self.assertTrue(verdict.ok)
+        self.assertTrue(any("pull_request" in z for z in verdict.soft))
+        self.assertEqual(verdict.accepted, [])
+
+    def test_ack_als_string_ipv_lijst_is_fail_closed(self):
+        # Een verkeerd geconfigureerde ack (string i.p.v. lijst) mag NOOIT stil
+        # accepteren; hij valt terug op hard.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack("pull_request"))
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+        self.assertEqual(verdict.accepted, [])
+        self.assertTrue(any("ongeldig" in z for z in verdict.soft))
+
+    def test_ack_met_niet_string_lid_is_fail_closed(self):
+        # Reviewronde 1 (mac:codex): alleen het buitenste type checken was te zwak.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["pull_request", 1]))
+        self.assertFalse(verdict.ok)
+        self.assertEqual(verdict.accepted, [])
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+        self.assertTrue(any("ongeldig" in z for z in verdict.soft))
+
+    def test_ack_met_onhashbaar_lid_crasht_niet_en_is_fail_closed(self):
+        # [{}] mag geen TypeError geven maar een rood oordeel.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack([{}]))
+        self.assertFalse(verdict.ok)
+        self.assertEqual(verdict.accepted, [])
+
+    def test_ack_met_onbekende_trigger_is_fail_closed(self):
+        # Je kunt alleen bekende risky-triggers bevestigen; 'push' is ongeldig.
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            self._allowlist_met_ack(["push"]))
+        self.assertFalse(verdict.ok)
+        self.assertEqual(verdict.accepted, [])
+        self.assertTrue(any("ongeldig" in z for z in verdict.soft))
+
+    def test_geen_ack_veld_is_ongewijzigd_hard(self):
+        # Regressie: zonder het veld blijft de kruising hard (bestaand gedrag).
+        verdict = trust_scope.classify(
+            self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=True),
+            ALLOWLIST)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+
     def test_risicotrigger_zonder_gedeeld_label_is_zacht(self):
         verdict = trust_scope.classify(
             self._inv(risky_triggers=["pull_request"], gebruikt_gedeeld_label=False), ALLOWLIST)
@@ -553,6 +646,105 @@ class TestClassificatie(unittest.TestCase):
         verdict = trust_scope.classify(inv, ALLOWLIST)
         self.assertFalse(verdict.ok)
         self.assertTrue(any("janpeter/nieuw" in h for h in verdict.hard))
+
+
+class TestAckViaLoader(unittest.TestCase):
+    """De fail-closed-belofte moet ook op de echte CLI-route gelden: de eigen
+    mini-YAML-loader mag een gequote scalar "[pull_request]" niet als lijst lezen."""
+
+    def _classify_ack_regel(self, regel):
+        yml = (
+            'version: 1\n'
+            'approved_by: "janpeter"\n'
+            'identities:\n'
+            '  - name: janpeter\n'
+            'repositories:\n'
+            '  - full_name: janpeter/app\n'
+            '    actions_enabled: true\n'
+            '    workflow_source: .forgejo/workflows\n'
+            '    writers: [janpeter]\n'
+            f'    {regel}\n'
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+            fh.write(yml)
+            path = fh.name
+        try:
+            allowlist = trust_scope_cli.load_allowlist(path)
+        finally:
+            pathlib.Path(path).unlink()
+        inv = {"repositories": [{
+            "full_name": "janpeter/app", "has_actions": True,
+            "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
+            "risky_triggers": ["pull_request"], "gebruikt_gedeeld_label": True,
+            "branch_protection": [{"branch_name": "main"}],
+            "default_branch": "main", "unreadable": [],
+        }], "unreadable": []}
+        return trust_scope.classify(inv, allowlist)
+
+    def test_echte_lijst_via_loader_wordt_accepted(self):
+        verdict = self._classify_ack_regel("risky_triggers_acknowledged: [pull_request]")
+        self.assertTrue(verdict.ok, f"onverwacht rood: {verdict.hard}")
+        self.assertTrue(any("pull_request" in a for a in verdict.accepted))
+
+    def test_gequote_scalar_via_loader_is_fail_closed(self):
+        # Regressie voor de MAJOR uit reviewronde 1 (mac:codex): de gequote
+        # YAML-string "[pull_request]" mag de gate niet groen maken.
+        verdict = self._classify_ack_regel('risky_triggers_acknowledged: "[pull_request]"')
+        self.assertFalse(verdict.ok)
+        self.assertEqual(verdict.accepted, [])
+        self.assertTrue(any("pull_request" in h for h in verdict.hard))
+
+    def _classify_actions_regel(self, actions_regel, has_actions=True):
+        yml = (
+            'version: 1\n'
+            'approved_by: "janpeter"\n'
+            'identities:\n'
+            '  - name: janpeter\n'
+            'repositories:\n'
+            '  - full_name: janpeter/app\n'
+            f'    {actions_regel}\n'
+            '    workflow_source: .forgejo/workflows\n'
+            '    writers: [janpeter]\n'
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+            fh.write(yml)
+            path = fh.name
+        try:
+            allowlist = trust_scope_cli.load_allowlist(path)
+        finally:
+            pathlib.Path(path).unlink()
+        inv = {"repositories": [{
+            "full_name": "janpeter/app", "has_actions": has_actions,
+            "workflow_source": ".forgejo/workflows", "writers": ["janpeter"],
+            "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [{"branch_name": "main"}],
+            "default_branch": "main", "unreadable": [],
+        }], "unreadable": []}
+        return trust_scope.classify(inv, allowlist)
+
+    def test_actions_enabled_bool_true_is_groen(self):
+        v = self._classify_actions_regel("actions_enabled: true")
+        self.assertTrue(v.ok, f"onverwacht rood: {v.hard}")
+
+    def test_actions_enabled_bool_false_bij_actieve_actions_is_hard(self):
+        v = self._classify_actions_regel("actions_enabled: false")
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
+    def test_gequote_actions_enabled_false_is_niet_truthy(self):
+        # Regressie voor de MAJOR uit reviewronde 2 (mac:codex): de gequote
+        # string "false" mag geen toestemming geven en de harde Actions-drift
+        # niet maskeren.
+        v = self._classify_actions_regel('actions_enabled: "false"')
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
+    def test_gequote_actions_enabled_true_is_fail_closed(self):
+        # Een gequote boolean is een config-typo; alleen bool True geeft
+        # toestemming, dus fail-closed hard.
+        v = self._classify_actions_regel('actions_enabled: "true"')
+        self.assertFalse(v.ok)
+        self.assertTrue(any("actions_enabled" in h for h in v.hard))
 
 
 if __name__ == "__main__":

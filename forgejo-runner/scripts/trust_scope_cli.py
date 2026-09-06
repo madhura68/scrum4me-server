@@ -144,8 +144,14 @@ def load_allowlist(path):
                 continue
         if current is not None and ":" in text:
             key, _, value = text.partition(":")
-            value = value.strip().strip('"')
-            if value in ("true", "false"):
+            value = value.strip()
+            # Een volledig gequote scalar is altijd een string, ook als hij op een
+            # lijst/bool/null lijkt. Anders wordt "[pull_request]" (een YAML-string)
+            # als lijst gelezen en omzeilt een verkeerd getypt veld de fail-closed
+            # van classify().
+            if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+                value = value[1:-1]
+            elif value in ("true", "false"):
                 value = value == "true"
             elif value.startswith("[") and value.endswith("]"):
                 value = [v.strip().strip('"') for v in value[1:-1].split(",") if v.strip()]
@@ -230,7 +236,8 @@ def main():
     verdict = trust_scope.classify(inv, allowlist)
     with open(os.path.join(args.out, "trust-verdict.json"), "w", encoding="utf-8") as fh:
         json.dump({"hard": verdict.hard, "soft": verdict.soft,
-                   "unreadable": verdict.unreadable, "ok": verdict.ok},
+                   "unreadable": verdict.unreadable, "accepted": verdict.accepted,
+                   "ok": verdict.ok},
                   fh, indent=2, ensure_ascii=False)
 
     for item in verdict.unreadable:
@@ -239,6 +246,9 @@ def main():
         print(f"HARD: {item}", file=sys.stderr)
     for item in verdict.soft:
         print(f"ZACHT: {item}", file=sys.stderr)
+    # Aanvaarde kruisingen wijzigen de exitcode niet, maar worden altijd getoond.
+    for item in verdict.accepted:
+        print(f"AANVAARD: {item}", file=sys.stderr)
 
     if verdict.unreadable:
         return 30

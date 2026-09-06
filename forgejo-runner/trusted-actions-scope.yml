@@ -2,6 +2,23 @@ version: 1
 approved_by: "janpeter"
 approved_at: "2026-08-31T21:56:04Z"
 
+# risky_triggers_acknowledged (ISS-9, toegevoegd 2026-09-05, besluit JP):
+# een per-repo lijst van risicovolle triggers (pull_request, pull_request_target,
+# workflow_run) waarvan JP de kruising met een gedeeld runnerlabel expliciet
+# aanvaardt. classify() merkt zo'n bevestigde kruising aan als 'accepted' i.p.v.
+# 'hard' (§7.7). Dit is een BEWUSTE RISICO-ACCEPTATIE door JP, geen gevolgtrekking
+# uit een setting. Twee gemeten feiten begrenzen de blootstelling maar bewijzen
+# het besluit niet: [service] DISABLE_REGISTRATION = true (geen NIEUWE
+# zelfregistratie; de roster is gesloten, maar niet elk bestaand account is
+# daarmee een bij naam goedgekeurde schrijver) en de per-repo fork-PR-approvalgate
+# RequireApprovalForForkPRWorkflows (effectieve staat per repo hier niet
+# vastgelegd). Aanvaard restrisico: een bestaand account kan na een goedgekeurde
+# eerste fork-PR automatisch nieuwe workflows op de privileged DinD draaien
+# (container-escape raakt host/productie; fork-PR's krijgen geen repo-secrets,
+# wat de escape niet dekt). Alleen een lijst van bekende triggers telt; iedere
+# andere vorm is fail-closed geen bevestiging. Een roster-/policywijziging vraagt
+# herbeoordeling; per repo intrekbaar door de regel te verwijderen.
+
 identities:
   - name: janpeter
   - name: s4m-codex-reviewer
@@ -11,6 +28,7 @@ repositories:
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/ImageInventory
     actions_enabled: true
     workflow_source: null
@@ -19,10 +37,12 @@ repositories:
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/Ops-dashboard
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/Scraper
     actions_enabled: true
     workflow_source: null
@@ -31,10 +51,12 @@ repositories:
     actions_enabled: true
     workflow_source: .github/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/Scrum4Us
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/SiteScraper
     actions_enabled: true
     workflow_source: null
@@ -47,6 +69,7 @@ repositories:
     actions_enabled: true
     workflow_source: .github/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/jp-visser
     actions_enabled: true
     workflow_source: null
@@ -63,18 +86,22 @@ repositories:
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-copilot
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-docker
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-mcp
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-server
     actions_enabled: true
     workflow_source: null
@@ -83,7 +110,9 @@ repositories:
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-workers
     actions_enabled: true
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
