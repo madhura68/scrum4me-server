@@ -16,7 +16,7 @@
 - Het hart `forgejo-runner/scripts/forgejo_runner_cycle.py` blijft **byte-identiek** op de 2-regel `__main__`-delegatie na. De 99 hart-tests blijven ongewijzigd groen.
 - **Consumeer** uit het hart: `classify_probe`, `ReadinessClass`, `State`, `EventLoop`, `Controller`, `CONFIRM_SECONDS`(5), `RETRY_INTERVAL_SECONDS`(30), `FENCE_MAX_AGE_SECONDS`(60).
 - **Start-conditie (§5.2):** een runner start alleen als **alle** waar zijn: `mag_child_starten`, `state==WAITING`, `readiness_confirmed`, `clean_proven`, **pre-pull klaar**, `not _blocked`, `not _stop`.
-- **Fail-closed overal:** elke subprocess-returncode wordt gecontroleerd; fout/onbekend = blokkerende uitkomst, nooit een lege/groene default. `readiness_confirmed` alleen door eigen 2-waarnemingenbevestiging; `clean_proven` alleen door geslaagde scrub+bewijs; readiness-herstel kent geen van beide toe.
+- **Fail-closed overal:** elke subprocess-returncode wordt gecontroleerd; fout/onbekend = blokkerende uitkomst, nooit een lege/groene default. `readiness_confirmed` wordt uitsluitend door zijn eigen 2-waarnemingenbevestiging (her)gezet en `clean_proven` uitsluitend door een geslaagde scrub+bewijs; een hart-statuswissel (bv. QUARANTINED→WAITING) kent géén van beide toe. Alle per-taak Python-testruns gebruiken de discovery-vorm (`python3 -m unittest discover -s tests -p 'test_cycle_runtime.py' -v`) zodat `tests/` op sys.path staat en `_harness` importeerbaar is; class-specifieke vermeldingen in stappen zijn afkorting.
 - **Single active mutating phase (§6.4, m1):** hooguit één van {pull, scrub, runner-child} tegelijk actief; `_blocked` én `_stop` blokkeren élke nieuwe muterende actie (niet alleen de launch).
 - **Pre-pull vóór start (§6.1 stap 3):** iedere toegestane digest wordt per digest gepulld via het DinD-endpoint vóórdat een runner start; pull-fout ⇒ geen start.
 - **Trustgate = deploy-verdict** (JP 2026-09-06): de controller houdt **geen** Forgejo-credential; hij leest een bij deploy geproduceerd, vers, gebonden `trust-verdict.json`. Het verdict bindt aan de **werkelijk gemeten** bron (§6.3).
@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
 - [ ] **Stap 3: Run — FAIL** (`ModuleNotFoundError: cycle_runtime`).
 
-Run: `cd forgejo-runner && python3 -m unittest tests.test_cycle_runtime -v`
+Run: `cd forgejo-runner && python3 -m unittest discover -s tests -p 'test_cycle_runtime.py' -v`
 
 - [ ] **Stap 4: Implementeer Config + load_config**
 
@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
 - [ ] **Stap 6: Run — PASS + hart-tests groen**
 
-Run: `cd forgejo-runner && python3 -m unittest tests.test_cycle_runtime -v && python3 -m unittest discover -s tests -p 'test_cycle_*.py'`
+Run: `cd forgejo-runner && python3 -m unittest discover -s tests -p 'test_cycle_runtime.py' -v && python3 -m unittest discover -s tests -p 'test_cycle_*.py'`
 
 - [ ] **Stap 7: Commit** `git add forgejo-runner/scripts/cycle_runtime.py forgejo-runner/scripts/forgejo_runner_cycle.py forgejo-runner/tests/_harness.py forgejo-runner/tests/test_cycle_runtime.py && git commit -m "feat(controller): config-loader + testharnas + __main__-delegatie"`
 
@@ -624,10 +624,11 @@ def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
                             "poll": lambda s, p: p.poll()})()
     pull = type("Pu", (), {"start": lambda s, d: rec._mk("pull"), "poll": lambda s, p: p.poll()})()
     scrub = type("Sc", (), {"start": lambda s: rec._mk("scrub"), "poll": lambda s, p: p.poll()})()
+    mkst = {"m": marker}                          # stateful marker zodat tests hem observeren (M1)
     reconcile = type("Re", (), {"leftover_runners": staticmethod(lambda: list(leftover or [])),
-                                "marker_present": staticmethod(lambda: marker),
-                                "write_marker": staticmethod(lambda op: None),
-                                "clear_marker": staticmethod(lambda: None),
+                                "marker_present": staticmethod(lambda: mkst["m"]),
+                                "write_marker": staticmethod(lambda op: mkst.__setitem__("m", True)),
+                                "clear_marker": staticmethod(lambda: mkst.__setitem__("m", False)),
                                 "restart_dind": staticmethod(lambda: None)})()
     trust = type("T", (), {"read": staticmethod(lambda: ({"ok": verdict_ok}, "LS", "AS"))})()
     ad = FakeAdapters(probe, dind, runner, pull, scrub, reconcile, trust)
@@ -718,8 +719,8 @@ class Runtime:
         rc = (self.a.pull.poll(p) if kind == "pull" else self.a.scrub.poll(p))
         if rc is None: return
         self.op = None
-        if not self._stop:                       # bij stop de marker bewaren (M4/§6.4)
-            self.a.reconcile.clear_marker()
+        if rc is not None and rc >= 0:           # normaal geëindigd → DinD-side klaar → marker weg;
+            self.a.reconcile.clear_marker()      # rc<0 (door signaal gedood) → onzeker einde → marker bewaren (M1/M4)
         if kind == "scrub":
             self.controller.on_event(self.loop.submit("scrub_done", {"ok": rc == 0}))
             self.clean_proven = (rc == 0)
@@ -787,8 +788,9 @@ class TestCycle(unittest.TestCase):
             rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
             self.assertIn("runner", rec.starts)
             rec.pops["runner"].rc = 0                            # runner exit 0
-            for _ in range(3): clock.advance(30.0); rt.tick()   # child_exit → scrub(auto rc0) → clean
-            self.assertTrue(rt.clean_proven)
+            clock.advance(30.0); rt.tick()                       # child_exit → scrub gestart
+            clock.advance(30.0); rt.tick()                       # scrub (auto rc0) verwerkt
+            self.assertTrue(rt.clean_proven)                     # schoonbewijs vóór de volgende launch
     def test_scrub_fail_blocks_next_start(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
@@ -819,11 +821,13 @@ class TestStartupReconcile(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             calls = {"restart": 0}
             rt, ctrl, rec, clock = build_runtime(tmp, marker=True)
+            rec.auto["scrub"] = None                              # herstelscrub loopt nog
             rt.a.reconcile.restart_dind = lambda: calls.__setitem__("restart", 1)
             rt.tick()
-            self.assertEqual(calls["restart"], 1)
-            self.assertIn("scrub", rec.starts)
-            self.assertFalse(rt.clean_proven)
+            self.assertEqual(calls["restart"], 1); self.assertIn("scrub", rec.starts)
+            self.assertFalse(rt.clean_proven)                     # scrub nog niet bewezen
+            rec.pops["scrub"].rc = 0; rt.tick()                   # scrub af → schoon
+            self.assertTrue(rt.clean_proven)
 ```
 
 - [ ] **Stap 2: Run — FAIL.**
@@ -881,6 +885,15 @@ class TestStop(unittest.TestCase):
             calls = {"r": 0}; rt.a.reconcile.restart_dind = lambda: calls.__setitem__("r", 1)
             rt.request_stop(); rt.tick()
             self.assertEqual(calls["r"], 0); self.assertEqual(rec.starts, [])   # geen reconcile/scrub bij stop (M4)
+    def test_stop_killed_op_is_unclean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            sp = rec._mk("scrub"); rt.op = ("scrub", sp)
+            rt.a.reconcile.write_marker("scrub")                   # operatie in-flight
+            rt.request_stop(); sp.rc = -15                         # client door signaal gedood
+            rt._advance_op()
+            self.assertTrue(rt.a.reconcile.marker_present())       # marker bewaard (onzeker einde)
+            self.assertEqual(rt._stop_result(overshoot=False), 1)  # géén exit 0 (M1)
     def test_deadline_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp)
@@ -908,7 +921,9 @@ class TestStop(unittest.TestCase):
             return False                                     # onbekend → niet klaar
 
     def _stop_result(self, overshoot):
-        return 0 if (self._stop_complete() and not overshoot) else 1
+        if overshoot or not self._stop_complete():
+            return 1
+        return 1 if self.a.reconcile.marker_present() else 0   # bewaarde marker = onzeker einde → non-zero (M1)
 
     def run(self):
         import signal as _sig, time as _t
@@ -1018,8 +1033,7 @@ def main(argv=None):
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "one-job"
   echo "$output" | grep -q -- "--wait"                                           # command compleet
-  echo "$output" | grep -q "target: /etc/forgejo-runner/allowed-job-images.txt"  # de allowlist-mount
-  echo "$output" | grep -q "read_only: true"                                     # read-only
+  echo "$output" | grep -A3 "target: /etc/forgejo-runner/allowed-job-images.txt" | grep -q "read_only: true"  # juist DEZE mount read-only
 }
 ```
 
@@ -1075,8 +1089,8 @@ PY
 # forgejo-runner/scripts/publish-trust-verdict.sh
 # Deploy-wrapper (§6.3). Draait de trustgate-CLI met FORGEJO_URL=<target> in een
 # verse out-dir; publiceert een controller-verdict met measured_at + binding aan
-# de WERKELIJK gemeten target ALLEEN bij CLI-exit 0. Bij falen wordt niets
-# gepubliceerd en het oude bestand niet aangeraakt (het vervalt op measured_at).
+# de WERKELIJK gemeten target ALLEEN bij CLI-exit 0. Bij CLI-falen wordt het
+# actieve verdict fail-closed geïnvalideerd (ok=false) → controllergate rood.
 # Exit: 0 gepubliceerd, 3 meting mislukt, 2 gebruik.
 set -eu
 
@@ -1203,3 +1217,23 @@ De drie blockers uit ronde 1 bevestigd opgelost. Resterend, geverifieerd tegen d
   compose-test toetst `one-job` + `--wait` + de allowlist-`target` + `read_only: true` (T12).
 
 Verdict ronde 2: **NO-GO**. Fixes toegepast; ronde 3 opnieuw naar `mac:codex`.
+
+### Ronde 3 — commit `eac2968` — mac:codex — NO-GO (0 BLOCKER, 2 MAJOR, 1 MINOR)
+
+codex draaide de samengestelde suite: **43 tests, 41 groen, 2 rood**. Koude pre-pull en
+trust-invalidatie werken. Resterend, geverifieerd en aanvaard:
+
+- **M1 (r3)** — een door signaal gedode pull/scrub-client (`poll()` → -15) leverde tóch
+  stop-`exit 0`; `_stop_complete` toetste alleen lokale referenties. Fix: `_advance_op` wist
+  de marker alleen bij `rc≥0` (normaal einde) en bewaart hem bij `rc<0` (onzeker); `_stop_result`
+  geeft non-zero zolang de marker staat. Nieuwe test `test_stop_killed_op_is_unclean` (T11).
+- **M2 (r3)** — twee tests toetsten een toestand die de loop al had verlaten (clean_proven ná de
+  volgende launch; een herstelscrub die in dezelfde tick auto-voltooit). Fix: exit0-test toetst
+  clean_proven op de fasegrens (2 ticks); marker-test zet `rec.auto["scrub"]=None` en voltooit de
+  scrub expliciet (T9/T10).
+- **m3 (r3)** — opruiming: per-taak-runs op de discovery-vorm; wrapper-commentaar gecorrigeerd
+  (invalideert i.p.v. "niet aangeraakt"); readiness-zin verduidelijkt; compose-`read_only`
+  gebonden aan de allowlist-mount (T1/T12/T13).
+
+Verdict ronde 3: **NO-GO** (2 test-timingfouten + 1 stop-verfijning). Fixes toegepast; de residu
+was smal (41/43 al groen).
