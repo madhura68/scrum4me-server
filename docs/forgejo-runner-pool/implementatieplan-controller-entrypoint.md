@@ -89,9 +89,12 @@ import pathlib, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 import cycle_runtime as cr          # noqa: E402
-import cycle_adapters as ca         # noqa: E402
 from forgejo_runner_cycle import (  # noqa: E402
     EventLoop, Controller, State, ReadinessClass as RC, classify_probe)
+# cycle_adapters bestaat pas vanaf Taak 5; tests die het nodig hebben doen zelf
+# `import cycle_adapters as ca` ná deze import (die zet sys.path). Alle per-taak
+# runs gebruiken de discovery-vorm zodat tests/ op sys.path staat:
+#   python3 -m unittest discover -s tests -p 'test_cycle_runtime.py' -v
 
 VALID_TOML = b"""
 [forgejo]
@@ -361,8 +364,9 @@ class ReadinessConfirmed:
 - [ ] **Stap 1: Falende tests**
 
 ```python
-import io, socket, urllib.error
-from _harness import ca, classify_probe, RC
+import io, urllib.error
+from _harness import classify_probe, RC
+import cycle_adapters as ca          # ná _harness (dat zet sys.path)
 class TestProbe(unittest.TestCase):
     def _p(self, opener): return ca.TransportProbe("https://x", 5.0, opener=opener).probe()
     def test_ready(self):
@@ -430,7 +434,8 @@ class TransportProbe:
 
 ```python
 import tempfile, os
-from _harness import ca, FakePopen
+from _harness import FakePopen
+import cycle_adapters as ca
 class TestDockerAdapters(unittest.TestCase):
     def setUp(self):
         self.spawned = []; self.popen = lambda argv, **kw: self.spawned.append((argv, kw)) or FakePopen(argv)
@@ -504,11 +509,11 @@ class ScrubOp(_Compose):
 
 ```python
 import hashlib
-from _harness import ca
+import cycle_adapters as ca          # ná _harness-import elders in dit bestand
 def _cp(out="", rc=0, err=""):
     class C: pass
     c = C(); c.returncode = rc; c.stdout = out; c.stderr = err; return c
-class TestReconcile(unittest.TestCase):
+class TestReconcileAdapter(unittest.TestCase):
     def test_leftover_ok(self):
         rec = ca.Reconcile("/c","p","/m", run=lambda a,t: _cp("abc\n"))
         self.assertEqual(rec.leftover_runners(), ["abc"])
@@ -593,28 +598,32 @@ def _sha256(path):
 De `build_runtime`-helper (in `_harness.py`) construeert een Runtime met FakeClock (gedeeld met de EventLoop) en injecteerbare fake-adapters. Voeg toe aan `_harness.py`:
 
 ```python
-import collections
+import collections, dataclasses, os, signal
 FakeAdapters = collections.namedtuple("FakeAdapters", "probe dind runner pull scrub reconcile trust")
 
 class Recorder:
-    """Verzamelt fase-starts en levert per fase een FakePopen met stuurbare rc."""
+    """Elke start levert een VERSE FakePopen — geen exitcode-erfenis (M3). scrub/pull
+    voltooien standaard rc=0 op de volgende _advance_op; de runner blijft lopen
+    (rc=None) tot een test hem afrondt. Stuur via `auto[kind]` (rc bij start) of
+    `pops[kind].rc` (na de start)."""
     def __init__(self):
-        self.starts = []; self.pops = {"runner": FakePopen(), "pull": FakePopen(), "scrub": FakePopen()}
+        self.starts = []; self.pops = {}; self.auto = {"scrub": 0, "pull": 0, "runner": None}
     def _mk(self, kind):
-        self.starts.append(kind); return self.pops[kind]
+        self.starts.append(kind); p = FakePopen([kind], rc=self.auto[kind])
+        self.pops[kind] = p; return p
 
 def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
                   leftover=None, marker=False, digests=("img@sha256:"+"a"*64,)):
     clock = FakeClock(); rec = Recorder()
-    probe_dict = {"kind":"general","error":None,"status":200,"schema_ok":True} if klasse=="READY" \
-                 else {"kind":"general","error":"x","status":None,"schema_ok":False}
-    probe = type("P", (), {"probe": staticmethod(lambda: probe_dict)})()
+    pd = ({"kind":"general","error":None,"status":200,"schema_ok":True} if klasse=="READY"
+          else {"kind":"general","error":"x","status":None,"schema_ok":False})
+    probe = type("P", (), {"probe": staticmethod(lambda: pd)})()
     dind = type("D", (), {"ensure_up": staticmethod(lambda: None), "healthy": staticmethod(lambda: healthy)})()
-    runner = type("R", (), {"start": lambda self: rec._mk("runner"),
-                            "request_stop": lambda self, p: p.send_signal(15),
-                            "poll": lambda self, p: p.poll()})()
-    pull = type("Pu", (), {"start": lambda self, d: rec._mk("pull"), "poll": lambda self, p: p.poll()})()
-    scrub = type("Sc", (), {"start": lambda self: rec._mk("scrub"), "poll": lambda self, p: p.poll()})()
+    runner = type("R", (), {"start": lambda s: rec._mk("runner"),
+                            "request_stop": lambda s, p: p.send_signal(signal.SIGTERM),
+                            "poll": lambda s, p: p.poll()})()
+    pull = type("Pu", (), {"start": lambda s, d: rec._mk("pull"), "poll": lambda s, p: p.poll()})()
+    scrub = type("Sc", (), {"start": lambda s: rec._mk("scrub"), "poll": lambda s, p: p.poll()})()
     reconcile = type("Re", (), {"leftover_runners": staticmethod(lambda: list(leftover or [])),
                                 "marker_present": staticmethod(lambda: marker),
                                 "write_marker": staticmethod(lambda op: None),
@@ -622,14 +631,14 @@ def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
                                 "restart_dind": staticmethod(lambda: None)})()
     trust = type("T", (), {"read": staticmethod(lambda: ({"ok": verdict_ok}, "LS", "AS"))})()
     ad = FakeAdapters(probe, dind, runner, pull, scrub, reconcile, trust)
-    cfg = cr.load_config(write_toml(tmp))
-    # kortsluiten: verdict-binding niet toetsen in loop-tests
-    object.__setattr__(cfg, "_digests_override", list(digests)) if False else None
+    # ECHT tijdelijk allowed-images-bestand zodat _load_digests de test-digests leest (M3)
+    img = os.path.join(tmp, "allowed.txt")
+    open(img, "w").write("# test\n" + "".join(f"{d}\t1\n" for d in digests))
+    cfg = dataclasses.replace(cr.load_config(write_toml(tmp)), allowed_images_file=img)
     loop = EventLoop(clock); controller = Controller(loop)
-    import logging
-    rt = cr.Runtime(cfg, controller, loop, ad, clock, logging.getLogger("t"))
-    rt._digests = list(digests)                       # pre-pull-bron injecteren
-    rt._trust_green = lambda: (verdict_ok, "test")     # binding buiten scope in loop-tests
+    import logging as _lg
+    rt = cr.Runtime(cfg, controller, loop, ad, clock, _lg.getLogger("t"))
+    rt._trust_green = lambda: (verdict_ok, "test")     # verdict-binding buiten scope in loop-tests
     return rt, controller, rec, clock
 ```
 
@@ -646,15 +655,9 @@ class TestStartCondition(unittest.TestCase):
     def test_start_after_confirmed_clean_pulled(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp)
-            for _ in range(8):                          # meerdere ticks; klok +30s per probe
-                clock.advance(30.0)
-                # laat een gestarte scrub/pull meteen 'klaar (rc0)' zijn:
-                for kind in ("scrub", "pull"):
-                    rec.pops[kind].rc = 0
-                rt.tick()
-            self.assertIn("scrub", rec.starts)          # eerst schoon
-            self.assertIn("pull", rec.starts)           # dan pre-pull
-            self.assertIn("runner", rec.starts)         # dan start
+            for _ in range(8):
+                clock.advance(30.0); rt.tick()          # scrub/pull voltooien vanzelf (auto rc0)
+            self.assertIn("scrub", rec.starts); self.assertIn("pull", rec.starts); self.assertIn("runner", rec.starts)
             self.assertTrue(rec.starts.index("runner") > rec.starts.index("pull") > rec.starts.index("scrub"))
 ```
 
@@ -662,7 +665,7 @@ class TestStartCondition(unittest.TestCase):
 - [ ] **Stap 3: Implementeer het skelet + faseketen**
 
 ```python
-import logging
+import logging, signal
 from collections import namedtuple
 from forgejo_runner_cycle import EventLoop, Controller, State, classify_probe, ReadinessClass
 
@@ -682,6 +685,7 @@ class Runtime:
         if not self._loaded:
             with open(self.cfg.allowed_images_file, encoding="utf-8") as fh:
                 self._digests = parse_allowed_images(fh.read())
+            self._pull_queue = list(self._digests)   # óók de EERSTE cyclus pre-pullt (M2)
             self._loaded = True
 
     def _trust_green(self):
@@ -713,10 +717,13 @@ class Runtime:
         kind, p = self.op
         rc = (self.a.pull.poll(p) if kind == "pull" else self.a.scrub.poll(p))
         if rc is None: return
-        self.op = None; self.a.reconcile.clear_marker()
+        self.op = None
+        if not self._stop:                       # bij stop de marker bewaren (M4/§6.4)
+            self.a.reconcile.clear_marker()
         if kind == "scrub":
             self.controller.on_event(self.loop.submit("scrub_done", {"ok": rc == 0}))
             self.clean_proven = (rc == 0)
+            self.log.info("cyclus: scrub ok=%s", rc == 0)
             if rc != 0: self.log.warning("scrub faalde rc=%s", rc)
         else:  # pull
             if rc == 0:
@@ -729,6 +736,7 @@ class Runtime:
         rc = self.a.runner.poll(self.child)
         if rc is None: return
         self.child = None
+        self.log.info("cyclus: runner exit rc=%s", rc)
         self.controller.on_event(self.loop.submit("child_exit", {"code": rc}))
         self._pull_queue = list(self._digests)          # volgende cyclus opnieuw pre-pullen
         if not self._stop:
@@ -742,6 +750,7 @@ class Runtime:
     def _start_runner(self):
         self.clean_proven = False
         self.child = self.a.runner.start()
+        self.log.info("cyclus: runner gestart")
 
     def tick(self):
         self._load_digests()
@@ -772,26 +781,20 @@ class Runtime:
 ```python
 class TestCycle(unittest.TestCase):
     def _ready(self, rt, rec, clock, n=8):
-        for _ in range(n):
-            clock.advance(30.0)
-            for k in ("scrub","pull"): rec.pops[k].rc = 0
-            rt.tick()
+        for _ in range(n): clock.advance(30.0); rt.tick()   # scrub/pull auto rc0
     def test_exit0_scrub_ok_waiting(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
             self.assertIn("runner", rec.starts)
-            rec.pops["runner"].rc = 0                    # runner klaar exit 0
-            rec.pops["scrub"] = type(rec.pops["scrub"])(rc=0)  # verse scrub-Popen, rc0
-            rt.tick(); rt.tick()
+            rec.pops["runner"].rc = 0                            # runner exit 0
+            for _ in range(3): clock.advance(30.0); rt.tick()   # child_exit → scrub(auto rc0) → clean
             self.assertTrue(rt.clean_proven)
     def test_scrub_fail_blocks_next_start(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp); self._ready(rt, rec, clock)
-            rec.pops["runner"].rc = 0
-            rec.pops["scrub"] = type(rec.pops["scrub"])(rc=50)  # scrub faalt
-            for _ in range(3): rt.tick()
-            self.assertFalse(rt.clean_proven)
-            self.assertFalse(rt._may_start())            # geen start op vuile DinD (B2)
+            rec.pops["runner"].rc = 0; rec.auto["scrub"] = 50   # post-exit scrub faalt
+            for _ in range(3): clock.advance(30.0); rt.tick()
+            self.assertFalse(rt.clean_proven); self.assertFalse(rt._may_start())   # geen start op vuile DinD (B2)
 ```
 
 - [ ] **Stap 2: Run — verwacht dat de eerste test al slaagt** (de faseketen uit Taak 8 dekt dit). Voeg alleen de assertions toe; als iets rood is, corrigeer de fase-afhandeling in `_advance_op`/`_advance_child`.
@@ -806,16 +809,12 @@ class TestCycle(unittest.TestCase):
 - [ ] **Stap 1: Falende tests (B1: geblokkeerd start geen scrub/pull/launch; marker → herstart+scrub)**
 
 ```python
-class TestReconcile(unittest.TestCase):
+class TestStartupReconcile(unittest.TestCase):
     def test_leftover_blocks_all_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp, leftover=["live"])
-            for _ in range(6):
-                clock.advance(30.0)
-                for k in ("scrub","pull"): rec.pops[k].rc = 0
-                rt.tick()
-            self.assertTrue(rt._blocked)
-            self.assertEqual(rec.starts, [])             # géén scrub/pull/runner (B1)
+            for _ in range(6): clock.advance(30.0); rt.tick()
+            self.assertTrue(rt._blocked); self.assertEqual(rec.starts, [])   # géén scrub/pull/runner (B1)
     def test_marker_triggers_restart_and_scrub(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = {"restart": 0}
@@ -832,7 +831,7 @@ class TestReconcile(unittest.TestCase):
 
 ```python
     def _reconcile_once(self):
-        if self._reconciled: return
+        if self._reconciled or self._stop: return    # geen reconcile/mutatie tijdens stop (M4)
         self._reconciled = True
         try:
             if self.a.reconcile.leftover_runners():
@@ -862,22 +861,30 @@ class TestStop(unittest.TestCase):
     def test_stop_with_child_no_new_scrub_exit_after_gone(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp)
-            rt._stop=False; rt.child=rec.pops["runner"]; rt.request_stop()
-            self.assertIn(15, rec.pops["runner"].signals)   # SIGTERM naar child
-            rec.pops["runner"].rc=None; self.assertFalse(rt._stop_complete())
-            rec.pops["runner"].rc=0; rt._advance_child()
-            self.assertIsNone(rt.op)                          # géén nieuwe scrub tijdens stop
+            rt.child = rec._mk("runner"); rt.request_stop()
+            self.assertIn(15, rt.child.signals)              # SIGTERM naar child
+            rt.child.rc = None; self.assertFalse(rt._stop_complete())
+            rt.child.rc = 0; rt._advance_child()
+            self.assertIsNone(rt.op)                          # géén nieuwe scrub tijdens stop (M4)
             self.assertTrue(rt._stop_complete())
-    def test_stop_during_scrub_waits(self):
+    def test_stop_during_scrub_signals_and_waits(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp)
-            rt.op=("scrub", rec.pops["scrub"]); rec.pops["scrub"].rc=None
-            rt.request_stop(); self.assertFalse(rt._stop_complete())
-            rec.pops["scrub"].rc=0; rt._advance_op(); self.assertTrue(rt._stop_complete())
+            sp = rec._mk("scrub"); sp.rc = None; rt.op = ("scrub", sp)
+            rt.request_stop()
+            self.assertIn(15, sp.signals)                    # scrub gesignaleerd (M4/§9)
+            self.assertFalse(rt._stop_complete())
+            sp.rc = 0; rt._advance_op(); self.assertTrue(rt._stop_complete())
+    def test_stop_before_first_tick_no_reconcile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp, marker=True)
+            calls = {"r": 0}; rt.a.reconcile.restart_dind = lambda: calls.__setitem__("r", 1)
+            rt.request_stop(); rt.tick()
+            self.assertEqual(calls["r"], 0); self.assertEqual(rec.starts, [])   # geen reconcile/scrub bij stop (M4)
     def test_deadline_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as tmp:
             rt, ctrl, rec, clock = build_runtime(tmp)
-            rt.child=rec.pops["runner"]; rec.pops["runner"].rc=None
+            rt.child = rec._mk("runner"); rt.child.rc = None
             self.assertEqual(rt._stop_result(overshoot=True), 1)   # geen succes bij deadline
 ```
 
@@ -888,7 +895,10 @@ class TestStop(unittest.TestCase):
     def request_stop(self):
         self._stop = True
         self.controller.drain(self.clock()[0])
-        if self.child is not None: self.a.runner.request_stop(self.child)
+        if self.child is not None:
+            self.a.runner.request_stop(self.child)
+        if self.op is not None:                  # ook een lopende pull/scrub signaleren (M4/§9)
+            self.op[1].send_signal(signal.SIGTERM)
 
     def _stop_complete(self):
         if self.child is not None or self.op is not None: return False
@@ -1007,7 +1017,9 @@ def main(argv=None):
       DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "one-job"
-  echo "$output" | grep -q "/etc/forgejo-runner/allowed-job-images.txt"
+  echo "$output" | grep -q -- "--wait"                                           # command compleet
+  echo "$output" | grep -q "target: /etc/forgejo-runner/allowed-job-images.txt"  # de allowlist-mount
+  echo "$output" | grep -q "read_only: true"                                     # read-only
 }
 ```
 
@@ -1042,15 +1054,16 @@ PY
   grep -q '"measured_at":' "$TMP/v.json"
 }
 
-@test "mislukte meting publiceert geen nieuw groen en meldt falen (M4)" {
-  printf '{"ok":true,"measured_at":9999999999,"forgejo_target":"x"}' > "$TMP/v.json"; cp "$TMP/v.json" "$TMP/before"
+@test "mislukte hernieuwde meting invalideert het actieve verdict (M1/M4)" {
+  printf '{"ok":true,"measured_at":%s,"forgejo_target":"https://x","labels_sha256":"L","allowlist_sha256":"A"}' \
+    "$(date +%s)" > "$TMP/v.json"                            # volledig geldig, vers groen uitgangspunt
   cat > "$TMP/fail.py" <<'PY'
 import sys; sys.exit(30)
 PY
   run scripts/publish-trust-verdict.sh --cli-py "$TMP/fail.py" --labels "$TMP/labels.txt" \
     --allowlist "$TMP/allow.yml" --target https://x --out "$TMP/v.json"
   [ "$status" -ne 0 ]                                        # falen zichtbaar
-  diff "$TMP/before" "$TMP/v.json"                           # geen NIEUW groen gepubliceerd
+  grep -q '"ok":false' "$TMP/v.json"                         # actief verdict geïnvalideerd → controllergate rood
 }
 ```
 
@@ -1087,7 +1100,12 @@ done
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 # De CLI meet de bron uit FORGEJO_URL (trust_scope_cli.py); bind het verdict daaraan.
 if ! FORGEJO_URL="$TARGET" python3 "$CLI_PY" --allowlist "$ALLOWLIST" --labels "$LABELS" --out "$WORK"; then
-  echo "trustmeting mislukt; geen nieuw verdict gepubliceerd" >&2; exit 3
+  # M1/§6.3: een mislukte hernieuwde validatie mag oud groen niet laten gelden.
+  # Invalideer het actieve verdict fail-closed (ok=false) zodat de controllergate rood wordt.
+  ITMP="$OUT.tmp.$$"
+  printf '{"ok":false,"measured_at":%s,"forgejo_target":"%s","reason":"meting mislukt"}\n' \
+    "$(date +%s)" "$TARGET" > "$ITMP"; mv -f "$ITMP" "$OUT"
+  echo "trustmeting mislukt; actief verdict geïnvalideerd (ok=false)" >&2; exit 3
 fi
 OKVAL="$(grep -o '"ok"[[:space:]]*:[[:space:]]*\(true\|false\)' "$WORK/trust-verdict.json" | grep -o 'true\|false' | head -1)"
 LS="$(hashtool "$LABELS")"; AS="$(hashtool "$ALLOWLIST")"
@@ -1160,3 +1178,28 @@ Alle bevindingen geverifieerd tegen de boom (codex reproduceerde plan-code in is
 - **m11** — logging/gate incompleet. Fix: `_drain_events` logt hart-alarmen (§10), gate draait ook bats, compose-test met fixture-env (T12/T14).
 
 Verdict ronde 1: **NO-GO**. Fixes toegepast; ronde 2 opnieuw naar `mac:codex`.
+
+### Ronde 2 — commit `9dfe0bd` — mac:codex — NO-GO (0 BLOCKER, 4 MAJOR, 1 MINOR)
+
+De drie blockers uit ronde 1 bevestigd opgelost. Resterend, geverifieerd tegen de boom
+(codex reproduceerde plan-code in isolatie) en aanvaard:
+
+- **M1 (r2)** — "geen nieuw bestand publiceren" ≠ "oud groen niet laten gelden": een mislukte
+  hernieuwde meting liet een nog-geldig groen verdict actief. Fix: de wrapper **invalideert**
+  het actieve verdict fail-closed (`ok=false`) bij CLI-falen → controllergate rood; test met
+  een volledig geldig groen uitgangspunt (T13).
+- **M2 (r2)** — koude start sloeg pre-pull over (`_pull_queue` begon leeg; `not _pull_queue` las
+  "niet geïnitialiseerd" als "klaar"). Fix: `_load_digests` vult `_pull_queue` bij de eerste
+  laadbeurt (T8).
+- **M3 (r2)** — het harnas leverde geen groene suite: `_harness` importeerde `cycle_adapters`
+  vóór Taak 5; `build_runtime` gaf `_load_digests` geen echt bestand; twee `class TestReconcile`
+  botsten; `Recorder` hergebruikte één FakePopen. Fix: `ca` importeren de tests zelf (ná _harness),
+  discovery-vorm runs, echt tijdelijk allowed-images-bestand + `dataclasses.replace`, unieke
+  klassenamen, en `Recorder` levert een verse FakePopen per start (auto rc0 scrub/pull).
+- **M4 (r2)** — stop dekte niet alle mutatie: `_reconcile_once` negeerde `_stop`; `request_stop`
+  signaleerde alleen de runner. Fix: `_reconcile_once` return't bij `_stop`; `request_stop`
+  signaleert óók de lopende pull/scrub; `_advance_op` bewaart de marker tijdens stop (T10/T11).
+- **m5 (r2)** — logging/asserties incompleet. Fix: INFO-logging voor runner-start/exit + scrub;
+  compose-test toetst `one-job` + `--wait` + de allowlist-`target` + `read_only: true` (T12).
+
+Verdict ronde 2: **NO-GO**. Fixes toegepast; ronde 3 opnieuw naar `mac:codex`.
