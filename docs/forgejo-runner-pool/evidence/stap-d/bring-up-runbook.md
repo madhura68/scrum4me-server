@@ -249,6 +249,66 @@ job (`one-job --wait`). Wijzig of herstart hierbij geen enkele bestaande
 productie-hostservice (CLAUDE.md-hardstop) — dit raakt alleen de nieuwe
 DinD/runner/controller-stack.
 
+### 5.1 Fail-closed-bewijs: achtergebleven runnercontainer overleeft een SIGKILL (C1)
+
+Deze stap bewijst op hostniveau wat de unittests niet kunnen bewijzen: dat de
+controller een achtergebleven, ONE-OFF runnercontainer (`compose --profile
+cycle run --rm runner`, label `com.docker.compose.oneoff=True`) daadwerkelijk
+detecteert via de label-filterde `docker ps -a` — en niet via `docker compose
+ps`, die one-off-containers per ontwerp negeert (dat was exact het lek: een
+achtergebleven runner na een SIGKILL bleef onzichtbaar en de controller
+startte er blindelings een tweede naast).
+
+1. Met de controller-unit actief en de runner online/idle (§5 hierboven is al
+   een draaiende runnercontainer — `one-job --wait` blijft lopen tot er een
+   job binnenkomt), bevestig dat hij zichtbaar is via de raw, label-filterde
+   vorm:
+   ```sh
+   docker ps -a --filter label=com.docker.compose.project=forgejo-runner \
+     --filter label=com.docker.compose.service=runner
+   ```
+   Verwacht: één container, `Up`. Bevestig meteen het contrast met de oude,
+   kapotte detectievorm — die ziet 'm expres niet:
+   ```sh
+   docker compose -f compose.yaml -p forgejo-runner ps -q runner   # verwacht: LEEG
+   ```
+2. Simuleer een harde controller-crash (géén nette `SIGTERM`-stop):
+   ```sh
+   sudo systemctl kill -s SIGKILL forgejo-runner-cycle.service
+   sudo systemctl status forgejo-runner-cycle.service --no-pager   # verwacht: failed
+   ```
+3. Bevestig dat de runnercontainer de crash overleeft — er is geen `--rm`
+   afgevuurd omdat de controller niet netjes kon stoppen:
+   ```sh
+   docker ps -a --filter label=com.docker.compose.project=forgejo-runner \
+     --filter label=com.docker.compose.service=runner
+   ```
+   Verwacht: dezelfde container-ID als in stap 1, nog steeds `Up`.
+4. Herstart de controller-unit:
+   ```sh
+   sudo systemctl start forgejo-runner-cycle.service
+   sudo journalctl -u forgejo-runner-cycle.service -n 40 --no-pager
+   ```
+5. Bevestig het fail-closed-gedrag: de controller start **geen** tweede
+   runner en logt de blokkade expliciet:
+   ```sh
+   sudo journalctl -u forgejo-runner-cycle.service -n 40 --no-pager \
+     | grep "achtergebleven runner"
+   docker ps -a --filter label=com.docker.compose.project=forgejo-runner \
+     --filter label=com.docker.compose.service=runner -q | wc -l
+   ```
+   Verwacht: de journal bevat `startup: achtergebleven runner — fail-closed`;
+   het aantal runnercontainers blijft **1** (de oude, achtergebleven — geen
+   tweede ernaast). Ruim de achtergebleven container daarna op (`docker rm -f
+   <container-id>`) vóór je verdergaat naar §6 — de controller blijft anders
+   voor de rest van zijn procesleven geblokkeerd (§7.9-reconciliatie draait
+   maar één keer per opstart), niet omdat de fix niet werkt maar omdat de
+   oorzaak nog op de host staat.
+
+Faalt deze stap — een tweede container verschijnt, of de journal mist de
+blokkaderegel — dan is dat een regressie op C1: niet verder met §6, meld het
+aan JP.
+
 ## 6. Smoke: één groene + één rode job, scrub, terug naar `WAITING` (kern stap E)
 
 Beide runners delen dezelfde labels (§7.4/§7.7 migratieontwerp); om te

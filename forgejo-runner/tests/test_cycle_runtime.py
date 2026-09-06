@@ -108,6 +108,17 @@ class TestReconcileAdapter(unittest.TestCase):
     def test_leftover_rc_error_raises(self):
         rec = ca.Reconcile("/c","p","/m", run=lambda a,t: _cp("", rc=1, err="boom"))
         with self.assertRaises(ca.ReconcileError): rec.leftover_runners()
+    def test_leftover_uses_raw_label_filtered_docker_ps(self):
+        # C1: een one-off runner (compose --profile cycle run --rm) draagt
+        # com.docker.compose.oneoff=True en is onzichtbaar voor `compose ps`;
+        # leftover-detectie MOET dus de raw, label-filterde `docker ps -a` zijn.
+        seen = []
+        rec = ca.Reconcile("/c","p","/m", run=lambda a,t: seen.append(a) or _cp("abc\n"))
+        self.assertEqual(rec.leftover_runners(), ["abc"])
+        argv = seen[-1]
+        self.assertEqual(argv[:3], ["docker", "ps", "-a"])          # NIET "docker compose ps"
+        self.assertIn("label=com.docker.compose.service=runner", argv)
+        self.assertIn("label=com.docker.compose.project=p", argv)   # self._project uit __init__
     def test_restart_kill_fail_raises(self):
         calls = {"n": 0}
         def run(a, t):

@@ -153,6 +153,7 @@ class ReconcileError(Exception):
 class Reconcile(_Compose):
     def __init__(self, cf, proj, marker_path, **kw):
         super().__init__(cf, proj, **kw)
+        self._project = proj
         self._marker = marker_path
 
     def _checked(self, args):
@@ -164,7 +165,26 @@ class Reconcile(_Compose):
         return cp
 
     def leftover_runners(self):
-        cp = self._checked(["ps", "-q", "runner"])
+        # RAW `docker ps` (niet `docker compose ps`): een one-off container
+        # (`compose --profile cycle run --rm runner`) draagt het label
+        # com.docker.compose.oneoff=True en wordt door `compose ps` genegeerd,
+        # maar blijft zichtbaar via de label-filter hieronder — dat is precies
+        # de achtergebleven runner die B1/_stop_complete moeten kunnen zien.
+        argv = [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=com.docker.compose.project={self._project}",
+            "--filter",
+            "label=com.docker.compose.service=runner",
+            "-q",
+        ]
+        cp = self._run(argv, self._t)
+        if cp.returncode != 0:
+            raise ReconcileError(
+                f"docker ps (leftover): rc={cp.returncode} {cp.stderr.strip()}"
+            )
         return [ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()]
 
     def marker_present(self):
