@@ -1,5 +1,6 @@
 # forgejo-runner/scripts/cycle_runtime.py
 """Runtime-schil rond forgejo_runner_cycle.py (dunne bring-up)."""
+import re
 import tomllib
 from dataclasses import dataclass
 
@@ -37,3 +38,14 @@ def load_config(path):
         retry_interval=float(_req(d, "cadence", "retry_interval_seconds")),
         log_level=str(d.get("log", {}).get("level", "INFO")),
     )
+
+_DIGEST_RE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
+def parse_allowed_images(text):
+    out = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"): continue
+        digest = line.split("\t", 1)[0].strip()
+        if not _DIGEST_RE.match(digest): raise ValueError(f"ongeldige digest-regel: {raw!r}")
+        out.append(digest)
+    return out

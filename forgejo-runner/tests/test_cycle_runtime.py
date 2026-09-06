@@ -16,5 +16,14 @@ class TestConfig(unittest.TestCase):
                 cr.load_config(write_toml(tmp, bad))
         self.assertIn("dind.project", str(ctx.exception))
 
+class TestImages(unittest.TestCase):
+    REAL = ("# commentaar\ncatthehacker/ubuntu@sha256:" + "c"*64 + "\t1729048576\n")
+    def test_digest_tab_bytes(self):
+        self.assertEqual(cr.parse_allowed_images(self.REAL), ["catthehacker/ubuntu@sha256:" + "c"*64])
+    def test_blank_comment_ignored(self):
+        self.assertEqual(cr.parse_allowed_images("\n#x\n  \n"), [])
+    def test_invalid_raises(self):
+        with self.assertRaises(ValueError): cr.parse_allowed_images("ubuntu:latest\t10\n")
+
 if __name__ == "__main__":
     unittest.main()
