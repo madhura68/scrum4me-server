@@ -163,76 +163,54 @@ dat is dan een echte omissie in `controller.toml`, geen bug in dit bundel.
 ## 4. Sanity: bevestig entrypoint + resulterende argv (ontwerp §6.2)
 
 Dit is geen formaliteit. `compose.yaml`'s `runner`-service heeft **geen**
-`entrypoint:`-sleutel, alleen `command: ["one-job", "--wait"]`. Of dat
-daadwerkelijk `forgejo-runner one-job --wait` uitvoert hangt af van het
-`Entrypoint`/`Cmd` van de **gepinde** image — dat is precies wat `docker
-inspect` hier moet bevestigen vóórdat je verder gaat.
+`entrypoint:`-sleutel, en de gepinde image heeft `Entrypoint=null` — dat
+betekent dat de `command:` **letterlijk** de argv bepaalt, en Docker resolveert
+het eerste element via `$PATH` in de container. De gepinde image heeft
+`Cmd=["/bin/forgejo-runner"]` (zie `evidence/stap-a/scrum4me-server/images.json`),
+maar die wordt **genegeerd** zodra `compose.yaml` een eigen `command:` geeft.
+
+Daarom moet `command:` in de `runner`-service van `compose.yaml` het **volledige
+binary-pad** bevatten: `["/bin/forgejo-runner", "one-job", "--wait"]`.
+Een bare `["one-job", "--wait"]` zou Docker instrueren `/bin/sh` (of iets soortgelijks)
+uit te voeren met `one-job` als eerste argument, wat zou falen omdat `one-job`
+niet in `$PATH` bestaat — exit 127, nog voordat forgejo-runner start.
+
+Dit is nu **correct toegepast** in `compose.yaml`. Bevestig de sanity met:
 
 ```sh
 RUNNER_IMAGE="$(. ./.env; echo "$RUNNER_IMAGE")"
 docker inspect --format 'Entrypoint={{json .Config.Entrypoint}} Cmd={{json .Config.Cmd}}' "$RUNNER_IMAGE"
 ```
 
-**Bekende meting op deze gepinde digest** (`evidence/stap-a/scrum4me-server/images.json`,
-en onafhankelijk herhaald op 6 september 2026 tegen dezelfde digest tijdens
-het schrijven van deze runbook): `Entrypoint=null`, `Cmd=["/bin/forgejo-runner"]`.
-Met een `null`-entrypoint bepaalt **uitsluitend** `command:` de argv, en
-`command`s eerste element wordt via `$PATH` in de container gezocht — er is
-geen shell die `one-job` als forgejo-runner-subcommando herkent.
+Verwacht: `Entrypoint=null Cmd=["/bin/forgejo-runner"]`.
 
 Bewijs vervolgens de **resulterende** argv met een losse, onschadelijke
 aanroep (raakt geen DinD, netwerk of config, dus veilig om los te draaien):
 
 ```sh
-docker run --rm "$RUNNER_IMAGE" one-job --wait
+docker run --rm "$RUNNER_IMAGE" /bin/forgejo-runner one-job --wait
 echo "exit=$?"
 ```
 
-**Gemeten resultaat op 6 september 2026, tegen exact deze digest
-(`code.forgejo.org/forgejo/runner@sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533`,
-lokaal, niet op max2):**
-
-```
-docker: Error response from daemon: failed to create task for container: failed to create shim task:
-OCI runtime create failed: runc create failed: unable to start container process:
-error during container init: exec: "one-job": executable file not found in $PATH
-exit=127
-```
-
-Dat is **vóórdat forgejo-runner ook maar start** — de container komt nooit
-op. Ter controle (bewijst dat het probleem uitsluitend de ontbrekende
-entrypoint is, niet de image of de argumenten):
-
-```sh
-docker run --rm --entrypoint /bin/forgejo-runner "$RUNNER_IMAGE" one-job --wait
-```
-
-geeft (zonder gemount `config.yml`, dus dit is het verwáchte foutbeeld zonder
-echte config): `Error: one-job is only supported with a single connection,
-but 0 connections are configured`, exit `1` — dat bewijst dat forgejo-runner
+Verwacht: `Error: one-job is only supported with a single connection, but
+0 connections are configured`, exit `1`. Dat bewijst dat forgejo-runner
 zelf wél `one-job --wait` accepteert zodra het binary daadwerkelijk wordt
 aangeroepen.
 
-**Beslisregel voor deze stap:**
+**Waarom het binary-pad verplicht is:**
+- De image heeft geen `Entrypoint`, dus Docker resolveert het eerste element van
+  `command` via `$PATH` in de container.
+- Er bestaat geen bestand genaamd `one-job` in `$PATH` (alleen `/bin/forgejo-runner`).
+- Zonder het volledige pad `/bin/forgejo-runner` zou Docker de container starten
+  met `exec: "one-job": executable file not found in $PATH`, exit 127 — vóórdat
+  de container ook maar één line forgejo-runner-code uitvoert.
+- Met het pad: `docker run --rm "$RUNNER_IMAGE" /bin/forgejo-runner one-job --wait`
+  slaagt, en `/bin/forgejo-runner` handelt vervolgens `one-job --wait` af (of geeft
+  een inhoudelijke foutmelding als het config is).
 
-- **Als jouw `docker run --rm "$RUNNER_IMAGE" one-job --wait` op max2
-  hetzelfde `executable file not found in $PATH` geeft:** dit is dan nog
-  steeds aanwezig in de commit die je uitrolt. Ga **niet** verder met stap 5 —
-  `docker compose --profile cycle run --rm runner` zou nooit een runner
-  starten. Los dit **niet** ad hoc op de host op (CLAUDE.md-hardstop: bundel
-  niet dupliceren/patchen buiten de canonieke bron). De geverifieerde
-  minimale fix (lokaal getest, hierboven) is `command:` in `compose.yaml`'s
-  `runner`-service te veranderen van `["one-job", "--wait"]` naar
-  `["/bin/forgejo-runner", "one-job", "--wait"]` — dat vereist een nieuwe
-  commit + (delta-)review op de gedeelde bundel in de `scrum4me-server`-repo,
-  niet een wijziging op max2. Meld dit aan JP vóór je verdergaat.
-- **Als de aanroep in plaats daarvan de forgejo-runner-foutmelding geeft**
-  (geen `$PATH`-fout, iets als "connections are configured" of een
-  configfout): de bundel op jouw SHA heeft dit al opgelost — ga door met
-  stap 5.
-
-Leg de output van beide `docker inspect`/`docker run`-commando's vast (stap 8,
-`evidence/stap-d/docker-inspect-runner-image.txt`) ongeacht de uitkomst.
+**Dit is dus de correcte, werkende invulling.** Leg de output van beide `docker
+inspect`/`docker run`-commando's vast (stap 8, `evidence/stap-d/docker-inspect-runner-image.txt`),
+zodat je kunt bewijzen dat je deze sanity hebt uitgevoerd.
 
 ## 5. DinD omhoog, controller-unit starten, runner online bevestigen (stap D)
 
