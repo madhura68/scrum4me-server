@@ -37,7 +37,10 @@ level = "INFO"
 
 def write_toml(tmp, data=VALID_TOML):
     import os
-    p = os.path.join(tmp, "controller.toml"); open(p, "wb").write(data); return p
+    p = os.path.join(tmp, "controller.toml")
+    with open(p, "wb") as fh:
+        fh.write(data)
+    return p
 
 class FakeClock:
     """Eén klok voor hart én runtime; wall == mono zodat event.mono en de
