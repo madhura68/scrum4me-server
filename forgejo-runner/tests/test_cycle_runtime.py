@@ -163,5 +163,23 @@ class TestCycle(unittest.TestCase):
             self.assertFalse(rt.clean_proven); self.assertFalse(rt._may_start())   # geen start op vuile DinD (B2)
             self.assertFalse(rt.controller.mag_child_starten)   # hart quarantineert op scrub_done(ok=False): de echte B2-blokkade
 
+class TestStartupReconcile(unittest.TestCase):
+    def test_leftover_blocks_all_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp, leftover=["live"])
+            for _ in range(6): clock.advance(30.0); rt.tick()
+            self.assertTrue(rt._blocked); self.assertEqual(rec.starts, [])   # géén scrub/pull/runner (B1)
+    def test_marker_triggers_restart_and_scrub(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = {"restart": 0}
+            rt, ctrl, rec, clock = build_runtime(tmp, marker=True)
+            rec.auto["scrub"] = None                              # herstelscrub loopt nog
+            rt.a.reconcile.restart_dind = lambda: calls.__setitem__("restart", 1)
+            rt.tick()
+            self.assertEqual(calls["restart"], 1); self.assertIn("scrub", rec.starts)
+            self.assertFalse(rt.clean_proven)                     # scrub nog niet bewezen
+            rec.pops["scrub"].rc = 0; rt.tick()                   # scrub af → schoon
+            self.assertTrue(rt.clean_proven)
+
 if __name__ == "__main__":
     unittest.main()

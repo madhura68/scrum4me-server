@@ -175,4 +175,15 @@ class Runtime:
         self._drive_cycle()
         if self._may_start(): self._start_runner()
 
-    def _reconcile_once(self): pass     # Taak 10
+    def _reconcile_once(self):
+        if self._reconciled or self._stop: return    # geen reconcile/mutatie tijdens stop (M4)
+        self._reconciled = True
+        try:
+            if self.a.reconcile.leftover_runners():
+                self._blocked = True; self.log.warning("startup: achtergebleven runner — fail-closed"); return
+            if self.a.reconcile.marker_present():
+                self.log.warning("startup: onderbroken operatie — DinD-herstart + volledige scrub")
+                self.a.reconcile.restart_dind()
+                self.clean_proven = False; self._begin_op("scrub")
+        except Exception as exc:                         # ReconcileError e.d. → fail-closed
+            self._blocked = True; self.log.warning("startup-reconciliatie faalde: %r → geblokkeerd", exc)
