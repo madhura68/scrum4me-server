@@ -187,3 +187,39 @@ class Runtime:
                 self.clean_proven = False; self._begin_op("scrub")
         except Exception as exc:                         # ReconcileError e.d. → fail-closed
             self._blocked = True; self.log.warning("startup-reconciliatie faalde: %r → geblokkeerd", exc)
+
+    def request_stop(self):
+        self._stop = True
+        self.controller.drain(self.clock()[0])
+        if self.child is not None:
+            self.a.runner.request_stop(self.child)
+        if self.op is not None:                  # ook een lopende pull/scrub signaleren (M4/§9)
+            self.op[1].send_signal(signal.SIGTERM)
+
+    def _stop_complete(self):
+        if self.child is not None or self.op is not None: return False
+        try:
+            return not self.a.reconcile.leftover_runners()   # container aantoonbaar weg
+        except Exception:
+            return False                                     # onbekend → niet klaar
+
+    def _stop_result(self, overshoot):
+        if overshoot or not self._stop_complete():
+            return 1
+        return 1 if self.a.reconcile.marker_present() else 0   # bewaarde marker = onzeker einde → non-zero (M1)
+
+    def run(self):
+        import signal as _sig, time as _t
+        _sig.signal(_sig.SIGTERM, lambda *_: self.request_stop())
+        _sig.signal(_sig.SIGINT, lambda *_: self.request_stop())
+        while True:
+            self.tick()
+            if self._stop:
+                if self._stop_deadline is None:
+                    self._stop_deadline = self.clock()[0] + self.cfg.child_stop_grace
+                overshoot = self.clock()[0] >= self._stop_deadline
+                if self._stop_complete() or overshoot:
+                    if overshoot and not self._stop_complete():
+                        self.log.warning("stop: grens overschreden — onschone stop")
+                    return self._stop_result(overshoot)
+            _t.sleep(self.cfg.poll_interval)

@@ -181,5 +181,44 @@ class TestStartupReconcile(unittest.TestCase):
             rec.pops["scrub"].rc = 0; rt.tick()                   # scrub af → schoon
             self.assertTrue(rt.clean_proven)
 
+class TestStop(unittest.TestCase):
+    def test_stop_with_child_no_new_scrub_exit_after_gone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            rt.child = rec._mk("runner"); rt.request_stop()
+            self.assertIn(15, rt.child.signals)              # SIGTERM naar child
+            rt.child.rc = None; self.assertFalse(rt._stop_complete())
+            rt.child.rc = 0; rt._advance_child()
+            self.assertIsNone(rt.op)                          # géén nieuwe scrub tijdens stop (M4)
+            self.assertTrue(rt._stop_complete())
+    def test_stop_during_scrub_signals_and_waits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            sp = rec._mk("scrub"); sp.rc = None; rt.op = ("scrub", sp)
+            rt.request_stop()
+            self.assertIn(15, sp.signals)                    # scrub gesignaleerd (M4/§9)
+            self.assertFalse(rt._stop_complete())
+            sp.rc = 0; rt._advance_op(); self.assertTrue(rt._stop_complete())
+    def test_stop_before_first_tick_no_reconcile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp, marker=True)
+            calls = {"r": 0}; rt.a.reconcile.restart_dind = lambda: calls.__setitem__("r", 1)
+            rt.request_stop(); rt.tick()
+            self.assertEqual(calls["r"], 0); self.assertEqual(rec.starts, [])   # geen reconcile/scrub bij stop (M4)
+    def test_stop_killed_op_is_unclean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            sp = rec._mk("scrub"); rt.op = ("scrub", sp)
+            rt.a.reconcile.write_marker("scrub")                   # operatie in-flight
+            rt.request_stop(); sp.rc = -15                         # client door signaal gedood
+            rt._advance_op()
+            self.assertTrue(rt.a.reconcile.marker_present())       # marker bewaard (onzeker einde)
+            self.assertEqual(rt._stop_result(overshoot=False), 1)  # géén exit 0 (M1)
+    def test_deadline_returns_nonzero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            rt.child = rec._mk("runner"); rt.child.rc = None
+            self.assertEqual(rt._stop_result(overshoot=True), 1)   # geen succes bij deadline
+
 if __name__ == "__main__":
     unittest.main()
