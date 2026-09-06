@@ -22,6 +22,9 @@ class TransportProbe:
             return {"kind": "general", "error": None,
                     "status": getattr(resp, "status", 200) or 200, "schema_ok": schema_ok}
         except urllib.error.HTTPError as e:
-            return {"kind": "general", "error": None, "status": e.code, "schema_ok": False}
+            try:
+                return {"kind": "general", "error": None, "status": e.code, "schema_ok": False}
+            finally:
+                getattr(e, "close", lambda: None)()
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             return {"kind": "general", "error": str(e), "status": None, "schema_ok": False}
