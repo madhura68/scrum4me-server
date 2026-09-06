@@ -1,6 +1,7 @@
 # forgejo-runner/tests/test_cycle_runtime.py
-import os, tempfile, unittest
-from _harness import cr, write_toml, VALID_TOML, RC
+import io, os, tempfile, unittest, urllib.error
+from _harness import cr, write_toml, VALID_TOML, RC, classify_probe
+import cycle_adapters as ca
 
 class TestConfig(unittest.TestCase):
     def test_load_valid(self):
@@ -52,6 +53,26 @@ class TestReadinessConfirmed(unittest.TestCase):
     def test_too_close(self):
         r = cr.ReadinessConfirmed(); r.observe(RC.READY, 0.0); r.observe(RC.READY, 1.0)
         self.assertFalse(r.confirmed)
+
+class TestProbe(unittest.TestCase):
+    def _p(self, opener): return ca.TransportProbe("https://x", 5.0, opener=opener).probe()
+    def test_ready(self):
+        self.assertEqual(classify_probe(self._p(lambda r, timeout: io.BytesIO(b'{"version":"1"}'))), RC.READY)
+    def test_wrong_schema_not_ready(self):
+        p = self._p(lambda r, timeout: io.BytesIO(b'{"note":"no version here"}'))
+        self.assertEqual(classify_probe(p), RC.PROTOCOL)     # geen version-veld
+    def test_5xx(self):
+        def o(r, timeout): raise urllib.error.HTTPError("u", 503, "x", {}, None)
+        self.assertEqual(classify_probe(self._p(o)), RC.SOURCE_WAIT)
+    def test_401_protocol(self):
+        def o(r, timeout): raise urllib.error.HTTPError("u", 401, "x", {}, None)
+        self.assertEqual(classify_probe(self._p(o)), RC.PROTOCOL)
+    def test_urlerror(self):
+        def o(r, timeout): raise urllib.error.URLError("refused")
+        self.assertEqual(classify_probe(self._p(o)), RC.SOURCE_WAIT)
+    def test_readtimeout(self):
+        def o(r, timeout): raise TimeoutError("read timed out")
+        self.assertEqual(classify_probe(self._p(o)), RC.SOURCE_WAIT)
 
 if __name__ == "__main__":
     unittest.main()
