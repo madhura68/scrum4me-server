@@ -36,8 +36,8 @@ adapters komen later:
   snapshots (assigned/running per runner-ID, §7.9) vergen API-toegang die de
   transport-only-keuze niet biedt. `controller.nulbewijs_ok` blijft dus `False`.
 - **live per-cyclus trustgate**: de bestaande trustgate maakt geauthenticeerde
-  Forgejo-API-calls (zie §6, M6). De controller draait die in deze slice NIET
-  zelf; hij gate't op een bij deploy geproduceerde, groene verdict (§6.3). Een
+  Forgejo-API-calls (§6.3, M6). De controller draait die in deze slice NIET zelf;
+  hij gate't op een bij deploy geproduceerd, vers en gebonden verdict (§6.3). Een
   live per-cyclus trustgate mét credential is follow-up.
 - **maintenance-record arming** (cross-host onderhoudsvenster, stap F).
 - **`CREDENTIAL_ERROR`-detectie** (geauthenticeerde readiness-probe, 401/403).
@@ -52,13 +52,13 @@ adapters komen later:
   aanwezig; bereikbaar als `ssh janpeter@max2` (tailscale). Gemeten 2026-09-06.
 - De unit draait system-`/usr/bin/python3` zonder venv ⇒ de **controller** gebruikt
   alleen stdlib: `tomllib`, `urllib.request`, `subprocess`, `signal`, `logging`,
-  `time`, `json`, `sys`.
+  `time`, `json`, `sys`, `hashlib`.
 - Het beslis-hart `forgejo_runner_cycle.py` blijft **byte-identiek** op een dunne
   `__main__`-delegatie na (§4). De 99 bestaande tests blijven ongewijzigd groen.
 - De gedeelde bundel is byte-identiek op beide hosts (§6.1 migratieontwerp). Deze
   slice wijzigt de bundel op twee plekken (compose `command`, §6.2; en voegt de
-  controllerscripts toe); die wijzigingen zijn byte-identiek op beide hosts.
-  Hostspecifiek zijn alleen de waarden in `controller.toml`.
+  controllerscripts toe); byte-identiek op beide hosts. Hostspecifiek zijn alleen
+  de waarden in `controller.toml` en het deploy-verdict.
 
 ## 4. Architectuur — ports & adapters
 
@@ -68,16 +68,12 @@ zodat ze in tests vervangbaar zijn en het hart onaangeraakt blijft.
 | Bestand | Rol | Nieuw? |
 |---|---|---|
 | `scripts/forgejo_runner_cycle.py` | Puur beslis-hart. Krijgt onderaan enkel: `if __name__ == "__main__": from cycle_runtime import main; raise SystemExit(main())`. `SystemExit` is builtin en `main()` leest zelf `sys.argv` ⇒ **geen** extra import in het hart. Verder ongewijzigd. | bestaand + 2 regels |
-| `scripts/cycle_runtime.py` | `main(argv=None)` (default `sys.argv[1:]`): config laden, adapters bedraden, de serialiseerde poll-loop, signal-handling, logging. | nieuw |
+| `scripts/cycle_runtime.py` | `main(argv=None)` (default `sys.argv[1:]`): config laden, adapters bedraden, de serialiseerde poll-loop, de twee runtime-preconditions (§5.2), signal-handling, logging. | nieuw |
 | `scripts/cycle_adapters.py` | De neveneffect-adapters achter interfaces: `TransportProbe`, `DindHealth`, `TrustVerdict`, `RunnerLifecycle`, `Scrub`, `Reconcile`, `Clock`. | nieuw |
 
 `main` construeert de echte adapters en injecteert ze in een `Runtime`; tests
 injecteren fakes. De unit-`ExecStart` blijft ongewijzigd naar
 `forgejo_runner_cycle.py` wijzen.
-
-> **M6-fix (B2 in de review):** de eerdere delegatie riep `main(sys.argv[1:])` aan
-> zónder `sys` in het hart te importeren — een NameError bij elke start. `main()`
-> leest nu zelf `sys.argv`; het hart heeft geen `sys` nodig.
 
 ## 5. Runtime-model — één geserialiseerde poll-loop
 
@@ -85,47 +81,68 @@ Eén thread, geen asyncio (afgewezen: meer oppervlak, moeilijker deterministisch
 te testen; het beslis-hart is al synchroon). De loop tikt elke `poll_interval`
 (default 1 s); de readiness-probe + gates draaien op de `retry`-cadans (30 s).
 
-**Niet-blokkerend (M7-fix):** elke potentieel trage subprocess — image-pull, scrub
-en het runner-child — draait als een `Popen` die de loop **niet-blokkerend pollt**
-(`poll()`), zodat de 60 s-watchdog en de `SIGTERM`-flag in élke iteratie aan bod
-komen. Korte subprocessen (DinD-health, versie-probe) krijgen een harde
-subprocess-timeout. De controller doet zelf geen netwerk-API-calls (§6.3).
+**Niet-blokkerend (M7-fix):** elke potentieel trage cyclus-operatie — image-pull,
+scrub en het runner-child — draait als een `Popen` die de loop **niet-blokkerend
+pollt** (`poll()`), zodat de 60 s-watchdog en de `SIGTERM`-flag in élke iteratie
+aan bod komen. De runtime houdt een register van **alle** actieve cyclus-Popens
+bij (child, pull, scrub) t.b.v. het stopcontract (§9). Korte subprocessen
+(DinD-health, versie-probe) krijgen een harde subprocess-timeout. De controller
+doet zelf geen netwerk-API-calls (§6.3).
 
 Per iteratie, in deze volgorde:
 
 1. **Klok**: `now, wall = clock()` (`time.monotonic()`, `time.time()`).
 2. **Readiness + gates (op de 30 s-cadans, gecacht ertussen)**:
-   - transport-probe → `classify_probe(probe)` → `ReadinessClass`; onthoud de klasse
-     als `laatste_readiness`; `event = loop.submit("readiness", {"klasse": klasse})`;
-     `controller.on_event(event)`.
+   - transport-probe → `classify_probe(probe)` → `ReadinessClass`;
+     `event = loop.submit("readiness", {"klasse": klasse})`; `controller.on_event(event)`.
+   - **`readiness_confirmed`** (runtime-vlag, B1-fix): pas twee gelijke `READY`-probes
+     ≥ `CONFIRM_SECONDS` uiteen zetten hem `True`; **élke** niet-`READY` klasse trekt
+     hem onmiddellijk in (`False`). Een scrub of hart-statuswissel kent hem nooit toe.
    - `gates_groen = trust_verdict_groen and dind_healthy`; zet `controller.gates_groen`.
-     Trust en DinD zijn **gates**, geen readinessklasse (`classify_probe` gaat
-     alleen over de Forgejo-bron).
-3. **Watchdog**: `controller.tick(now, wall)` (commit een verlopen fence — dit is
-   óók het fence-herstelpad, §7.5).
-4. **Reconciliatie (eenmalig, vóór de eerste childstart)**: zie §6.1 stap 0.
-5. **Start-conditie (B1-fix)**: start een child alleen als
-   `controller.mag_child_starten` **én** `controller.state == State.WAITING` **én**
-   `laatste_readiness is READY`. Dus **nooit** vanuit `SOURCE_WAIT`. Loopt er al
-   een child → poll zijn exit niet-blokkerend.
-6. **Slaap** `poll_interval`.
-
-> **Waarom de extra start-condities (B1):** `mag_child_starten` (hart) is
-> `fence is None and not drain_gevraagd and gates_groen and state in
-> {WAITING, SOURCE_WAIT}` — het accepteert expliciet óók `SOURCE_WAIT` en toetst
-> geen bevestigde readiness. Zou de schil daarop alleen afgaan, dan start hij bij
-> koude start zodra trust+DinD groen zijn, vóór de eerste READY bevestigd is. Door
-> `state == WAITING` te eisen (alleen bereikbaar via bevestigde READY + gates,
-> `_on_readiness` regel ~330) én `laatste_readiness is READY` (ingetrokken bij elke
-> afwijking) dwingt de schil de bevestigde transport-readiness af zonder het hart
-> te wijzigen.
+     Trust en DinD zijn **gates**, geen readinessklasse.
+3. **Watchdog**: `controller.tick(now, wall)` (commit een verlopen fence — óók het
+   fence-herstelpad, §7.5).
+4. **Start-conditie**: start een child alleen als **alle vier** waar zijn —
+   `controller.mag_child_starten`, `controller.state == State.WAITING`,
+   `readiness_confirmed` én `clean_proven` (§5.2). De schil borgt `clean_proven`
+   vóór de launch via de scrub-en-bewijs-stap (§6.1). Loopt er al een child → poll
+   zijn exit niet-blokkerend.
+5. **Slaap** `poll_interval`.
 
 ### 5.1 Overgang naar `WAITING`
 
 Vanuit `SOURCE_WAIT` beweegt het hart naar `WAITING` zodra een **bevestigde**
-`READY` (twee gelijke probes ≥ 5 s uiteen) samenvalt met `gates_groen` en geen
-fence (`_on_readiness`, koude-startpad, regel ~330–333). De schil voedt daarvoor
-readiness-events en zet `gates_groen`; hij start pas een child in `WAITING` (§5).
+`READY` samenvalt met `gates_groen` en geen fence (`_on_readiness`, koude-startpad,
+regel ~330–333). De schil voedt daarvoor readiness-events en zet `gates_groen`; hij
+start pas een child als óók §5.2 groen is.
+
+### 5.2 Twee runtime-preconditions die het hart niet kent
+
+`controller.mag_child_starten` is een **noodzakelijke, geen voldoende** toestemming:
+het accepteert óók `SOURCE_WAIT`, en het hart kan `WAITING`/`QUARANTINED` bereiken
+langs paden die géén verse readiness of schone DinD bewijzen. De schil bewaart
+daarom twee eigen preconditions, allebei fail-closed en **geen van beide door
+readiness-herstel toe te kennen**:
+
+- **`readiness_confirmed` (B1).** Sluit het gat dat `_on_scrub_done` (regel 417) bij
+  groene gates rechtstreeks naar `WAITING` gaat en dat "de laatste probe was READY"
+  al waar is bij één **onbevestigde** `READY`. Tegenvoorbeeld dat de schil moet
+  weigeren (30 s-probes): READY t=0/30 → WAITING; transport-fout `SOURCE_WAIT`
+  t=60/90 (tijdens de child, dus zonder `job_accepted` bevestigd); `child_exit(0)`
+  t=91; `scrub_done(ok)` t=92 → hart `WAITING` zonder fence; **eerste, nog
+  onbevestigde** READY t=120. Zonder deze vlag zijn alle andere condities waar en
+  start de schil op één probe. Met `readiness_confirmed` — ingetrokken op de
+  `SOURCE_WAIT` t=60 — start hij pas na de tweede bevestigde READY (t≈150).
+- **`clean_proven` (B2).** DinD is aantoonbaar schoon sinds de laatste child.
+  Ingetrokken zodra een child start én bij een scrub-fout; toegekend **alleen** na
+  een geslaagde scrub + schoonbewijs (§7.9 stap 8). Nodig omdat het hart na een
+  **scrub-fout** (`scrub_done(ok=False)` → `QUARANTINED`, regel 397) bij een latere
+  bevestigde READY + gates weer naar `WAITING` opent (regel 330–333) **zonder nieuwe
+  scrub**. `clean_proven` blijft dan `False`; de schil start niet en draait eerst
+  opnieuw scrub+bewijs (§6.1). Readiness-herstel kan dit niet omzeilen.
+
+Geen permanente koude-startdeadlock: aanhoudend groene gates + bevestigde READY +
+een geslaagde scrub leveren uiteindelijk alle vier de condities.
 
 ## 6. Adapters (dun)
 
@@ -135,78 +152,98 @@ weg gebruiken en nooit op de host-`docker.sock` terugvallen (§7.5).
 
 | Adapter | Implementatie (dun) | Uitkomst |
 |---|---|---|
-| `TransportProbe` | `urllib` `GET {forgejo.base_url}/api/v1/version`, timeout `probe_timeout`. **Onderscheidt** `HTTPError` (→ `status=code`) van `URLError`/timeout (→ `error=<str>`), zodat een HTTP 401/403 niet via `error` als SOURCE_WAIT wegvalt. | dict `{"kind":"general","error":<str\|None>,"status":<int\|None>,"schema_ok":<bool>}` voor `classify_probe`. `schema_ok` = JSON met veld `version`. Nooit `kind:"auth"` in deze slice. |
+| `TransportProbe` | `urllib` `GET {forgejo.base_url}/api/v1/version`, timeout `probe_timeout`. **Onderscheidt** `HTTPError` (→ `status=code`) van `URLError`/timeout (→ `error=<str>`), zodat een HTTP 401/403 niet via `error` als SOURCE_WAIT wegvalt. | dict `{"kind":"general","error":<str\|None>,"status":<int\|None>,"schema_ok":<bool>}`. `schema_ok` = JSON met veld `version`. Nooit `kind:"auth"`. |
 | `DindHealth` | `docker compose exec -T dind docker -H tcp://127.0.0.1:2375 info` (rc 0 = gezond), harde subprocess-timeout. Ook: `docker compose up -d dind` als DinD niet loopt. | bool. |
-| `TrustVerdict` | **Lees** `trust_verdict_path` (JSON), gate op `ok == true` én bestandsleeftijd ≤ `trust_verdict_max_age` (§6.3). De controller draait de trustgate-CLI **niet** zelf. | bool (+ reden bij niet-groen/verouderd/afwezig). |
-| `RunnerLifecycle` | start: `docker compose --profile cycle run --rm runner` (verse container; het `one-job --wait`-commando staat in compose, §6.2). Niet-blokkerende `Popen`; propageert de exitcode. stop: `SIGTERM` naar het proces, wacht ≤ `child_stop_grace` (afgestemd op de runner-`shutdown_timeout` van 3 m). | `Popen`; bij exit de returncode. |
-| `Scrub` | bestaande `scrub-dind.sh` als niet-blokkerende `Popen`; exit 0 = schoon. | bool. |
+| `TrustVerdict` | **Lees** `trust.verdict_path` (JSON) en valideer §6.3: `ok==true`, `measured_at` ≤ `verdict_max_age`, en binding (`forgejo_target`, `labels_sha256`, `allowlist_sha256`) == de actuele controllerconfig/bestanden. Draait de trustgate-CLI **niet**. | bool (+ reden bij niet-groen/verouderd/mismatch/afwezig). |
+| `RunnerLifecycle` | start: `docker compose --profile cycle run --rm runner` (verse container; `one-job --wait` staat in compose, §6.2). Niet-blokkerende `Popen` in het register (§9); propageert de exitcode. stop: `SIGTERM` naar het proces, wacht ≤ `child_stop_grace` (≈ runner-`shutdown_timeout` 3 m). | `Popen`; bij exit de returncode. |
+| `Scrub` | bestaande `scrub-dind.sh` als niet-blokkerende `Popen` in het register (§9); exit 0 = schoon. | bool. |
 | `Reconcile` | `docker compose ps`/`docker ps` gefilterd op de compose-projectlabels om achtergebleven beheerde runnercontainers te vinden (§6.1 stap 0). | lijst container-ID's. |
 | `Clock` | `(time.monotonic(), time.time())`. | tuple. |
 
-### 6.1 De cyclus (§7.9), dun
+### 6.1 De cyclus (§7.9), dun — schoon-vóór-elke-start
 
-**Stap 0 — startup-reconciliatie (B3-fix), eenmalig vóór de eerste childstart:**
+**`clean_proven`-levenscyclus (B2):** `False` bij programmastart, ingetrokken zodra
+een child start en bij een scrub-fout; **toegekend uitsluitend** door stap 8
+hieronder. De start-conditie (§5 stap 4) eist `clean_proven`, dus elke start —
+koud, na een geslaagde job, of na een eerdere scrub-fout — passeert eerst een
+geslaagd schoonbewijs.
+
+**Stap 0 — startup-reconciliatie (B3), eenmalig vóór de eerste childstart:**
 identificeer via de compose-projectlabels of er een **beheerde runnercontainer**
 bestaat (achtergebleven na een SIGKILL/onschone stop; het ontbreken van een lokaal
 `Popen` bewijst dat niet). Bestaat er één → **fail-closed**: geen start, alarm, tot
-hij gecontroleerd is afgehandeld. DinD draait onafhankelijk (`restart: always`,
-blijvend volume), dus bewijs daarna een schone DinD-beginstaat via `scrub-dind.sh`
-+ het schoonbewijs (§7.9 stap 8) vóór de eerste start.
+hij gecontroleerd is afgehandeld.
 
-Wanneer daarna `state == WAITING` + `laatste_readiness is READY` (§5):
+Wanneer `state == WAITING` + `readiness_confirmed` (§5) en er nog geen child loopt:
 
-1. **trust-verdict** groen én vers (§6.3), anders §7.4;
+1. **trust-verdict** groen, vers én gebonden (§6.3), anders §7.4;
 2. **DinD-health** groen, anders §7.4;
 3. **toegestane images**: parse `allowed-job-images.txt` in het **bestaande
    formaat** — sla lege regels en `#`-commentaar over, splits elke dataregel op
    `<digest>\t<bytes>`, valideer alleen de **digest** (`…@sha256:<64hex>`), en geef
    uitsluitend die digest als los argv-element aan `docker compose exec -T dind
-   docker pull <digest>`. De groottekolom is voor `preflight.sh`, niet voor pull.
-   Een ongeldige digest of pull-fout ⇒ §7.4 (geen start);
-4. **start** exact één `docker compose --profile cycle run --rm runner` (het
-   `one-job --wait`-commando komt uit compose, §6.2).
+   docker pull <digest>` (niet-blokkerende Popen). De groottekolom is voor
+   `preflight.sh`, niet voor pull. Ongeldige digest of pull-fout ⇒ §7.4;
+8. **scrub + schoonbewijs**: als `clean_proven` nog `False` is (koude start,
+   overleefde vorige scrub-fout, of onderbroken scrub), draai `scrub-dind.sh`
+   (niet-blokkerende Popen) en bewijs schoon (§7.9 stap 8). Slaagt dit → zet
+   `clean_proven=True`. Faalt het → blijf geblokkeerd (geen start), alarm, en
+   probeer opnieuw op de volgende cyclus. Readiness-herstel zet `clean_proven`
+   nooit;
+9. **start** exact één `docker compose --profile cycle run --rm runner`; **trek
+   `clean_proven` in** op het moment van starten.
 
-Daarna poll de schil de child-exit niet-blokkerend (§7.3).
+(De stapnummers volgen §7.9; stap 4–7 — child starten, wachten, bewijzen geen
+runnerproces, scrub na exit — lopen via §7.3.)
 
-### 6.2 `compose.yaml`: het one-job-commando vastleggen (M4-fix)
+### 6.2 `compose.yaml`: het one-job-commando vastleggen (M4-ronde1)
 
-De runnerservice heeft nu **geen** `command`/`entrypoint`; `docker compose run
---rm runner` zou de image-default draaien (een profiel selecteert alleen de
-service, het verandert de opdracht niet). Deze slice voegt aan de runnerservice
-toe:
+De runnerservice heeft nu **geen** `command`/`entrypoint`; een profiel selecteert
+alleen de service, het verandert de image-opdracht niet. Deze slice voegt aan de
+runnerservice toe:
 
 ```yaml
     command: ["one-job", "--wait"]
 ```
 
 Stap B valideerde al dat de gepinde Runner-12.10.1-image `one-job --wait`
-accepteert; het config-pad wordt via de mount `…/config.yml` gevonden. **Bring-up-
-verificatie (stap D):** `docker inspect` op de gepinde image om entrypoint + de
-resulterende argv te bevestigen vóór productieactivatie; leg dat vast onder
+accepteert; het config-pad wordt via de mount `…/config.yml` gevonden.
+**Bring-up-verificatie (stap D):** `docker inspect` op de gepinde image bevestigt
+entrypoint + de resulterende argv vóór productieactivatie; leg dat vast onder
 `evidence/`.
 
-### 6.3 De trustgate als deploy-verdict (M6-fix + ontwerpbesluit)
+### 6.3 De trustgate als deploy-verdict (M6-ronde1 + M3-ronde2)
 
 De bestaande `trust_scope_cli.py` is een **geauthenticeerde netwerkclient**: hij
 vereist `--allowlist`, `--labels`, `--out` en `FORGEJO_TOKEN` (zonder token exit
 `30`) en doet gepagineerde Forgejo-API-calls. Een controller die dat live draait
-zou een API-credential nodig hebben — strijdig met de transport-only-keuze "geen
-tweede credential in de controller".
+zou een API-credential nodig hebben — strijdig met de transport-only-keuze.
 
-**Besluit voor de dunne slice:** de **operator** draait bij deploy (stap D) de
-bestaande CLI met token/labels/out en legt `trust-verdict.json` neer op
-`trust_verdict_path`. De controller **leest** dat verdict en gate't op
-`ok == true` én leeftijd ≤ `trust_verdict_max_age`; hij houdt zelf geen credential
-en doet geen trust-API-calls. Een verouderd, ontbrekend of niet-groen verdict ⇒
-`gates_groen=False` (§7.4). Gevolg + bewuste beperking: een repo-/allowlist-
-wijziging tussen deploys wordt pas bij een nieuw deploy-verdict gezien; de **live
-per-cyclus trustgate** (mét credential) is follow-up (§13). Dit staat los van de
-readiness-probe en voegt geen readiness-credential toe.
+**Besluit voor de dunne slice:** de **operator** produceert het verdict bij deploy;
+de controller **leest** het. Dit is bewust een **zwakkere, tijdgebonden** garantie
+dan een live gate (§13-follow-up), maar moet binnen die grens strikt fail-closed
+blijven. Daarvoor een expliciet **publicatiecontract** (M3):
+
+- draai de CLI naar een **verse, lege** `--out`-directory;
+- publiceer **alleen na CLI-exit `0`** atomair (rename) een verdict-artifact voor
+  de controller; een mislukte meting (exit 30 door ontbrekend token, onleesbare
+  inventaris of niet-goedgekeurde allowlist — `trust_scope_cli.py:188–208,231–238`)
+  **laat het oude groen niet** als nieuwe deployvalidatie gelden;
+- het artifact bevat naast de CLI-`ok` een **meettijd** `measured_at` en een
+  **binding**: `forgejo_target`, `labels_sha256`, `allowlist_sha256` (de bestaande
+  verdict-JSON, regels 236–241, bevat die niet; de deploy-wrapper voegt ze toe).
+
+De controller-adapter `TrustVerdict` gate't groen **alleen** als: `ok==true`, én
+`now - measured_at ≤ verdict_max_age` (meettijd, **niet** de bestands-mtime, zodat
+kopiëren met verse mtime niet vals-vers wordt), én de binding gelijk is aan de
+target/labels/allowlist die de controller nu gebruikt. Anders → `gates_groen=False`
+(§7.4). Gevolg + bewuste beperking: een repo-/allowlist-wijziging tussen deploys
+wordt pas bij een nieuw deploy-verdict gezien.
 
 ## 7. Toestandsbedrading — hoe de schil het hart voedt
 
 De schil muteert **nooit** `controller.state` rechtstreeks; hij voedt events en
-leest `state`/`mag_child_starten`. Dit houdt de "geserialiseerde eventloop" intact.
+leest `state`/`mag_child_starten` + zijn eigen preconditions (§5.2).
 
 ### 7.1 Events die de schil indient
 
@@ -217,49 +254,45 @@ leest `state`/`mag_child_starten`. Dit houdt de "geserialiseerde eventloop" inta
 ### 7.2 Gates → `gates_groen`
 
 `gates_groen = trust_verdict_groen and dind_healthy`, op de 30 s-cadans gezet.
-Effect via het hart: alleen bij `gates_groen` kan `SOURCE_WAIT`/`QUARANTINED` →
-`WAITING` en, met de start-condities uit §5, mag een child starten.
+Alleen bij `gates_groen` kan het hart `SOURCE_WAIT`/`QUARANTINED` → `WAITING`; een
+start vereist bovendien §5.2.
 
 ### 7.3 Child-levenscyclus en exitcode (§7.9-exitcodecontract)
 
-`docker compose --profile cycle run --rm runner` propageert de exitcode van de
-runnercontainer. De schil pollt niet-blokkerend; bij exit:
-`submit("child_exit",{code})` → `SCRUBBING` → `scrub-dind.sh` →
-`submit("scrub_done",{ok})`. Het hart beslist:
+`docker compose --profile cycle run --rm runner` propageert de exitcode. De schil
+pollt niet-blokkerend; bij exit: `submit("child_exit",{code})` → `SCRUBBING` →
+`scrub-dind.sh` → `submit("scrub_done",{ok})`. Het hart beslist:
 
-- `ok` én exit `0` → `WAITING` (volgende cyclus). Groene én rode workflow leveren
-  beide exit `0`; de terminale Forgejo-status (groen/rood) wordt **buiten** de
-  controller waargenomen (stap-E-bewijs), niet door de controller gecorreleerd.
-- exit ≠ 0 (config/init/poller/runtime-fout) of scrub-fout → `QUARANTINED`;
-  binnen dezelfde scrubroute niet heropenen (§7.9 stap 5). Een latere bevestigde
-  `READY` + `gates_groen` heropent `QUARANTINED` wél via het hart (regel ~330).
+- `ok` én exit `0` → `WAITING`; groene én rode workflow leveren beide exit `0`; de
+  terminale Forgejo-status wordt buiten de controller waargenomen (stap-E-bewijs).
+- exit ≠ 0 of scrub-fout → `QUARANTINED`. Het hart kan `QUARANTINED` bij een latere
+  bevestigde READY + gates heropenen (regel 330–333), **maar** een start vereist
+  `clean_proven` (§5.2/§6.1 stap 8), dat na een scrub-fout `False` is en alleen door
+  een nieuwe geslaagde scrub hersteld wordt — readiness-herstel omzeilt de scrub dus
+  niet (B2).
 
-**`job_accepted` uitgesteld**: het hart gaat `WAITING`→`RUNNING` pas op een
-`job_accepted`-event; runnerlog-parsing daarvoor is bros en enablet de
-(uitgestelde) cancel/redispatch. Zonder dat event blijft de zichtbare toestand
+**`job_accepted` uitgesteld**: zonder dat event blijft de zichtbare toestand
 `WAITING`→`SCRUBBING`; de job draait en scrubt gewoon (`_on_child_exit` gaat
-ongeacht de vorige state naar `SCRUBBING`). De runner draait sowieso tot
-`one-job --wait` klaar is; er wordt geen job afgekapt. **Functioneel gevolg
-(codex):** een fout die tijdens de job wordt bevestigd wordt zonder `RUNNING`-label
-niet als `volgende_state` bewaard; de schil vertrouwt daarom voor de correctheid
-op de start-condities (§5) en de reconciliatie (§6.1 stap 0), niet op het
-`RUNNING`/`volgende_state`-spoor.
+ongeacht de vorige state naar `SCRUBBING`). De runner draait tot `one-job --wait`
+klaar is; er wordt geen job afgekapt. Omdat een tijdens de job bevestigde bronfout
+zónder `RUNNING`-label niet als `volgende_state` wordt bewaard, leunt de
+correctheid op de runtime-preconditions (§5.2) en de reconciliatie (§6.1), niet op
+het `RUNNING`/`volgende_state`-spoor.
 
 ### 7.4 Gate-falen (dun, veilig)
 
-- **trust-verdict niet groen/vers** of **DinD ongezond**: `gates_groen=False` +
-  alarm + geen runnerstart. De veiligheidswerking (geen runner bij twijfel) is
-  behouden; de toestand blijft `SOURCE_WAIT`/geblokkeerd. **Bewuste beperking:** de
-  slice zet hier niet het `QUARANTINED`-label (het hart kent geen
-  `trust→QUARANTINED`-overgang en het hart wordt niet aangepast). **Geen crash-loop:**
-  de controller blijft draaien en pollt door; hij exit niet. Het volwaardige
-  trust-`QUARANTINED`-label komt in de follow-up.
-- **pre-pull/image-fout**: idem, geen start; alarm.
+- **trust-verdict niet groen/vers/gebonden** of **DinD ongezond**: `gates_groen=False`
+  + alarm + geen runnerstart; de controller blijft draaien (geen crash-loop). De
+  toestand blijft `SOURCE_WAIT`/geblokkeerd. **Bewuste beperking:** geen
+  `QUARANTINED`-label bij een trust-hardfout (het hart kent die overgang niet en
+  wordt niet gewijzigd); dat label is follow-up.
+- **pre-pull/image-fout of scrub-fout**: geen start; alarm; `clean_proven` blijft
+  `False` tot een geslaagde scrub.
 
 ### 7.5 Fence-herstel gebeurt in het hart (geen herstart-tak)
 
 Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herstelt
-**vanzelf in het hart**, zonder nulbewijs en zonder een runtime-herstart:
+**vanzelf in het hart**, zonder nulbewijs en zonder runtime-herstart:
 
 - de 60 s-watchdog `tick` (regel ~360–379) commit een verlopen fence naar de
   zwaarste sinds latch waargenomen klasse en reset de bevestiging; bij herstelde
@@ -267,11 +300,11 @@ Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herste
 - daarna geven twee bevestigde `READY`-probes + `gates_groen` via de koude-startpad
   (regel ~330–333) weer `WAITING`.
 
-Herstel duurt dus ~60 s (watchdog) + ~2 probes (~30–60 s). De runtime doet hier
-niets bijzonders. (De eerdere "herstart bij gefencete impasse" is **verwijderd**:
-hij berustte op de onjuiste premisse dat een fence alleen met nulbewijs wist —
-regels 336–338 (bevestigde fout) en 377–379 (watchdog) wissen hem óók.) De enige
-herstart is systemd's `Restart=on-failure` bij een echte processcrash.
+Herstel duurt ~60 s (watchdog) + ~2 probes. De runtime doet hier niets bijzonders.
+(De eerdere "herstart bij gefencete impasse" is verwijderd: hij berustte op de
+onjuiste premisse dat een fence alleen met nulbewijs wist — regels 336–338 en
+377–379 wissen hem óók.) De enige herstart is systemd's `Restart=on-failure` bij
+een echte processcrash.
 
 ## 8. `controller.toml` (schema)
 
@@ -289,8 +322,10 @@ allowed_images_file = "/opt/forgejo-runner/allowed-job-images.txt"
 child_stop_grace_seconds = 200            # ≈ runner-shutdown_timeout 3m + marge, < systemd TimeoutStopSec 300
 
 [trust]
-verdict_path = "/opt/forgejo-runner/trust-verdict.json"   # door de operator bij deploy geproduceerd
-verdict_max_age_seconds = 86400                            # vers-eis
+verdict_path = "/opt/forgejo-runner/trust-verdict.json"   # deploy-wrapper-artifact (§6.3)
+verdict_max_age_seconds = 86400                            # getoetst op measured_at, NIET op mtime
+labels_file = "/opt/forgejo-runner/labels.txt"            # voor de labels_sha256-binding
+allowlist_file = "/opt/forgejo-runner/trusted-actions-scope.yml"  # voor de allowlist_sha256-binding
 
 [docker]
 subprocess_timeout_seconds = 30           # harde deadline op korte docker-calls (health/pull-init)
@@ -303,38 +338,40 @@ retry_interval_seconds = 30               # readiness+gates-cadans
 level = "INFO"
 ```
 
-- **Geen** `confirm_seconds`/`fence_max_age_seconds` in config (MINOR 8-fix):
-  `Confirmation` en `Fence` lezen de **moduleconstanten** `CONFIRM_SECONDS` (5) en
-  `FENCE_MAX_AGE_SECONDS` (60); config zou die niet wijzigen. Tests versnellen via
-  de **fake klok** (die de monotone tijd stuurt), niet via kortere constanten.
-- Geen secret in het bestand; het runner-token is een **pad** dat de compose
-  al `0600` read-only in de runnercontainer mount (§7.5). `controller.toml` wordt
-  met echte hostwaarden in stap D geplaatst en is géén onderdeel van de
-  byte-identieke bundel-hash.
+- **Geen** `confirm_seconds`/`fence_max_age_seconds` in config (MINOR 8): `Confirmation`
+  en `Fence` lezen de moduleconstanten `CONFIRM_SECONDS` (5) en `FENCE_MAX_AGE_SECONDS`
+  (60). De runtime-`readiness_confirmed` gebruikt óók `CONFIRM_SECONDS`. Tests
+  versnellen via de fake klok, niet via config.
+- Geen secret in het bestand; het runner-token is een pad dat de compose al `0600`
+  read-only mount (§7.5). `controller.toml` en het deploy-verdict zijn hostspecifiek
+  en géén onderdeel van de byte-identieke bundel-hash.
 
-## 9. Signal-handling / graceful stop (M7-fix)
+## 9. Signal-handling / graceful stop (M7-ronde1 + M4-ronde2)
 
 `SIGTERM`/`SIGINT` (unit `KillSignal=SIGTERM`, `TimeoutStopSec=300`) zet een flag
 die de niet-blokkerende loop élke iteratie leest; roep `controller.drain(now)`.
-Dan:
+Het stopcontract kijkt naar **alle** actieve cyclus-Popens in het register (§5),
+niet alleen naar het runner-child:
 
-- **geen child**: exit `0`.
-- **child loopt**: stuur `SIGTERM` naar het `compose run`-proces (dat de runner
-  zijn eigen `shutdown_timeout` van 3 m gunt), poll tot exit ≤ `child_stop_grace`
-  (~200 s, binnen systemds 300 s). Laat het hart de child-exit via de normale
-  `child_exit`→scrub-route eindigen; **exit `0` alleen na bevestigd child-weg**
-  (container afwezig). Scrub-voor-exit is best-effort binnen het resterende budget;
-  komt hij niet af, dan zorgt de reconciliatie bij de volgende start (§6.1 stap 0)
-  voor de schone beginstaat.
-- **child stopt niet op tijd**: geen schone-stopclaim; systemd `SIGKILL` na 300 s
-  is een **onschone stop**, en de startup-reconciliatie (§6.1 stap 0) — niet
-  "`SOURCE_WAIT` + gates" — maakt de volgende start veilig.
+- **niets actief**: exit `0`.
+- **runner-child actief**: `SIGTERM` naar het `compose run`-proces (dat de runner
+  zijn `shutdown_timeout` 3 m gunt), poll ≤ `child_stop_grace` (~200 s, binnen
+  systemds 300 s). Laat het hart de exit via `child_exit`→scrub afhandelen.
+- **pull of scrub actief (geen runner-child)**: deze muteren DinD; §9 geeft hier
+  **niet** onmiddellijk exit 0. Stuur ze `SIGTERM`, wacht bounded op afronding, en
+  beschouw een afgekapte pull/scrub als onschone stop.
+- **exit `0` alleen na bevestigd einde van álle cyclus-operaties** (child weg,
+  geen actieve pull/scrub). Lukt dat niet binnen het budget → geen schone-stopclaim;
+  systemd `SIGKILL` na 300 s is een onschone stop. De **volgende start** is dan
+  veilig doordat (a) de startup-reconciliatie (§6.1 stap 0) een achtergebleven
+  runnercontainer fail-closed afvangt en (b) `clean_proven` bij programmastart
+  `False` is, zodat stap 8 eerst een geslaagde scrub+bewijs afdwingt — een
+  onderbroken oude scrub/pull kan zo nooit een nieuwe start overlappen.
 
-> De runnerpolicy heeft `timeout: 3h` en `shutdown_timeout: 3m` (`runner-config.policy.yml`).
-> Een 3-uursjob past niet binnen systemds 300 s; deze slice belooft daarom **geen**
-> gegarandeerde graceful afronding van een lopende job, maar wel een veilige
-> volgende start via reconciliatie. (De eerdere claim "300 s dekt een job ruim" is
-> verwijderd.)
+> De runnerpolicy heeft `timeout: 3h` en `shutdown_timeout: 3m`
+> (`runner-config.policy.yml`). Een 3-uursjob past niet binnen systemds 300 s; deze
+> slice belooft daarom **geen** gegarandeerde graceful afronding van een lopende
+> job, maar wel een veilige volgende start via reconciliatie + `clean_proven`.
 
 ## 10. Logging
 
@@ -348,34 +385,41 @@ dunne slice is een alarm log-only (geen queue/Forgejo-sink).
 
 - **Beslis-hart**: de 99 bestaande tests blijven ongewijzigd draaien (regressiegate).
 - **Runtime (nieuw)** `test_cycle_runtime_*.py`, stdlib `unittest`, met **fake
-  adapters** (geïnjecteerd; geen echte Docker/Forgejo/subprocess), een **fake
-  clock** en een gedreven loop (stap-voor-stap i.p.v. `sleep`). Dekking:
-  1. koude start: gates groen + eerste (onbevestigde) READY → **géén** start;
-     pas na bevestigde READY (state `WAITING`) → start (B1);
-  2. `state`/`laatste_readiness`-start-conditie: nooit starten vanuit `SOURCE_WAIT`;
-  3. start-stappen in de volgorde van `cycle_stappen()`;
-  4. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 of scrub-fout →
-     `QUARANTINED`;
-  5. transport-fout → `SOURCE_WAIT`; herstel → `WAITING`; fence-blip → watchdog →
-     `SOURCE_WAIT` → `WAITING`, **zonder** herstart (§7.5);
-  6. trust-verdict niet groen / verouderd / afwezig → geen start, geen crash-loop;
-  7. **startup-reconciliatie** (B3): achtergebleven beheerde runnercontainer →
-     fail-closed geen start; schone begintoestand → wel door;
-  8. **image-parser** (M5): echt bestandsformaat (`#`-comment + `digest\tbytes`) →
-     alleen de digest aan pull; ongeldige digest → geen start;
-  9. **stop-contract** (M7): `SIGTERM` → child krijgt SIGTERM; exit 0 alleen na
-     bevestigd child-weg; child dat de grens overschrijdt → geen schone-stopclaim;
-  10. **niet-blokkerend** (M7): een hangende pull/scrub blokkeert de watchdog en de
-      SIGTERM-flag niet (fake Popen die "nog niet klaar" pollt);
-  11. **RunnerLifecycle-argv** (M4): het gestarte commando bevat `one-job --wait`.
-- **Config**: `controller.toml` laadt en valideert (ontbrekende sleutel → nette
-  fout, geen stacktrace).
-- **Integratie-smoke op max2** (stap D/E, handmatig via SSH, geen CI): deploy-
-  verdict geplaatst; `docker inspect` bevestigt de runner-entrypoint/argv; DinD
-  omhoog; controller start; runner online in Forgejo; één groene + één rode
+  adapters**, een **fake clock** en een gedreven loop (stap-voor-stap i.p.v. `sleep`):
+  1. koude start: gates groen + eerste (onbevestigde) READY → **géén** start; pas na
+     bevestigde READY (§5.2) → start;
+  2. **B1-spoor**: READY t=0/30 → WAITING; SOURCE_WAIT t=60/90; `child_exit(0)` t=91;
+     `scrub_done(ok)` t=92; **eerste** READY t=120 → **géén** start; tweede
+     bevestigde READY t≈150 → start;
+  3. **B2**: `scrub_done(ok=False)` → `QUARANTINED`; daarna blijvend groene readiness
+     + health → hart mag `WAITING` heropenen, maar **nul nieuwe starts** tot een
+     geslaagde scrub `clean_proven` weer zet;
+  4. `clean_proven`-levenscyclus: ingetrokken bij childstart en scrub-fout; alleen
+     door geslaagde scrub+bewijs gezet;
+  5. start-stappen in de volgorde van `cycle_stappen()`;
+  6. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 → `QUARANTINED`;
+  7. transport-fout → `SOURCE_WAIT`; fence-blip → watchdog → `SOURCE_WAIT` →
+     `WAITING`, **zonder** herstart (§7.5);
+  8. **startup-reconciliatie** (B3): achtergebleven beheerde runnercontainer →
+     fail-closed geen start;
+  9. **image-parser** (M5): echt formaat (`#`-comment + `digest\tbytes`) → alleen de
+     digest aan pull; ongeldige digest → geen start;
+  10. **trust-verdict** (M3): niet-groen / verouderd op `measured_at` / binding-
+      mismatch (target/labels/allowlist) / afwezig → geen start; verse gebonden groen
+      → wél; oud groen met verse **mtime** → nog steeds geweigerd;
+  11. **stop-contract** (M4): `SIGTERM` tijdens een lopende **pull** en tijdens een
+      lopende **scrub** → bounded stop, geen exit-0-vóór-afronding; daarna schone
+      herstart; `SIGTERM` met runner-child → child krijgt SIGTERM, exit 0 alleen na
+      bevestigd child-weg;
+  12. **niet-blokkerend** (M7): een hangende pull/scrub blokkeert watchdog + SIGTERM
+      niet;
+  13. **RunnerLifecycle-argv** (M4-ronde1): het gestarte commando bevat `one-job --wait`.
+- **Config**: `controller.toml` laadt en valideert (ontbrekende sleutel → nette fout).
+- **Integratie-smoke op max2** (stap D/E, handmatig via SSH, geen CI): deploy-wrapper
+  produceert een gebonden verdict; `docker inspect` bevestigt runner-entrypoint/argv;
+  DinD omhoog; controller start; runner online in Forgejo; groene + rode
   smoke-workflow; groene scrub; `SIGTERM` stopt schoon. Bewijs onder `evidence/`.
-- `ruff` schoon; `shellcheck` op eventueel gewijzigde shell; secret-scan
-  pre-commit hook actief.
+- `ruff` schoon; `shellcheck` op gewijzigde shell (deploy-wrapper); secret-scan hook.
 
 ## 12. Verificatie-commando's
 
@@ -388,9 +432,8 @@ ruff check scripts/
 ## 13. Follow-up (na deze slice, buiten scope)
 
 1. assignment-nulbewijs-adapter (Forgejo-API) → volwaardige `DRAINING` + in-place
-   fence-herstel via de READY-recoverypad (naast het watchdog-pad).
-2. **live per-cyclus trustgate** (mét credential) → vervangt het deploy-verdict
-   (§6.3).
+   fence-herstel via het READY-recoverypad.
+2. **live per-cyclus trustgate** (mét credential) → vervangt het deploy-verdict (§6.3).
 3. geauthenticeerde probe → echte `CREDENTIAL_ERROR`.
 4. maintenance-record arming (stap F).
 5. cancel/redispatch + `job_accepted`-detectie + terminale-status-correlatie.
@@ -398,49 +441,58 @@ ruff check scripts/
 
 ## 14. Risico's / open punten
 
-- **Trustgate-deploy-verdict (§6.3)** is een ontwerpbesluit dat de transport-only-
-  keuze doortrekt naar de trustgate; JP kan besluiten de controller tóch een
-  credential + live trustgate te geven.
+- **Trustgate-deploy-verdict (§6.3)** is een zwakkere, tijdgebonden garantie dan een
+  live gate; JP kan besluiten de controller tóch een credential + live trustgate te
+  geven. Binnen de gekozen grens is hij strikt fail-closed gemaakt (M3).
 - **`compose run` + `command` (§6.2)** en de image-entrypoint/argv moeten in de
   max2-smoke met `docker inspect` bevestigd worden.
 - **Stop van een lopende job**: een 3-uursjob wordt bij `SIGTERM` niet gegarandeerd
-  gracefully afgerond binnen systemds 300 s; veiligheid komt van de reconciliatie,
-  niet van een graceful-afrondgarantie.
-- **`scrum4me-server` Python-versie** (stap G, byte-identieke bundel) moet
-  `tomllib` (3.11+) hebben; te meten vóór stap G, niet in deze slice.
+  gracefully afgerond binnen systemds 300 s; veiligheid komt van reconciliatie +
+  `clean_proven`, niet van een graceful-afrondgarantie.
+- **`scrum4me-server` Python-versie** (stap G, byte-identieke bundel) moet `tomllib`
+  (3.11+) hebben; te meten vóór stap G, niet in deze slice.
 
 ## Review record
 
-Loop: delta-variant, één cross-model reviewer `mac:codex` (de spec is
-claude-authored). Documentcommit bij ronde 1: `3e87342`.
+Loop: delta-variant, één cross-model reviewer `mac:codex` (spec claude-authored).
 
-### Ronde 1 — mac:codex — NO-GO (3 BLOCKER, 4 MAJOR, 1 MINOR)
+### Ronde 1 — commit `3e87342` — mac:codex — NO-GO (3 BLOCKER, 4 MAJOR, 1 MINOR)
 
 Alle bevindingen geverifieerd tegen de boom en aanvaard:
 
-- **B1** — lus start vóór bevestigde readiness (`mag_child_starten` accepteert
-  `SOURCE_WAIT`). Fix: start-conditie eist `state == WAITING` én
-  `laatste_readiness is READY`; nooit vanuit `SOURCE_WAIT` (§5).
-- **B2** — `sys` ongebonden in de delegatie. Fix: `main()` leest zelf `sys.argv`;
-  hart-`__main__` = `raise SystemExit(main())`, geen `sys`-import (§4).
-- **B3** — herstart bewijst geen schone beginstaat. Fix: startup-reconciliatie
-  (§6.1 stap 0) — achtergebleven beheerde runnercontainer → fail-closed; schone
-  DinD-beginstaat bewijzen/scrubben vóór de eerste start; §9-claim "SOURCE_WAIT +
-  gates vangt een onschone stop op" verwijderd.
-- **M4** — `compose run` legt `one-job --wait` niet vast. Fix: `command:
-  ["one-job","--wait"]` in compose (§6.2) + `docker inspect`-verificatie bij bring-up.
-- **M5** — image-parser past niet op het bestandsformaat. Fix: skip comment/lege
-  regels, split `digest\tbytes`, valideer/pull alleen de digest (§6.1 stap 3).
-- **M6** — trustgate vereist `--labels/--out/FORGEJO_TOKEN` en doet live API-calls.
-  Fix + besluit: controller leest een bij deploy geproduceerd, vers, groen
-  `trust-verdict.json`; geen controllercredential, geen live trust-API (§6.3).
-- **M7** — stop-/watchdogtermijnen niet afdwingbaar met blokkerende adapters +
-  verkeerde termijnen. Fix: niet-blokkerende `Popen`-polling (pull/scrub/child),
-  bounded subprocess-timeouts, `child_stop_grace` ≈ 3 m afgestemd op de
-  runnerpolicy, exit 0 alleen na bevestigd child-weg (§5, §6, §8, §9).
-- **MINOR 8** — config verandert hartconstanten niet. Fix: `confirm_seconds`/
-  `fence_max_age_seconds` uit config; tests versnellen via de fake klok (§8, §11).
-- **Correctie §7.5** — de "herstart bij gefencete impasse" berustte op een
-  verkeerde premisse; de hart-watchdog herstelt de fence. Herstart-tak verwijderd.
+- **B1** — lus start vóór bevestigde readiness. Fix (r1): start-conditie
+  `state==WAITING` + `laatste_readiness READY`. (r2: onvoldoende, zie hieronder.)
+- **B2** — `sys` ongebonden in de delegatie. Fix: `main()` leest zelf `sys.argv` (§4). ✔ r2 bevestigd.
+- **B3** — herstart bewijst geen schone beginstaat. Fix: startup-reconciliatie (§6.1 stap 0). ✔ r2 bevestigd (mits detectie/bewijs slagen; normale scrub-fout zie r2-B2/M4).
+- **M4** — `compose run` mist `one-job`-command. Fix: `command` in compose (§6.2) + inspect-verificatie. ✔ r2 bevestigd.
+- **M5** — image-parser past niet op het bestandsformaat. Fix: `digest\tbytes`-parser (§6.1 stap 3). ✔ r2 bevestigd.
+- **M6** — trustgate vereist credential/labels/out. Fix: deploy-verdict lezen (§6.3). ✔ r2: credentialafhankelijkheid weg; artifactcontract hardened in r2 (zie M3).
+- **M7** — stop/watchdog niet afdwingbaar. Fix: niet-blokkerende Popen-polling + termijnen op runnerpolicy (§5/§6/§9). ✔ r2: bediening ok; stop van niet-child-ops zie r2-M4.
+- **MINOR 8** — config↔hartconstanten. Fix: uit config; fake-klok in tests. ✔ r2 bevestigd.
+- **§7.5** — herstart-tak verwijderd (hart-watchdog herstelt de fence). ✔ r2 bevestigd.
 
-Verdict ronde 1: **NO-GO**. Fixes toegepast; ronde 2 opnieuw naar `mac:codex`.
+### Ronde 2 — commit `1d3a5dd` — mac:codex — NO-GO (2 BLOCKER, 2 MAJOR)
+
+Alle bevindingen geverifieerd tegen de boom (twee reproduceerbare event-sporen op
+het ongewijzigde hart) en aanvaard:
+
+- **B1 (r2)** — `_on_scrub_done` (regel 417) → `WAITING` zonder verse readiness, en
+  `laatste_readiness READY` is al waar bij één onbevestigde probe. Fix: runtime-vlag
+  **`readiness_confirmed`** (eigen 2-waarnemingenbevestiging, ingetrokken bij elke
+  afwijking, nooit door scrub/hart toegekend) (§5.2, §5 stap 4; test 1/2).
+- **B2 (r2)** — na `scrub_done(ok=False)` → `QUARANTINED` heropent het hart via
+  READY+gates naar `WAITING` zonder nieuwe scrub (regel 397 → 330–333). Fix:
+  runtime-vlag **`clean_proven`** — ingetrokken bij childstart + scrub-fout, alleen
+  door geslaagde scrub+bewijs gezet, readiness-herstel kent hem nooit toe; elke start
+  borgt eerst een geslaagde scrub (§5.2, §6.1 stap 8; test 3/4).
+- **M3 (r2)** — bestands-mtime bewijst geen verse, geslaagde, gebonden trustmeting.
+  Fix: publicatiecontract (verse out-dir, atomair publiceren alleen bij CLI-exit 0)
+  + verdict met `measured_at` + binding (`forgejo_target`/`labels_sha256`/
+  `allowlist_sha256`); adapter toetst `ok`+`measured_at`+binding, niet mtime (§6.3,
+  §8; test 10).
+- **M4 (r2)** — stopcontract vergat actieve pull/scrub-Popens. Fix: register van
+  álle cyclus-Popens; §9 stopt/awacht ze bounded; exit 0 alleen na einde van álle
+  operaties; onderbroken scrub/pull afgevangen door `clean_proven` + reconciliatie
+  bij de volgende start (§5, §9; test 11).
+
+Verdict ronde 2: **NO-GO**. Fixes toegepast; ronde 3 opnieuw naar `mac:codex`.
