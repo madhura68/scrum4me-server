@@ -171,8 +171,8 @@ maar die wordt **genegeerd** zodra `compose.yaml` een eigen `command:` geeft.
 
 Daarom moet `command:` in de `runner`-service van `compose.yaml` het **volledige
 binary-pad** bevatten: `["/bin/forgejo-runner", "one-job", "--wait"]`.
-Een bare `["one-job", "--wait"]` zou Docker instrueren `/bin/sh` (of iets soortgelijks)
-uit te voeren met `one-job` als eerste argument, wat zou falen omdat `one-job`
+Een bare `["one-job", "--wait"]` laat Docker rechtstreeks een executable `one-job`
+via `$PATH` zoeken (er is geen shell tussen), wat faalt omdat `one-job`
 niet in `$PATH` bestaat — exit 127, nog voordat forgejo-runner start.
 
 Dit is nu **correct toegepast** in `compose.yaml`. Bevestig de sanity met:
@@ -196,6 +196,12 @@ Verwacht: `Error: one-job is only supported with a single connection, but
 0 connections are configured`, exit `1`. Dat bewijst dat forgejo-runner
 zelf wél `one-job --wait` accepteert zodra het binary daadwerkelijk wordt
 aangeroepen.
+
+Dezelfde controle draait geautomatiseerd in de suite:
+`tests/test_compose_runner_exec.bats` rendert het échte `command:` via
+`docker compose config` en voert het uit tegen de gepinde image uit
+`.env.example` (skipt zonder docker-daemon). De statische
+`test_compose_contract.bats` grept alleen de YAML en ving dit niet.
 
 **Waarom het binary-pad verplicht is:**
 - De image heeft geen `Entrypoint`, dus Docker resolveert het eerste element van
