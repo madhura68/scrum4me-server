@@ -1,0 +1,37 @@
+# forgejo-runner/controller.toml.example
+# Sjabloon voor controller.toml (§8, docs/forgejo-runner-pool/controller-entrypoint-ontwerp.md).
+# Kopieer naar controller.toml en vul de padwaarden in voor déze host. Bevat
+# zelf GEEN secrets — het runnertoken is een los, apart gemount pad (§7.5) en
+# staat hier niet in. controller.toml is hostspecifiek en géén onderdeel van
+# de byte-identieke bundel-hash: niet meekopiëren tussen hosts, wel per host
+# invullen. Start `cycle_runtime.py --config controller.toml --check` om de
+# invulling te valideren zonder de loop te starten.
+
+[forgejo]
+base_url = "https://git.jp-visser.nl"     # transport-probe target (/api/v1/version)
+probe_timeout_seconds = 5
+
+[dind]
+compose_file = "/opt/forgejo-runner/compose.yaml"
+project      = "forgejo-runner"
+marker_path  = "/opt/forgejo-runner/state/cycle-op.marker"  # §6.4: apart, persistent controlepad — NIET het docker-datavolume
+
+[runner]
+allowed_images_file = "/opt/forgejo-runner/allowed-job-images.txt"
+child_stop_grace_seconds = 200            # ~= runner shutdown_timeout 3m + marge, < systemd TimeoutStopSec 300
+
+[trust]
+verdict_path = "/opt/forgejo-runner/trust-verdict.json"          # deploy-wrapper-artefact (§6.3, publish-trust-verdict.sh)
+verdict_max_age_seconds = 86400                                   # 0 <= now-measured_at <= max_age; op measured_at, NIET mtime
+labels_file = "/opt/forgejo-runner/labels.txt"                    # voor de labels_sha256-binding
+allowlist_file = "/opt/forgejo-runner/trusted-actions-scope.yml"  # voor de allowlist_sha256-binding
+
+[docker]
+subprocess_timeout_seconds = 30           # harde deadline op korte docker-calls (health/pull-init)
+
+[cadence]
+poll_interval_seconds = 1
+retry_interval_seconds = 30               # readiness+gates-cadans
+
+[log]
+level = "INFO"

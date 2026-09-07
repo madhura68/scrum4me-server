@@ -415,3 +415,8 @@ class Controller:
             self.state = State.DRAINING
             return
         self.state = State.WAITING if self.gates_groen else State.SOURCE_WAIT
+
+
+if __name__ == "__main__":
+    from cycle_runtime import main
+    raise SystemExit(main())
