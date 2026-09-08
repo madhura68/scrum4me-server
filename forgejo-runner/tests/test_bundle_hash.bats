@@ -97,3 +97,15 @@ setup() {
   run bash "$SCRIPT" "$BATS_TEST_TMPDIR/bestaat-niet"
   [ "$status" -eq 2 ]
 }
+
+@test "negeert het deploy-verdict trust-verdict.json en de state/-marker" {
+  # Regressie (stap-G plan-review ronde 1): publish-trust-verdict.sh schrijft
+  # trust-verdict.json in de bundeldir en de controller maakt state/cycle-op.marker;
+  # beide zijn hostlokaal en mogen de canonieke bundelhash niet veranderen, anders
+  # faalt verify-stack (exit 61) na een normale deploy.
+  h1="$(bash "$SCRIPT" "$BUNDLE")"
+  echo '{"ok":true,"measured_at":1}' > "$BUNDLE/trust-verdict.json"
+  mkdir -p "$BUNDLE/state"; echo "marker" > "$BUNDLE/state/cycle-op.marker"
+  h2="$(bash "$SCRIPT" "$BUNDLE")"
+  [ "$h1" = "$h2" ]
+}

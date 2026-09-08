@@ -6,7 +6,8 @@
 # Buiten de hash blijft alles wat hostlokaal is en dus op de twee hosts mág
 # afwijken zonder dat de bundel afwijkt: .env, de gerenderde runner-config.yml
 # (draagt de per-host UUID), BUNDLE_COMMIT (het uitrolrecord), controller.toml,
-# credentials/ en Python-bytecode. tests/ draait niet mee op de hosts.
+# het deploy-verdict trust-verdict.json, credentials/, de operatie-marker onder
+# state/ en Python-bytecode. tests/ draait niet mee op de hosts.
 set -euo pipefail
 
 BUNDLE="${1:-}"
@@ -28,12 +29,13 @@ cd "$BUNDLE"
 # verify-stack als niet-root draait, en dat laat onder `set -o pipefail` de hele
 # hash falen. De VERZAMELING gehashte bestanden blijft exact gelijk aan voorheen.
 find . \
-  \( -type d \( -path './tests' -o -path './credentials' -o -name '__pycache__' \) -prune \) \
+  \( -type d \( -path './tests' -o -path './credentials' -o -path './state' -o -name '__pycache__' \) -prune \) \
   -o \( -type f \
         ! -name '.env' \
         ! -name 'runner-config.yml' \
         ! -name 'BUNDLE_COMMIT' \
         ! -name 'controller.toml' \
+        ! -name 'trust-verdict.json' \
         ! -name '*.pyc' \
         -print0 \) \
   | LC_ALL=C sort -z \
