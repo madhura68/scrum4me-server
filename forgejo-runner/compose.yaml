@@ -35,7 +35,7 @@ services:
     image: ${RUNNER_IMAGE}
     profiles: ["cycle"]
     restart: "no"             # de controller is de enige eigenaar van de levenscyclus
-    command: ["/bin/forgejo-runner", "one-job", "--wait"]
+    command: ["/bin/forgejo-runner", "-c", "/etc/forgejo-runner/config.yml", "one-job", "--wait"]
     depends_on:
       dind:
         condition: service_healthy

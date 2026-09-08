@@ -121,3 +121,22 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
   echo "$output" | grep -q -- "--wait"                                           # command compleet
   echo "$output" | grep -A3 "target: /etc/forgejo-runner/allowed-job-images.txt" | grep -q "read_only: true"  # juist DEZE mount read-only
 }
+
+@test "runner laadt de config via -c in het command (anders 0 connections, komt niet online)" {
+  # De max2-bring-up (8 sep 2026) liep hierop vast: zonder -c laadt forgejo-runner
+  # geen config ("No configuration file specified") -> "0 connections are
+  # configured" -> exit 1 -> de runner komt nooit online. De oude exec-test las die
+  # "0 connections"-fout juist als succes. Dit contract eist -c + het configpad IN
+  # het command (niet enkel in de volume-mount).
+  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+      DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c '
+import json, sys
+cmd = json.load(sys.stdin)["services"]["runner"]["command"]
+flag = "-c" if "-c" in cmd else ("--config" if "--config" in cmd else None)
+assert flag, f"runner-command mist -c/--config: {cmd}"
+assert cmd[cmd.index(flag) + 1] == "/etc/forgejo-runner/config.yml", f"verkeerd configpad na {flag}: {cmd}"
+assert "one-job" in cmd and "--wait" in cmd, f"one-job/--wait ontbreekt: {cmd}"
+'
+}
