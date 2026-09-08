@@ -139,3 +139,15 @@ Zeven aaneengesloten dagen waarin alle §9-criteria op **beide** hosts groen zij
 ## Uitvoerhandoff
 
 Dit plan is een **concept**. Volgorde vóór uitvoering: (1) §7.8-waiver vastgelegd (✓ 8 sep 2026, design-delta in `migratieontwerp.md` §7.8) — **geen hardware-upgrade nodig**; (2) **stap F** groen (volgende week); (3) **plan-review** (review-loop, cross-model) op dit document → JP-gate; (4) **Scrum4Me-ceremonie** (sprint/PBI/story/taken op product `cmsx8zbdh0002hk7rcgxxr00k`); (5) uitvoeren fase A→F met de gates. De gating-blokkade (Voorwaarde 0) is opgeheven; resteren stap F + de plan-review.
+
+---
+
+## Review record
+
+Plan-fase van de review-loop (twee onafhankelijke cross-model reviewers, JP-armd; zij zien elkaars output niet). Persistente loop-staat.
+
+### Ronde 1 — verzonden 8 september 2026
+- **Reviewers:** `scrum4me-server:claude` (ops-routed) + `mac:codex`.
+- **Onder review:** dit plan op `origin/main` (het review-request-lichaam noemt de exacte commit-SHA), tegen `migratieontwerp.md` §7.3/§7.8/§7.9/§8 stap G en de as-built bundel `forgejo-runner/`.
+- **Scope-noot voor reviewers:** de §7.8-**waiver** (Voorwaarde 0) is een **vastgelegd JP-besluit** (record-and-proceed, `migratieontwerp.md` §7.8) — niet ter herbeoordeling. Wél in scope: of het plan de waiver correct verwerkt (bv. preflight niet als groen voordoet) en of fase A–F/gates/rollback de spec juist uitvoeren.
+- **Uitkomst:** _volgt._
