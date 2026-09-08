@@ -15,6 +15,9 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   BUNDLE="$REPO_ROOT/forgejo-runner"
   docker info >/dev/null 2>&1 || skip "geen bereikbare docker-daemon; deze test heeft de echte runnerimage nodig"
+  # timeout(1) begrenst de --wait-poll; macOS heeft het als gtimeout (coreutils) of niet.
+  TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+  [ -n "$TIMEOUT_BIN" ] || skip "geen timeout(1)/gtimeout beschikbaar voor de --wait-begrenzing"
 }
 
 # Rendert compose met de échte pins uit .env.example en geeft image + command
@@ -65,7 +68,7 @@ YAML
   # Precies zoals compose het doet: geen entrypoint-override, command als argv.
   # --network none: de dummy-URL is toch onbereikbaar; het startpad (config lezen
   # + connections tellen) draait vóór netwerk-IO. timeout vangt --wait af.
-  run timeout 20 docker run --rm --network none \
+  run "$TIMEOUT_BIN" 20 docker run --rm --network none \
     -v "$cfg:/etc/forgejo-runner/config.yml:ro" \
     -v "$tok:/run/forgejo-runner-credentials/forgejo-token:ro" \
     "$image" "${command[@]}"

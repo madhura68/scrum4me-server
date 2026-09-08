@@ -109,13 +109,13 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
   run grep -iE '^[A-Z_]*(TOKEN|PASSWORD|SECRET|UUID)[A-Z_]*=|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' <(inhoud "$ENV_EXAMPLE")
   [ "$status" -ne 0 ]
   # En alleen imagepins en caps mogen erin staan.
-  run grep -vE '^(RUNNER_IMAGE|DIND_IMAGE|JOB_IMAGE|RUNNER_CPUS|RUNNER_MEM|RUNNER_PIDS|DIND_CPUS|DIND_MEM|DIND_PIDS)=' <(inhoud "$ENV_EXAMPLE")
+  run grep -vE '^(RUNNER_IMAGE|DIND_IMAGE|JOB_IMAGE|RUNNER_CPUS|RUNNER_MEM|RUNNER_PIDS|DIND_CPU_QUOTA|DIND_MEM|DIND_PIDS)=' <(inhoud "$ENV_EXAMPLE")
   [ "$status" -ne 0 ]
 }
 
 @test "runner draagt one-job --wait; dind mount de allowlist read-only" {
   run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
-      DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
+      DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "one-job"
   echo "$output" | grep -q -- "--wait"                                           # command compleet
@@ -129,7 +129,7 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
   # "0 connections"-fout juist als succes. Dit contract eist -c + het configpad IN
   # het command (niet enkel in de volume-mount).
   run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
-      DIND_CPUS=1 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
+      DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c '
 import json, sys
@@ -138,5 +138,25 @@ flag = "-c" if "-c" in cmd else ("--config" if "--config" in cmd else None)
 assert flag, f"runner-command mist -c/--config: {cmd}"
 assert cmd[cmd.index(flag) + 1] == "/etc/forgejo-runner/config.yml", f"verkeerd configpad na {flag}: {cmd}"
 assert "one-job" in cmd and "--wait" in cmd, f"one-job/--wait ontbreekt: {cmd}"
+'
+}
+
+@test "de dind-cap gebruikt cpu_period/cpu_quota, niet cpus/NanoCpus (create op <cap-core hosts)" {
+  # Regressie (stap-G plan-review ronde 1, geverifieerd): `cpus: 11.5` = NanoCpus,
+  # en Docker weigert NanoCpus > aantal cores bij container-create (11,5 > 8 op
+  # scrum4me-server → "range of CPUs is from 0.01 to 8.00"). cpu_period/cpu_quota
+  # wordt niet tegen NumCPU gevalideerd en is dus host-portabel.
+  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+      DIND_CPU_QUOTA=1150000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c '
+import json, sys
+dind = json.load(sys.stdin)["services"]["dind"]
+q = int(dind.get("cpu_quota", 0))
+p = int(dind.get("cpu_period", 0))
+assert q == 1150000, f"dind cpu_quota verkeerd/afwezig: {q}"
+assert p == 100000, f"dind cpu_period verkeerd/afwezig: {p}"
+bad = sorted(k for k in dind if "cpu" in k.lower() and k not in ("cpu_quota", "cpu_period"))
+assert not bad, f"dind gebruikt nog een NanoCpus-vorm (cpus/nano_cpus): {bad}"
 '
 }

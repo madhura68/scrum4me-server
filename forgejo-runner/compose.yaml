@@ -22,7 +22,12 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
-    cpus: ${DIND_CPUS}
+    # CPU-cap als cpu_period/cpu_quota, NIET `cpus:` (NanoCpus): Docker weigert
+    # NanoCpus > aantal cores bij create, en 11,5 > 8 op scrum4me-server. Quota
+    # 1150000 / period 100000 = 11,5 vCPU-equivalent; op 8 cores bindt dat niet
+    # (gecapt door fysiek), op max2 (28) wel — identieke cap, host-portabel.
+    cpu_period: 100000
+    cpu_quota: ${DIND_CPU_QUOTA}
     mem_limit: ${DIND_MEM}
     pids_limit: ${DIND_PIDS}
     logging:
