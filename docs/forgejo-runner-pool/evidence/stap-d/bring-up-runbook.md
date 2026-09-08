@@ -170,10 +170,17 @@ het eerste element via `$PATH` in de container. De gepinde image heeft
 maar die wordt **genegeerd** zodra `compose.yaml` een eigen `command:` geeft.
 
 Daarom moet `command:` in de `runner`-service van `compose.yaml` het **volledige
-binary-pad** bevatten: `["/bin/forgejo-runner", "one-job", "--wait"]`.
-Een bare `["one-job", "--wait"]` laat Docker rechtstreeks een executable `one-job`
-via `$PATH` zoeken (er is geen shell tussen), wat faalt omdat `one-job`
-niet in `$PATH` bestaat — exit 127, nog voordat forgejo-runner start.
+binary-pad** bevatten én de config met `-c` laden:
+`["/bin/forgejo-runner", "-c", "/etc/forgejo-runner/config.yml", "one-job", "--wait"]`.
+Twee valkuilen, allebei bij de max2-bring-up (8 sep 2026) geraakt:
+- Een bare `["one-job", "--wait"]` laat Docker rechtstreeks een executable `one-job`
+  via `$PATH` zoeken (er is geen shell tussen), wat faalt omdat `one-job`
+  niet in `$PATH` bestaat — exit 127, nog voordat forgejo-runner start.
+- Zonder `-c /etc/forgejo-runner/config.yml` laadt forgejo-runner de gemounte
+  config **niet** ("No configuration file specified; using default settings") en
+  heeft dus **0 connections** → `one-job` faalt met "one-job is only supported with
+  a single connection, but 0 connections are configured", exit 1, en de runner komt
+  nooit online. De config-mount alléén is niet genoeg; het `-c`-argument moet erbij.
 
 Dit is nu **correct toegepast** in `compose.yaml`. Bevestig de sanity met:
 
@@ -193,15 +200,20 @@ echo "exit=$?"
 ```
 
 Verwacht: `Error: one-job is only supported with a single connection, but
-0 connections are configured`, exit `1`. Dat bewijst dat forgejo-runner
-zelf wél `one-job --wait` accepteert zodra het binary daadwerkelijk wordt
-aangeroepen.
+0 connections are configured`, exit `1`. Dat bewijst dat het **binary-pad** klopt
+(forgejo-runner start), maar méér niet: deze bare aanroep heeft geen `-c` en geen
+gemounte config, dus "0 connections" is hier verwacht en zegt niets over de
+productie-run. Het **echte** bewijs dat de config laadt is §5: de runner logt dan
+`runner: max2-forgejo-runner-02 … declared successfully` en pollt op een job.
 
-Dezelfde controle draait geautomatiseerd in de suite:
-`tests/test_compose_runner_exec.bats` rendert het échte `command:` via
-`docker compose config` en voert het uit tegen de gepinde image uit
-`.env.example` (skipt zonder docker-daemon). De statische
-`test_compose_contract.bats` grept alleen de YAML en ving dit niet.
+Beide eisen draaien geautomatiseerd in de suite (bij de bring-up-bug versterkt):
+`tests/test_compose_contract.bats` eist dat `-c /etc/forgejo-runner/config.yml`
+ín het gerenderde `command` staat (niet enkel als volume-mount), en
+`tests/test_compose_runner_exec.bats` voert het échte `command` uit tegen de
+gepinde image mét een minimale config en eist dat die geladen wordt — géén
+"No configuration file specified", géén "0 connections" (skipt zonder
+docker-daemon). De oude exec-test las die "0 connections"-fout juist als succes;
+dat gat is nu dicht.
 
 **Waarom het binary-pad verplicht is:**
 - De image heeft geen `Entrypoint`, dus Docker resolveert het eerste element van
