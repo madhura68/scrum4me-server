@@ -22,26 +22,22 @@
 
 ---
 
-## Voorwaarde 0 — hardware + `preflight.sh` GROEN (GATING; JP's infra-track, buiten dit plan)
+## Voorwaarde 0 — §7.8-gate GEWAIVERD (JP-besluit 8 september 2026); geen hardware nodig
 
-Dit is de harde blokkade en het startpunt.
+- **Gemeten 8 september 2026:** `scrum4me-server` is een **fixed fysieke box van 8 vCPU / 15 GiB** (~6,7 GiB in swap). De §7.8-gate is daar **ROOD** en de vCPU-fail is **structureel** (cap-som 12,5 > 50% × 8 = 4,0; DinD-cap 11,5 > 8 fysieke cores) — niet met ontlasten op te lossen; geheugen (~10 < 12 GiB) is last-gerelateerd.
+- **Besluit JP (8 september 2026, record-and-proceed, eigen verantwoordelijkheid):** de §7.8-**headroomgate wordt voor `scrum4me-server` gewaiverd** (design-delta in `migratieontwerp.md` §7.8). Grond: de runner draait daar al maanden **ongecapt** naast productie zonder incident — sterker bewijs dan een synthetische 2×-headroomdrempel; de formele proof (preflight) is de werkelijke struikelblok, niet de capaciteit. Scoped tot `scrum4me-server`; op `max2` blijft de gate onverkort gelden.
+- **Caps blijven** (identiek op beide hosts): strikt veiliger dan de huidige ongecapte legacy-runner (CPU-cap 11,5 bindt niet op 8 cores; de 5 GiB DinD-geheugencap voegt een plafond toe dat nu ontbreekt). Compenserende controls: `capacity: 1`, CPU-prioriteit voor productie, monitoring met auto-pause (§10) bij productie-OOM/throttle of lage `MemAvailable`, en pool-redundantie (`max2` primair; deze runner is sinds stap D/E redundant).
 
-- **Gemeten 8 september 2026:** `scrum4me-server` is een **fixed fysieke box van 8 vCPU / 15 GiB** (al ~6,7 GiB in swap). De §7.8-gate is daar **ROOD**:
-  - **vCPU (structureel):** cap-som 12,5 ≤ 50% × vCPU vereist ≥ 25 vCPU; 12,5 > 4,0 (= 50% × 8). De DinD-cap (11,5) alleen al > 8 fysieke cores. **Onafhankelijk van belasting — niet met ontlasten op te lossen.**
-  - **geheugen:** cap-som 6 GiB ≤ MemAvailable/2 vereist laagste-onder-last ≥ 12 GiB; gemeten ~10 GiB (stap A: 10,59 GiB; 8 sep: 10,04 GiB). Belasting-afhankelijk.
-- **Besluit JP (optie 1, 8 sep 2026):** de host groeien. Omdat het een **fixed fysieke box** is, betekent dat **nieuwe/grotere hardware (≥25 vCPU, ≥32 GiB)** en het **migreren van de volledige productiestack** (Forgejo, Postgres, alle scrum4me-/scrum4us-containers, workers, ops-dashboard) daarheen. **Dat is een apart infra-project dat JP bezit; het valt buiten dit plan**, maar de voltooiing ervan is precondition #0.
-- **Aanname van dit plan:** ná dat infra-project draait `scrum4me-server` (zelfde identiteit/rol) op de grotere box met zijn stack + de legacy runner intact, en `preflight.sh` is GROEN.
-
-**Gate 0 (blokkeert al het onderstaande):**
+**Gate 0 — voor het record, NIET blokkerend (gewaiverd):**
 ```sh
-# op scrum4me-server, vanuit de gedeployde bundel (of tijdens de heaviest-workflow-run voor laagste-onder-last):
+# op scrum4me-server, vanuit de gedeployde bundel:
 bash scripts/capture-host-facts.sh --out /tmp/facts.tsv
 bash scripts/preflight.sh --facts /tmp/facts.tsv --caps <caps.env> --images allowed-job-images.txt
-echo "exit=$?"   # MOET 0 zijn
+echo "exit=$?"   # ROOD/40 verwacht op deze host; preflight.sh blijft eerlijk, wordt NIET versoepeld
 ```
-Verwacht: alle vier §7.8-gates OK. **Rood = NO-GO, stop.** Doe dit bij voorkeur met `measure-workload.sh` (laagste `MemAvailable` onder de representatieve zwaarste workflow), niet met een kale momentopname — dat is de eerlijke gate-input.
+Leg de ROOD-uitkomst vast in `evidence/stap-g/` samen met een verwijzing naar de §7.8-waiver; de basis om door te gaan is de gedocumenteerde waiver, niet een groene gate. **Geen hardware-upgrade nodig, geen stackmigratie** (de eerder overwogen optie "host vergroten" is vervallen).
 
-**Overige preconditions:** stap D+E af op `max2` (✓ 8 sep 2026 — `max2` kan `scrum4me-server` vervangen bij uitval); **stap F groen** (poolgedrag + failover bewezen). Zonder deze twee mag `scrum4me-server` niet worden aangeraakt (§7.2: nooit de enige werkende runner uitschakelen).
+**Overige preconditions (blijven gelden):** stap D+E af op `max2` (✓ 8 sep 2026 — `max2` kan `scrum4me-server` vervangen bij uitval); **stap F groen** (poolgedrag + failover bewezen). Zonder deze twee mag `scrum4me-server` niet worden aangeraakt (§7.2: nooit de enige werkende runner uitschakelen).
 
 ---
 
@@ -136,10 +132,10 @@ Zeven aaneengesloten dagen waarin alle §9-criteria op **beide** hosts groen zij
 - **Spec-dekking:** §7.3-1..10 → Fase B (1–8) + Fase D (9–10); §8 stap G volume/scrub → Fase C; §7.4 labels → hergebruik `labels.txt` (ongewijzigd); §7.5 DinD-isolatie → Gate E5; §7.8 → Voorwaarde 0; §7.9 drain/nulbewijs → B2 + rollback; §6.1 host-overlay → Fase F; §11 rollback → Rollback; §9/stap H → sluitsectie. Gedekt.
 - **Open punten voor de plan-review (review-loop):**
   1. Fase C — exacte semantiek "eenmalige scrub" vs. dispose van het oude anonieme volume (meet tegen de host).
-  2. Voorwaarde 0 — de hardware/stack-migratie (Forgejo+Postgres+stack naar nieuwe box) is een apart project; de sequencing t.o.v. deze runner-normalisatie moet expliciet (runner-normalisatie draait ná de stackmigratie, op de grotere box).
+  2. ~~Sequencing t.o.v. een stackmigratie~~ — vervallen: Voorwaarde 0 is opgeheven via de §7.8-waiver (JP, 8 sep 2026); geen hardware/stackmigratie meer, stap G draait op de huidige box.
   3. Bevestig `T_requeue` (stap A) vóór de drain-wachttak in B2 (§7.9).
 - **Geen placeholders/secrets:** commando's zijn concreet; UUID/token expliciet buiten Git gehouden.
 
 ## Uitvoerhandoff
 
-Dit plan is een **concept**. Volgorde vóór uitvoering: (1) **hardware/stack-migratie** (JP's infra-project) → `preflight.sh` GROEN op de nieuwe box; (2) **stap F** groen; (3) **plan-review** (review-loop, cross-model) op dit document → JP-gate; (4) **Scrum4Me-ceremonie** (sprint/PBI/story/taken op product `cmsx8zbdh0002hk7rcgxxr00k`); (5) uitvoeren fase A→F met de gates. Uitvoering blijft geblokkeerd tot Voorwaarde 0 GROEN is.
+Dit plan is een **concept**. Volgorde vóór uitvoering: (1) §7.8-waiver vastgelegd (✓ 8 sep 2026, design-delta in `migratieontwerp.md` §7.8) — **geen hardware-upgrade nodig**; (2) **stap F** groen (volgende week); (3) **plan-review** (review-loop, cross-model) op dit document → JP-gate; (4) **Scrum4Me-ceremonie** (sprint/PBI/story/taken op product `cmsx8zbdh0002hk7rcgxxr00k`); (5) uitvoeren fase A→F met de gates. De gating-blokkade (Voorwaarde 0) is opgeheven; resteren stap F + de plan-review.
