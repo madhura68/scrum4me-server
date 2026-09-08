@@ -56,6 +56,22 @@ setup() {
   [ "$h1" = "$h2" ]
 }
 
+@test "hasht als niet-root ondanks een onleesbare credentials/-map (prune, geen pipefail)" {
+  # Regressie (max2 stap-D bring-up): bundle-hash gebruikte `! -path` i.p.v.
+  # `-prune`, dus find daalde af in de 0700 credentials/-map en gaf als niet-root
+  # "Permission denied" -> onder set -o pipefail faalde de HELE hash, en daarmee
+  # verify-stack.sh op een uitgerolde host. -prune lost dit op.
+  [ "$(id -u)" -ne 0 ] || skip "root leest een 000-map sowieso; deze regressie is non-root"
+  mkdir -p "$BUNDLE/credentials"
+  echo "geheim" > "$BUNDLE/credentials/forgejo-token"
+  chmod 000 "$BUNDLE/credentials"
+  run bash "$SCRIPT" "$BUNDLE"
+  chmod 755 "$BUNDLE/credentials"   # herstel zodat BATS de tmpdir kan opruimen
+  [ "$status" -eq 0 ]
+  [ "${#output}" -eq 64 ]
+  [[ "$output" != *"Permission denied"* ]]
+}
+
 @test "negeert tests/ maar telt .env.example en de unit wel mee" {
   mkdir -p "$BUNDLE/tests"
   h1="$(bash "$SCRIPT" "$BUNDLE")"

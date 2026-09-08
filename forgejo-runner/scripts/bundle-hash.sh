@@ -23,16 +23,19 @@ else
 fi
 
 cd "$BUNDLE"
-find . -type f \
-  ! -name '.env' \
-  ! -name 'runner-config.yml' \
-  ! -name 'BUNDLE_COMMIT' \
-  ! -name 'controller.toml' \
-  ! -name '*.pyc' \
-  ! -path './tests/*' \
-  ! -path './credentials/*' \
-  ! -path '*/__pycache__/*' \
-  -print0 \
+# -prune (niet enkel `! -path`) op de niet-bundel-mappen, zodat find er niet in
+# afdaalt. Anders geeft de 0700 credentials/-map "Permission denied" wanneer
+# verify-stack als niet-root draait, en dat laat onder `set -o pipefail` de hele
+# hash falen. De VERZAMELING gehashte bestanden blijft exact gelijk aan voorheen.
+find . \
+  \( -type d \( -path './tests' -o -path './credentials' -o -name '__pycache__' \) -prune \) \
+  -o \( -type f \
+        ! -name '.env' \
+        ! -name 'runner-config.yml' \
+        ! -name 'BUNDLE_COMMIT' \
+        ! -name 'controller.toml' \
+        ! -name '*.pyc' \
+        -print0 \) \
   | LC_ALL=C sort -z \
   | while IFS= read -r -d '' pad; do
       printf '%s\0' "$pad"
