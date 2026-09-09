@@ -1,0 +1,43 @@
+[Unit]
+Description=Forgejo Runner trustscan en verdictpublicatie (§7.7 dagelijkse controle)
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+Requires=network-online.target
+After=network-online.target
+# Een mislukte meting invalideert het actieve verdict fail-closed (publish-trust-
+# verdict.sh, §6.3). Zonder herpoging zou één netwerkhik de pool tot de volgende
+# timerslag stilzetten. Vijf pogingen binnen een half uur dekken een transiente
+# bron; blijft het falen, dan gaat de unit naar failed en is dat het alarm uit §10.
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/forgejo-runner
+# Hostlokaal bestand, mode 0600, root-eigendom, nooit in Git (CLAUDE.md-
+# hardstop). De vereiste vorm en leesrechten staan in README "Uitrollen" stap 9;
+# ze staan bewust niet hier, zodat deze unit zelf niets gevoeligs benoemt.
+EnvironmentFile=/opt/forgejo-runner/credentials/trust-scan.env
+# Expliciete interpreter, net als de cycle-unit: de uitrol gaat via
+# `git archive | tar -x` + `cp -a` en mag niet van een overgebleven
+# executable-bit afhangen. Het script is #!/bin/sh.
+ExecStart=/bin/sh /opt/forgejo-runner/scripts/publish-trust-verdict.sh \
+  --cli-py /opt/forgejo-runner/scripts/trust_scope_cli.py \
+  --labels /opt/forgejo-runner/labels.txt \
+  --allowlist /opt/forgejo-runner/trusted-actions-scope.yml \
+  --target https://git.jp-visser.nl \
+  --out /opt/forgejo-runner/trust-verdict.json
+# De scan doet per repository meerdere API-calls; gemeten ~30 s voor twintig
+# repositories. Ruim boven de meting, ver onder het publicatie-interval.
+TimeoutStartSec=600
+Restart=on-failure
+RestartSec=120
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/forgejo-runner
+# De wrapper werkt in een eigen mktemp -d; een private /tmp houdt de meting
+# gescheiden van de jobwerkboom die de controller onder /tmp aanmaakt.
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
