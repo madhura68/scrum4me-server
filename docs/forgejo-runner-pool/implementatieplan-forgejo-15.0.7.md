@@ -313,6 +313,12 @@ Plan-fase van de review-loop (twee onafhankelijke cross-model reviewers, JP-armd
 - **Convergente BLOCKER — `set -e` in een AND-OR-context wordt genegeerd.** De vijf `( set -e … ) && … || …`-/`( set -e … ) || …`-wrappers uit ronde 2 onderdrukken de `set -e` binnen de subshell (gedocumenteerd bash-gedrag; ook `if ( set -e … )` doet dit). Gevolg: de subshell draait álle commando's en eindigt met de exit van het laatste → 2.3 telde alleen de tweede snapshot, 2.5b/2.7/4.1 meldden `OK` ná een faal, R4 was slechts toevallig veilig. Zelf nagemeten: `( set -e; false; echo X ) && … || …` → `X`/exit 0; **`( set -e; false; echo X ); rc=$?`** → exit 1 (STOP). **Fix:** alle vijf blokken naar een **losstaande** subshell + `rc=$?` + branchen; `pg_restore --list` via `LIST=$(…)` zodat diens eigen exit telt (niet `wc`); R4 verwijdert eerst een stale `/tmp/rollback.dump`. Bevestigd met `bash -n` én een runtime-injectietest.
 - **Verdicts:** `scrum4me-server:claude` NO-GO · `mac:codex` NO-GO.
 
-### Ronde 4 — nog te verzenden
-- **Reviewers:** `scrum4me-server:claude` (ops-routed) + `mac:codex`. Zelfde adressen; JP-armd.
-- **Delta:** `git diff` van ronde 3 → 4 op dit plan (uitsluitend de vijf shell-wrappers + Review record); instructie om de fixes met een runtime-injectietest te verifiëren, niet alleen `bash -n`. Geen afgewezen bevindingen om te heradjudiceren.
+### Ronde 4 — 2026-09-09 — **GO** (dubbel) ✅
+- **Reviewers:** `scrum4me-server:claude` (0 BLOCKER · 0 MAJOR · 0 MINOR) + `mac:codex` (0 BLOCKER · 0 MAJOR · 0 MINOR). **Beide VERDICT: GO.**
+- **Verificatie:** beide toetsten de fix met een **runtime-injectietest op de geëxtraheerde blokken** (niet alleen `bash -n`). `mac:codex`: 38/38 runtimegevallen, 11/11 validator-fixtures, 8/8 sh-blokken geldig; re-run van het ronde-3-harnas bevestigt dat de oude wrappers nog vals-groen zijn en de nieuwe niet. `scrum4me-server:claude`: volledige matrix in beide richtingen — de twee ronde-3-valsgroen-scenario's (2.3 snap1 `running`/snap2 `null`; 2.5b gelijke hash + 2 regels) zijn nu ROOD/STOP, exitcodes onderscheidend (22 fetch / 2 antwoordtype / 1 actieve job), geen regressies, en de hoststand bevestigd (15.0.2, app.ini-tak, `/api/v1/admin/actions/runners/jobs` → `null` bij leeg).
+- **Verdicts:** `scrum4me-server:claude` GO · `mac:codex` GO. **Plan-fase van de review-loop gesloten.**
+- **Beide reviewers noteren expliciet:** dit GO is géén uitvoeringsautorisatie en vervangt de JP-gate niet.
+
+## Loop-conclusie
+
+De plan-fase is na **vier rondes** dubbel GO (commit `21d103e`). De trechter liep van 8 bevindingen (ronde 1) → 5 (ronde 2) → 1 convergente BLOCKER (ronde 3) → 0 (ronde 4); elke ronde bevestigden beide reviewers de vorige fixes gesloten. Volgende stap: **JP-gate** (Uitvoerhandoff stap 2), daarna pas ceremonie en uitvoering — elk op afzonderlijke opdracht van JP.
