@@ -95,16 +95,22 @@ PY
 Q() { curl --config <(printf 'header = "Authorization: token %s"\n' "$FORGEJO_TOKEN") \
         -sS --fail-with-body --max-time 30 \
         https://git.jp-visser.nl/api/v1/admin/actions/runners/jobs; }
+# LET OP: de subshell staat op een eigen regel en wordt NIET gevolgd door && of ||,
+# en niet in een `if (...)`. In een AND-OR-lijst of if-conditie negeert bash de
+# `set -e` binnen de subshell (gemeten, bash 5.3.9); alleen een losstaande subshell
+# gevolgd door `rc=$?` handhaaft hem. Vandaar dit patroon overal in dit plan.
 ( set -e
-  Q > /tmp/fj-15.0.7/jobs1.json        # niet-2xx → curl exit != 0 → set -e stopt hier
+  Q > /tmp/fj-15.0.7/jobs1.json        # niet-2xx → curl --fail-with-body exit != 0 → set -e stopt hier
   sleep 15
   Q > /tmp/fj-15.0.7/jobs2.json
   python3 /tmp/fj-15.0.7/nulbewijs.py /tmp/fj-15.0.7/jobs1.json
   python3 /tmp/fj-15.0.7/nulbewijs.py /tmp/fj-15.0.7/jobs2.json
-) && echo "NULBEWIJS SCHOON (beide snapshots leeg)" \
-  || { echo "NULBEWIJS ROOD of jobfetch faalde — STOP, pas §7.9-remedie toe"; }
+)
+rc=$?
+[ "$rc" -eq 0 ] && echo "NULBEWIJS SCHOON (beide snapshots leeg)" \
+  || { echo "NULBEWIJS ROOD of jobfetch faalde (exit $rc) — STOP, pas §7.9-remedie toe"; false; }
 ```
-Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` (`curl --fail-with-body` geeft dan exit ≠ 0); een niet-lijst-toplevel — zoals een JSON-errorobject bij 401/403 — geeft exit 2; en elke job met een ontbrekende, niet-string of niet-terminale `status` telt als actief. Alleen wanneer bij **beide** snapshots de lijst leeg is (of `null`), verschijnt `NULBEWIJS SCHOON` en is het nulbewijs geleverd. `ActionRunJob` heeft een plat string-`status`-veld (geverifieerd tegen de swagger van deze instance; geen geneste objecten), dus het volstaat de toplijst te itereren; de endpoint geeft bij geen resultaten `null`. De pool kent alleen id 3 en `max2-forgejo-runner-02`, dus elke `waiting`/`running` job valt binnen scope. Bij `NULBEWIJS ROOD` geldt §7.9: blijf gepauzeerd, wacht `min(T_requeue + 30 s, 10 min)` (`T_requeue` = 600 s, `evidence/stap-a/t-requeue.md`); is de job na de grens niet aantoonbaar gerequeued/terminaal, dan annuleert de operator (`[JP]`/beheerinterface) de run en dispatcht dezelfde workflow vanaf dezelfde commit opnieuw. Pas ná een schoon nulbewijs mag 2.6 de forge stoppen. Dit reproduceert handmatig de `DRAINING`-nulbewijsstap die de as-built controller niet kan armen (zie "Bevindingen buiten scope").
+Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` in de **losstaande** subshell (`curl --fail-with-body` geeft dan exit ≠ 0, en `rc` vangt het); een niet-lijst-toplevel — zoals een JSON-errorobject bij 401/403 — geeft exit 2; en elke job met een ontbrekende, niet-string of niet-terminale `status` telt als actief. Alleen wanneer bij **beide** snapshots de lijst leeg is (of `null`), verschijnt `NULBEWIJS SCHOON` en is het nulbewijs geleverd. `ActionRunJob` heeft een plat string-`status`-veld (geverifieerd tegen de swagger van deze instance; geen geneste objecten), dus het volstaat de toplijst te itereren; de endpoint geeft bij geen resultaten `null`. De pool kent alleen id 3 en `max2-forgejo-runner-02`, dus elke `waiting`/`running` job valt binnen scope. Bij `NULBEWIJS ROOD` geldt §7.9: blijf gepauzeerd, wacht `min(T_requeue + 30 s, 10 min)` (`T_requeue` = 600 s, `evidence/stap-a/t-requeue.md`); is de job na de grens niet aantoonbaar gerequeued/terminaal, dan annuleert de operator (`[JP]`/beheerinterface) de run en dispatcht dezelfde workflow vanaf dezelfde commit opnieuw. Pas ná een schoon nulbewijs mag 2.6 de forge stoppen. Dit reproduceert handmatig de `DRAINING`-nulbewijsstap die de as-built controller niet kan armen (zie "Bevindingen buiten scope").
 - **2.4 Configuratie-rollbackpunt.** `sudo cp -a "$VOL/gitea/conf/app.ini" "$BK/app.ini.pre" && sudo cp -a "$CF" "$BK/docker-compose.yml.pre" && sudo sha256sum "$BK/app.ini.pre" "$BK/docker-compose.yml.pre"` → hashes in evidence (alleen hashes). Vingerafdruk van de te roteren regels, zonder waarden: `PRE_SECRETS=$(docker exec scrum4me-forgejo sh -c 'grep -E "^(LFS_)?JWT_SECRET" /data/gitea/conf/app.ini' | sha256sum | cut -d' ' -f1)`.
 - **2.5 Configuratiewijzigingen op de draaiende 15.0.2** (effectief bij de eerstvolgende herstart; het rollbackpunt van 2.4 is de terugweg). Hier en niet ná de stop, omdat `forgejo generate secret` het binary in de draaiende container gebruikt en de waarde zo de container nooit verlaat.
   - **(a) Trusted proxies.** *app.ini-tak:* `docker exec -u git scrum4me-forgejo sh -c 'sed -i "s|^REVERSE_PROXY_TRUSTED_PROXIES *=.*|REVERSE_PROXY_TRUSTED_PROXIES = 127.0.0.0/8,::1/128,SUBNET|" /data/gitea/conf/app.ini'` met `SUBNET` uit 0.11 ingevuld; verificatie `docker exec scrum4me-forgejo grep -n -E '^REVERSE_PROXY_TRUSTED_PROXIES' /data/gitea/conf/app.ini` → precies één regel, nieuwe waarde. *Compose-tak:* dezelfde waarde in de `FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES`-regel van `$CF` (`sudo sed -i`), verificatie met `grep -n` op die regel; de entrypoint schrijft env naar `app.ini` bij elke start, dus alleen de compose-regel is dan leidend. **Let op:** een wijziging aan `$CF` wordt pas effectief bij een **recreate** van de forge-service, niet bij `docker start`; in de compose-tak brengt 3.1 de forge daarom op met `docker compose -f "$CF" up -d --no-deps forgejo` (image nog 15.0.2), niet met `docker start`.
@@ -116,24 +122,29 @@ Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` (`curl --fail
     ( set -e
       [ "$PRE_SECRETS" != "$POST_SECRETS" ]                                                                              # vingerafdruk moet zijn veranderd
       [ "$(docker exec scrum4me-forgejo sh -c 'grep -c -E "^(LFS_)?JWT_SECRET" /data/gitea/conf/app.ini')" = 2 ]          # precies twee secretregels
-    ) && echo "ROTATIE OK" || { echo "ROTATIE NIET/ONVOLLEDIG DOORGEVOERD — STOP"; false; }
+    )
+    rc=$?
+    [ "$rc" -eq 0 ] && echo "ROTATIE OK" || { echo "ROTATIE NIET/ONVOLLEDIG DOORGEVOERD (exit $rc) — STOP"; false; }
     ```
-    De controle is **luid én afbrekend**: de twee tests staan in een `set -e`-subshell, dus bij een gelijke vingerafdruk of een onverwacht aantal regels eindigt het blok met een melding en exit ≠ 0 (niet, zoals een losse `… || { echo; false; }`, met een STOP-melding maar tóch exit 0 doordat de volgende regel alsnog slaagt). `^JWT_SECRET` matcht alleen de `[oauth2]`-sleutel (de `[server]`-sleutel begint met `LFS_`); JP's grep van 9 september toonde precies die twee sleutels. `forgejo generate secret LFS_JWT_SECRET` is in de CLI een **alias** van `JWT_SECRET` (dezelfde generator); de tweede aanroep dient alleen om de doelsleutel te benoemen. Base64url bevat geen `|`, `&` of `/`, dus de sed-vervanging is veilig. Slaat JP de rotatie over: leg dat besluit vast in `venster.md` en sla (b) over; de rest van het plan verandert niet.
+    De controle is **luid én afbrekend**: de twee tests staan in een **losstaande** `set -e`-subshell waarvan de exit in `rc` wordt gevangen — bij een gelijke vingerafdruk of een onverwacht aantal regels is `rc` ≠ 0 en eindigt het blok met een melding en exit ≠ 0. Dit móét een losstaande subshell zijn: `( … ) && … || …` zou de `set -e` binnen de subshell onderdrukken, zodat alléén de laatste test telt. `^JWT_SECRET` matcht alleen de `[oauth2]`-sleutel (de `[server]`-sleutel begint met `LFS_`); JP's grep van 9 september toonde precies die twee sleutels. `forgejo generate secret LFS_JWT_SECRET` is in de CLI een **alias** van `JWT_SECRET` (dezelfde generator); de tweede aanroep dient alleen om de doelsleutel te benoemen. Base64url bevat geen `|`, `&` of `/`, dus de sed-vervanging is veilig. Slaat JP de rotatie over: leg dat besluit vast in `venster.md` en sla (b) over; de rest van het plan verandert niet.
 - **2.6 Doctor + queues, dan stoppen.** `docker exec -u git scrum4me-forgejo forgejo doctor check --all --log-file - > "$HOME/doctor-pre-venster.log" 2>&1`; `docker exec -u git scrum4me-forgejo forgejo manager flush-queues --timeout 2m` → exit 0. Dan `docker stop -t 90 scrum4me-forgejo` en `docker ps -a --filter 'name=^/scrum4me-forgejo$' --format '{{.Status}}'` → `Exited (…)`. `TSTOP=$(date -u +%FT%TZ)`. Legacy runner- en DinD-containers blijven ongemoeid: `docker inspect -f '{{.Id}} {{.State.Status}}' scrum4me-forgejo-runner scrum4me-forgejo-dind` → beide `running`; bewaar de ID's als `RID`/`DID` voor Gate 4.
 - **2.7 Koud rollbackpunt.** De hele reeks draait in een subshell met `set -e`, zodat elk falend commando — inclusief de `pg_restore --list`-verificatie — de reeks hard afbreekt (een losse `| wc -l` in een `&&`-keten zou dat níét doen: de pijplijn-exit is die van `wc`, en het plan zet nergens `pipefail`):
   ```sh
   ( set -e
     docker exec scrum4me-postgres sh -c 'pg_dump -U "${POSTGRES_USER:-postgres}" -Fc -f /tmp/forgejo-pre-15.0.7.dump forgejo'
-    [ "$(docker exec scrum4me-postgres pg_restore --list /tmp/forgejo-pre-15.0.7.dump | wc -l)" -gt 0 ]   # > 0 regels of STOP
+    LIST=$(docker exec scrum4me-postgres pg_restore --list /tmp/forgejo-pre-15.0.7.dump)   # eigen exit van pg_restore telt (set -e)
+    [ -n "$LIST" ]                                                                          # niet-lege inhoudslijst of STOP
     docker cp scrum4me-postgres:/tmp/forgejo-pre-15.0.7.dump /tmp/forgejo-pre-15.0.7.dump
     sudo mv /tmp/forgejo-pre-15.0.7.dump "$BK/"
     sudo chmod 0600 "$BK/forgejo-pre-15.0.7.dump"
     docker exec scrum4me-postgres rm /tmp/forgejo-pre-15.0.7.dump
     sudo sha256sum "$BK/forgejo-pre-15.0.7.dump"; sudo stat -c '%s' "$BK/forgejo-pre-15.0.7.dump"
     time sudo rsync -aHAX --numeric-ids --delete "$VOL/" "$BK/data/"    # koude delta
-  ) && echo "KOUD ROLLBACKPUNT OK" || { echo "KOUD ROLLBACKPUNT MISLUKT — STOP"; false; }
+  )
+  rc=$?
+  [ "$rc" -eq 0 ] && echo "KOUD ROLLBACKPUNT OK" || { echo "KOUD ROLLBACKPUNT MISLUKT (exit $rc) — STOP"; false; }
   ```
-  De `[ … -gt 0 ]`-gate stopt hard bij een onbruikbaar archief (`pg_restore --list` op een kapotte dump geeft nul regels); pas daarna wordt de dump naar `$BK` verplaatst. Lokale socketverbindingen in het officiële Postgres-image zijn `trust`, daarom volstaat de rolnaam.
+  De verificatie vangt de **eigen** exit van `pg_restore --list` (`LIST=$(…)` onder `set -e`, niet die van `wc`) plus een niet-lege lijst; bij een onbruikbaar archief breekt de losstaande subshell af en is `rc` ≠ 0, dus de dump wordt niet als rollbackpunt afgetekend. Lokale socketverbindingen in het officiële Postgres-image zijn `trust`, daarom volstaat de rolnaam.
 
 **Gate 2 (rollbackpunt bewezen):** dump aanwezig, `--list` > 0, sha256 en grootte vastgelegd; koude rsync exit 0; `app.ini.pre` en `docker-compose.yml.pre` met hashes; forge gestopt, legacy containers `running` met ongewijzigde ID's; controller op `max2` `Result=success`. Anders STOP en Rollback R2 (forge gewoon weer starten op 15.0.2 met `app.ini.pre` teruggezet).
 
@@ -156,15 +167,18 @@ Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` (`curl --fail
   ```sh
   ( set -e
     docker exec scrum4me-postgres sh -c 'pg_dump -U "${POSTGRES_USER:-postgres}" -Fc -f /tmp/forgejo-pre-image.dump forgejo'
-    [ "$(docker exec scrum4me-postgres pg_restore --list /tmp/forgejo-pre-image.dump | wc -l)" -gt 0 ]   # > 0 of STOP
+    LIST=$(docker exec scrum4me-postgres pg_restore --list /tmp/forgejo-pre-image.dump)   # eigen exit van pg_restore telt (set -e)
+    [ -n "$LIST" ]                                                                         # niet-lege inhoudslijst of STOP
     sudo docker cp scrum4me-postgres:/tmp/forgejo-pre-image.dump "$BK/forgejo-pre-image.dump"
     sudo chmod 0600 "$BK/forgejo-pre-image.dump"
     docker exec scrum4me-postgres rm /tmp/forgejo-pre-image.dump
     sudo sha256sum "$BK/forgejo-pre-image.dump"
     time sudo rsync -aHAX --numeric-ids --delete "$VOL/" "$BK/data/"    # $BK/data wordt nu het VERSE volume
-  ) && echo "VERS ROLLBACKPUNT OK" || { echo "VERS ROLLBACKPUNT MISLUKT — STOP, ga NIET naar 4.2/4.3"; false; }
+  )
+  rc=$?
+  [ "$rc" -eq 0 ] && echo "VERS ROLLBACKPUNT OK" || { echo "VERS ROLLBACKPUNT MISLUKT (exit $rc) — STOP, ga NIET naar 4.2/4.3"; false; }
   ```
-  Faalt dit, dan **STOP vóór 4.2**: zonder geverifieerd vers punt mag de onomkeerbare image-upgrade niet doorgaan. Let op: de `rsync --delete` overschrijft `$BK/data` met het verse volume, dus na 4.1 vormen `forgejo-pre-image.dump` + `$BK/data` één samenhangend paar; de dump van 2.7 heeft daarna géén bijpassend volume meer en dient alléén nog als Gate-2-bewijs, **niet** als R4-fallback. Een pg_dump van ~125 MB en de kleine delta passen binnen de T+15…T+22-marge.
+  Faalt dit (`rc` ≠ 0), dan **STOP vóór 4.2**: zonder geverifieerd vers punt mag de onomkeerbare image-upgrade niet doorgaan. Let op: de `rsync --delete` overschrijft `$BK/data` met het verse volume, dus na 4.1 vormen `forgejo-pre-image.dump` + `$BK/data` één samenhangend paar; de dump van 2.7 heeft daarna géén bijpassend volume meer en dient alléén nog als Gate-2-bewijs, **niet** als R4-fallback. Een pg_dump van ~125 MB en de kleine delta passen binnen de T+15…T+22-marge.
 - **4.2 Tag wisselen (alleen regel 22).** `sudo sed -i 's|image: codeberg.org/forgejo/forgejo:15.0.2$|image: codeberg.org/forgejo/forgejo:15.0.7|' "$CF" && grep -n 'forgejo/forgejo:' "$CF"` → precies één regel, met `15.0.7`, geen `15.0.2` meer. `sudo diff "$BK/docker-compose.yml.pre" "$CF"` → alleen deze ene regel (plus in de compose-tak de regel uit 2.5a).
 - **4.3 Service-gebonden opbrengen.** `docker compose -f "$CF" up -d --no-deps forgejo` → de container wordt hercreëerd met dezelfde naam, hetzelfde volume en dezelfde netwerken. Direct daarna: `docker inspect scrum4me-forgejo --format '{{.Config.Image}}'` → `codeberg.org/forgejo/forgejo:15.0.7`; `docker inspect -f '{{.Id}} {{.State.Status}}' scrum4me-forgejo-runner scrum4me-forgejo-dind` → ID's gelijk aan `RID`/`DID`, beide `running` (bewijs dat `--no-deps` de legacy stack niet raakte).
 - **4.4 Migraties volgen.** `docker logs -f scrum4me-forgejo` tot de HTTP-listener meldt dat hij luistert; `curl -s http://127.0.0.1:3010/api/v1/version` → `15.0.7+gitea-1.22.0`. `docker logs --since 5m scrum4me-forgejo 2>&1 | grep -E '\[E\]|\[F\]|panic'` → leeg. Caddy lost `forgejo` via Docker-DNS per verzoek op; blijft `[mac]` `curl -s https://git.jp-visser.nl/api/v1/version` na 60 s 502 geven, dan is dat een STOP-bevinding (géén eigenmachtige Caddy-herstart; JP beslist).
@@ -215,12 +229,16 @@ Elke terugweg herstelt naar de toestand van het laatst groene gate; er is geen "
 - **R3 (Gate 3 rood):** `docker stop -t 90 scrum4me-forgejo`, zelfde herstel als R2 (in de compose-tak dus opnieuw `up -d --no-deps forgejo`, niet `docker start`), controles 3.1/3.2, dan Fase 5 (uitkomst `rolled_back`). Het venster sluit zonder image-upgrade; bevinding naar JP.
 - **R4 (Gate 4 rood of T+20 zonder groen):** herstelt naar het **verse paar** van 4.1 — `forgejo-pre-image.dump` samen met het volume in `$BK/data`. Er is bewust **geen** terugval op de 2.7-dump: die hoort na de 4.1-rsync niet meer bij dit volume, dus een gemengd paar zou een inconsistente herstelset geven. Ontbreekt of faalt het verse punt, dan is dat een STOP naar JP (het kan niet ontbreken als 4.1 groen was — zonder groen 4.1 is 4.3 nooit uitgevoerd en is er geen migratie om terug te draaien).
   1. `docker stop -t 90 scrum4me-forgejo` (indien nog niet gestopt).
-  2. Verse dump in de container plaatsen en **verifiëren vóór** enige databasewijziging. `$BK` is `0700 root:root`, dus de kopie draait onder `sudo` (geen onprivileged `[ -f ]`-test: `janpeter` kan de root-only map niet doorzoeken en zou zo'n test altijd false zien). Draai het in een subshell met `set -e`, zodat een ontbrekende/onbruikbare dump hard afbreekt vóór de `ALTER`:
+  2. Verse dump in de container plaatsen en **verifiëren vóór** enige databasewijziging. `$BK` is `0700 root:root`, dus de kopie draait onder `sudo` (geen onprivileged `[ -f ]`-test: `janpeter` kan de root-only map niet doorzoeken en zou zo'n test altijd false zien). Draai het in een **losstaande** subshell met `set -e` (níét `( … ) || …`, dat zou de `set -e` onderdrukken), en verwijder eerst een eventueel achtergebleven `/tmp/rollback.dump` van een vorige poging, zodat een mislukte kopie nooit op een oude dump verifieert:
      ```sh
      ( set -e
-       sudo docker cp "$BK/forgejo-pre-image.dump" scrum4me-postgres:/tmp/rollback.dump   # faalt luid als de verse dump er niet is
-       [ "$(docker exec scrum4me-postgres pg_restore --list /tmp/rollback.dump | wc -l)" -gt 0 ]
-     ) || { echo "verse dump ontbreekt of onbruikbaar — STOP, database NIET hernoemen, escaleer naar JP"; false; }
+       docker exec scrum4me-postgres rm -f /tmp/rollback.dump                              # geen stale dump van een vorige poging
+       sudo docker cp "$BK/forgejo-pre-image.dump" scrum4me-postgres:/tmp/rollback.dump    # faalt luid als de verse dump er niet is
+       LIST=$(docker exec scrum4me-postgres pg_restore --list /tmp/rollback.dump)          # eigen exit van pg_restore telt (set -e)
+       [ -n "$LIST" ]                                                                       # niet-lege inhoudslijst of STOP
+     )
+     rc=$?
+     [ "$rc" -eq 0 ] || { echo "verse dump ontbreekt of onbruikbaar (exit $rc) — STOP, database NIET hernoemen, escaleer naar JP"; false; }
      ```
   3. **Alleen na een groene stap 2:** de gemigreerde database wordt **hernoemd**, niet gedropt (forensisch onderzoek):
      ```sh
@@ -249,7 +267,8 @@ Elke terugweg herstelt naar de toestand van het laatst groene gate; er is geen "
 - **Upgrade-guide:** backup (2.4/2.7, Gate 2), `doctor check --all` vooraf (0.4, 2.6) en achteraf (4.5), `flush-queues` (2.6), verificatie via webinterface (4.6), loglevel-troubleshooting alleen bij een STOP.
 - **Onderzoek §2 / §7.9:** service-gebonden compose (Global Constraints, 3.1 compose-tak, 4.3), control-plane-drain in §7.9-volgorde (2.1 pauze → 2.2 stop + `fetch_timeout`+10 s + offline → 2.3 job-nulbewijs via `/api/v1/admin/actions/runners/jobs`, 0.12 toetst die bron), trust-timer (0.7, 5.2), geen versiepin in de probe (5.2 bewijst herstel op `VNOW`).
 - **Onderzoek §3/§6:** trusted proxies (0.11, 2.5a, 3.3), secretrotatie met luide faaltak (2.4 vingerafdruk, 2.5b, 3.4, 0.10 impact), `T_requeue` blijft geldig (6.2).
-- **Data-integriteit:** koud rollbackpunt vóór wijziging (2.7, Gate 2) én een vers **paar** (DB-dump + volume) met de forge gestopt vóór de image-recreate (4.1); beide worden in een `set -e`-subshell genomen zodat de `pg_restore --list`-verificatie hard afbreekt (geen `| wc -l` in een `&&`-keten). Write-fence over het venster (1.4) met expliciet restrisico ter aftekening (Gate 4). R4 herstelt uitsluitend naar het verse paar met `sudo docker cp` (geen onprivileged `[ -f ]`-selectie) en een geverifieerde dump als harde voorwaarde vóór `ALTER DATABASE`; geen terugval op de 2.7-dump (na de 4.1-rsync mismatcht die met het volume).
+- **Data-integriteit:** koud rollbackpunt vóór wijziging (2.7, Gate 2) én een vers **paar** (DB-dump + volume) met de forge gestopt vóór de image-recreate (4.1); beide worden in een **losstaande** `set -e`-subshell genomen met `rc=$?` erna, zodat de `pg_restore --list`-verificatie (via `LIST=$(…)`, diens eigen exit, niet die van `wc`) hard afbreekt — géén `( … ) && … || …`, dat zou de `set -e` onderdrukken. Write-fence over het venster (1.4) met expliciet restrisico ter aftekening (Gate 4). R4 herstelt uitsluitend naar het verse paar met `sudo docker cp` (geen onprivileged `[ -f ]`-selectie), verwijdert eerst een stale `/tmp/rollback.dump` en verifieert de dump als harde voorwaarde vóór `ALTER DATABASE`; geen terugval op de 2.7-dump (na de 4.1-rsync mismatcht die met het volume).
+- **Shell-robuustheid:** alle vijf fail-gates (2.3, 2.5b, 2.7, 4.1, R4) gebruiken hetzelfde patroon — losstaande `( set -e … )`, dan `rc=$?`, dan branchen met een `false` op rood — omdat bash `set -e` binnen een subshell negeert zodra die in een `&&`/`||`-lijst of `if`-conditie staat. Geverifieerd met `bash -n` én een runtime-injectietest.
 - **Uitkomstsymmetrie:** Fase 5/Gate 5 gelden voor `VNOW` (15.0.7 upgrade / 15.0.2 rollback); elke terugweg (R2/R3/R4) eindigt in Fase 5 met uitkomst `rolled_back`.
 - **Geen placeholders:** elk commando is concreet; enige in te vullen waarden zijn `SUBNET` (0.11) en de tijdstempels. **Geen secrets:** waarden blijven in de container of in de root-only `$BK`; de UUID-regel wordt door de 6.1-grep gehandhaafd, niet door `secret-scan.sh`.
 - **Consistentie:** `RID`/`DID` (2.6 → 3.1 compose-tak → 4.3), `PRE_SECRETS`/`POST_SECRETS` (2.4 → 2.5b → 3.4), `T0`/`TSTOP`/`TEND` (2 → 5.4), `VNOW` (5-intro → 5.2/5.3/Gate 5), takkeuze 2.5a en 3.3 vastgelegd in 0.2/0.8 en `venster.md`.
@@ -289,6 +308,11 @@ Plan-fase van de review-loop (twee onafhankelijke cross-model reviewers, JP-armd
   - *(codex MINOR)* nazorg (6.2/6.3/Gate 6) eiste onvoorwaardelijk 15.0.7 ook na rollback. **Fix:** Fase 6 en Gate 6 uitkomstafhankelijk (`upgraded`/`rolled_back`), committekst volgt uitkomst + rotatiebesluit.
 - **Verdicts:** `scrum4me-server:claude` NO-GO · `mac:codex` NO-GO.
 
-### Ronde 3 — nog te verzenden
+### Ronde 3 — 2026-09-09 — **NO-GO** (dubbel, convergent)
+- **Reviewers:** `scrum4me-server:claude` (1 BLOCKER · 0 MAJOR · 0 MINOR) + `mac:codex` (1 BLOCKER · 0 MAJOR · 0 MINOR). **Beide vonden onafhankelijk exact dezelfde BLOCKER** en reproduceerden hem op bash 5.3.9. Alle overige ronde-2-fixes door beide bevestigd gesloten (validator-Python correct op de volledige fixture-matrix, R4-selectiebug dicht, Fase 6 uitkomstafhankelijk).
+- **Convergente BLOCKER — `set -e` in een AND-OR-context wordt genegeerd.** De vijf `( set -e … ) && … || …`-/`( set -e … ) || …`-wrappers uit ronde 2 onderdrukken de `set -e` binnen de subshell (gedocumenteerd bash-gedrag; ook `if ( set -e … )` doet dit). Gevolg: de subshell draait álle commando's en eindigt met de exit van het laatste → 2.3 telde alleen de tweede snapshot, 2.5b/2.7/4.1 meldden `OK` ná een faal, R4 was slechts toevallig veilig. Zelf nagemeten: `( set -e; false; echo X ) && … || …` → `X`/exit 0; **`( set -e; false; echo X ); rc=$?`** → exit 1 (STOP). **Fix:** alle vijf blokken naar een **losstaande** subshell + `rc=$?` + branchen; `pg_restore --list` via `LIST=$(…)` zodat diens eigen exit telt (niet `wc`); R4 verwijdert eerst een stale `/tmp/rollback.dump`. Bevestigd met `bash -n` én een runtime-injectietest.
+- **Verdicts:** `scrum4me-server:claude` NO-GO · `mac:codex` NO-GO.
+
+### Ronde 4 — nog te verzenden
 - **Reviewers:** `scrum4me-server:claude` (ops-routed) + `mac:codex`. Zelfde adressen; JP-armd.
-- **Delta:** `git diff` van ronde 2 → 3 op dit plan; instructie om de fixes tegen de boom te verifiëren, niet te vertrouwen. Geen afgewezen bevindingen om te heradjudiceren (alle 5 geaccepteerd).
+- **Delta:** `git diff` van ronde 3 → 4 op dit plan (uitsluitend de vijf shell-wrappers + Review record); instructie om de fixes met een runtime-injectietest te verifiëren, niet alleen `bash -n`. Geen afgewezen bevindingen om te heradjudiceren.
