@@ -81,6 +81,12 @@ daarna de unit en verwijder alleen de runner- en DinD-containers. Laat het volum
 
 ## Verifiëren
 
+Een geldige CLI-exit 0 of soft-only exit 10 publiceert groen. Zachte meldingen
+blijven via stderr in het servicejournal zichtbaar en moeten binnen 24 uur worden
+beoordeeld. Hard/onleesbaar, onverwachte exits en ongeldige of tegenstrijdige JSON
+invalideren oud groen. De scanner onderzoekt de defaultbranch, niet de geselecteerde
+featurecommit. Merge en hostuitrol vereisen afzonderlijk akkoord.
+
 ```bash
 bats tests/*.bats
 for f in tests/test_*.py; do python3 "$f"; done

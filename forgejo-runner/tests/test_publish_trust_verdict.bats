@@ -5,7 +5,7 @@ teardown() { rm -rf "$TMP"; }
   cat > "$TMP/cli.py" <<'PY'
 import os, sys
 out = sys.argv[sys.argv.index("--out")+1]
-open(out + "/trust-verdict.json","w").write('{"ok":true}')
+open(out + "/trust-verdict.json","w").write('{"ok":true,"hard":[],"unreadable":[],"soft":[]}')
 open(os.environ["PROBE_FILE"],"w").write(os.environ.get("FORGEJO_URL","UNSET"))
 PY
   PROBE_FILE="$TMP/seen" run scripts/publish-trust-verdict.sh --cli-py "$TMP/cli.py" \
