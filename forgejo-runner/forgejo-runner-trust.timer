@@ -1,0 +1,22 @@
+[Unit]
+Description=Vernieuwt het Forgejo Runner trust-verdict voor het verloopt
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+
+[Timer]
+Unit=forgejo-runner-trust.service
+# Viermaal per dag. §7.7 eist de controle dagelijks; dat is hier de ONDERGRENS,
+# niet de cadans. De controllergate weigert een verdict ouder dan
+# trust.verdict_max_age_seconds (86400). Een exact daagse slag laat nul marge:
+# de vervaldatum valt dan samen met de volgende slag, en één overgeslagen of
+# mislukte run legt de pool stil. Zes uur geeft drie hele gemiste slagen marge.
+OnCalendar=*-*-* 00,06,12,18:00:00
+# Beide hosts draaien deze timer tegen dezelfde Forgejo-bron. Zonder spreiding
+# slaan ze op de seconde gelijk en meten ze de instance tegelijk vol.
+RandomizedDelaySec=300
+# Na een host- of Dockerboot, of na een langere uitval, meteen inhalen in plaats
+# van tot de volgende slag wachten: een verlopen verdict houdt de runner tegen.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
