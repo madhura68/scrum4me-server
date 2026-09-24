@@ -65,6 +65,10 @@ repositories:
     actions_enabled: true
     workflow_source: null
     writers: [janpeter]
+  - full_name: janpeter/When2Watch
+    actions_enabled: false
+    workflow_source: null
+    writers: [janpeter]
   - full_name: janpeter/inspannings-monitor
     actions_enabled: true
     workflow_source: .github/workflows
