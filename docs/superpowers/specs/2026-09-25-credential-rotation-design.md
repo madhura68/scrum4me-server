@@ -46,7 +46,7 @@ Alle metingen hieronder toonden alleen namen, nooit waarden.
 | 5 | srv | `/srv/scrum4me/secrets/workers.env` | ops-agent 600 | idem | idem |
 | 6 | srv | `/srv/scrum4me/secrets/mcp-http.env` | ops-agent 600 | idem | idem |
 | 7 | srv | `/srv/scrum4me/secrets/copilot.env` | ops-agent 600 | idem | idem |
-| 8 | srv | `/srv/scrum4me/repos/Scrum4Me/.env` | janpeter **670** | `scrum4me-web.service` | `sudo systemctl restart scrum4me-web` |
+| 8 | srv | `/srv/scrum4me/repos/Scrum4Me/.env` | janpeter 670 + ACL `ops-agent` | `scrum4me-web.service` | `sudo systemctl restart scrum4me-web` |
 | 9 | srv | `~/.claude.json` | janpeter | host-MCP (Claude) | nieuwe sessie of MCP-reconnect |
 | 10 | srv | `~/.codex/config.toml` | janpeter | host-MCP (Codex) | idem |
 | 11 | max2 | `/srv/scrum4me/compose/worker-idea.env` | ops-agent 600 | compose `env_file` | `docker compose up -d --force-recreate <svc>` |
@@ -214,8 +214,10 @@ rollen.
 
 1. Verwijder de `.bak-<S>`-bestanden. Toon de lijst eerst en laat JP bevestigen.
 2. Verwijder het Keychain-item `old`.
-3. Zet `Scrum4Me/.env` op mode 600, na controle dat `scrum4me-web.service` (user janpeter) het
-   bestand nog kan lezen.
+3. ~~Zet `Scrum4Me/.env` op mode 600.~~ **Vervallen (2026-09-25, T-85):** `scrum4me-web` draait
+   als `ops-agent` en leest `.env` via een POSIX-ACL (`user:ops-agent:rwx`). De "670" is het
+   ACL-masker; `other::---`, dus het bestand is niet world-readable. `chmod 600` zou het masker op
+   `---` zetten en de webapp breken. `rewrite` en `rollback` behouden de ACL.
 4. Werk de kaart bij met de datum van de laatste rotatie en eventuele nieuwe consumers.
 5. De journal-regel van 2026-09-24 bevat nu een dood wachtwoord. Die blijft staan en wordt als
    zodanig vastgelegd op de kaart. Het journal wordt niet gewist.
