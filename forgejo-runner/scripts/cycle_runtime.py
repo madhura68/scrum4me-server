@@ -150,6 +150,7 @@ class Runtime:
         self._last_probe = None
         self._stop_deadline = None
         self._ev_cursor = 0
+        self._trust_last = None  # laatst gelogde (groen, reden) van de trustgate
 
     def _load_digests(self):
         if not self._loaded:
@@ -164,11 +165,25 @@ class Runtime:
         verdict, ls, as_ = self.a.trust.read()
         return verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
 
+    def _log_trust_transition(self, green, reden):
+        # Een rode trustgate was stil: de reden werd weggegooid terwijl unit en DinD
+        # groen bleven, dus de runner viel uit zonder spoor in de journal (max2 ISS-8,
+        # en opnieuw 2026-09-25). Alleen loggen bij een wissel — dit draait elke tick.
+        state = (bool(green), reden)
+        if state == self._trust_last:
+            return
+        self._trust_last = state
+        if green:
+            self.log.info("trustgate groen")
+        else:
+            self.log.warning("trustgate ROOD: %s → geen nieuwe runners", reden)
+
     def _readiness_and_gates(self, now):
         klasse = classify_probe(self.a.probe.probe())
         self.readiness.observe(klasse, now)
         self.controller.on_event(self.loop.submit("readiness", {"klasse": klasse}))
-        green, _ = self._trust_green()
+        green, reden = self._trust_green()
+        self._log_trust_transition(green, reden)
         try:
             healthy = self.a.dind.healthy()
         except (subprocess.SubprocessError, OSError) as exc:
