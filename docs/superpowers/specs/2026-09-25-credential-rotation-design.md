@@ -100,7 +100,7 @@ rechtstreeks uit de repo-checkout, als janpeter.
 | `rewrite --role R --file F… [--dry-run]` | Vervangt in elke regel van F alleen het wachtwoorddeel van `://R:<pw>@`. Werkt in elk tekstformaat (env, JSON, TOML). Per bestand, in deze volgorde: back-up `F.bak-<UTC-stempel>` (mode 600, zelfde eigenaar); tijdelijk bestand in dezelfde map met dezelfde eigenaar en mode; fsync; controleren dat F sinds het inlezen niet gewijzigd is (mtime en grootte); atomaire rename. Meldt per bestand het aantal vervangingen en waarschuwt bij een mode ruimer dan 640. | een bestand 0 treffers heeft (`--dry-run` meldt dat alleen); F tijdens het schrijven wijzigde; het wachtwoord ongeldig is |
 | `rollback --stamp S --file F…` | Zet `F.bak-S` atomair terug op F. | een back-up ontbreekt |
 | `alter-role --role R [--container scrum4me-postgres]` | Berekent een SCRAM-SHA-256-verifier (4096 iteraties, willekeurige salt) en stuurt `ALTER ROLE "R" PASSWORD '<verifier>'` via stdin naar `docker exec -i <container> psql -U scrum4me -d scrum4me -v ON_ERROR_STOP=1`. Postgres ziet het leesbare wachtwoord nooit. | R niet bestaat of `psql` een fout geeft |
-| `probe --role R --file F [--expect ok\|reject]` | Haalt de DSN van R uit F. Schrijft `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGUSER` en `PGDATABASE` naar een tijdelijk bestand (mode 600, verwijderd in `finally`). Draait `docker run --rm --network host --env-file <tmp> postgres:<versie van srv> psql -tAc 'select 1'`. Beoordeelt het resultaat tegen `--expect`. | de uitkomst niet overeenkomt met `--expect` |
+| `probe --role R --file F [--expect ok\|reject]` | Haalt de DSN van R uit F. Schrijft `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGUSER` en `PGDATABASE` naar een tijdelijk bestand (mode 600, verwijderd in `finally`). Draait `docker run --rm --pull never --network host --env-file <tmp> postgres:17 psql -tAc 'select 1'`. Beoordeelt het resultaat tegen `--expect`. | de uitkomst niet overeenkomt met `--expect` |
 | `scan --role R PATH…` | Doorzoekt paden recursief naar `R:<x>@`. Classificeert elke treffer tegen het wachtwoord op stdin als `huidig`, `placeholder/regex` (bevat `< > * [ ^ $` of spaties) of `ANDERS`. Print alleen pad, regel en klasse. | — (exit 1 als er een `ANDERS`-treffer is) |
 
 `probe` draait op de host die het bestand heeft, zodat ook het netwerkpad van die host bewezen
@@ -242,7 +242,7 @@ rollen.
   bij fouten.
 - `rollback` herstelt byte-identiek.
 
-Een integratietest tegen een wegwerp-Postgres-container (`docker run postgres:<versie>`):
+Een integratietest tegen een wegwerp-Postgres-container (`docker run --rm postgres:17`):
 
 - `alter-role` zet een verifier waarmee `probe --expect ok` slaagt.
 - Het oude wachtwoord geeft bij `probe --expect reject` een weigering.
@@ -257,4 +257,4 @@ Een integratietest tegen een wegwerp-Postgres-container (`docker run postgres:<v
 | Claude Code overschrijft `~/.claude.json` tijdens `rewrite` | Controle op wijziging vóór de rename. Een race wordt dan een weigering en daarna een herhaling, en geen stil verlies. Kan een draaiende sessie de oude waarde later terugschrijven? Dat controleert de residu-`scan` in fase 2. |
 | Een recreate breekt een lopende job af | Rustig moment met een lege queue (fase 0.1). |
 | Het Keychain-item gaat verloren | Het oude wachtwoord staat tot fase 4 in `old` én in de back-ups; het nieuwe staat na fase 1 in alle bestanden. |
-| `docker run postgres` downloadt een image | Gebruik de image-tag die srv al lokaal heeft; op max2 ook, of de probe draait alleen op srv. |
+| `docker run postgres` downloadt een image | `postgres:17` staat lokaal op srv én max2 (gemeten 2026-09-25); `probe` gebruikt `--pull never`. |
