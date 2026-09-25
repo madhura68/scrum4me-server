@@ -164,6 +164,59 @@ class RewriteTest(Base):
         self.assertNoLeak(out, err)
         self.assertEqual([p for p in os.listdir(self.dir) if not p.endswith(".env") and ".bak-" not in p], [])
 
+    def test_interrupt_midbatch_restores_and_reraises(self):
+        files = [self.write(f"{i}.env", ENV) for i in range(3)]
+        real_replace = os.replace
+
+        def interrupting_replace(src, dst):
+            if dst == files[1]:
+                raise KeyboardInterrupt()
+            return real_replace(src, dst)
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(rec.os, "replace", side_effect=interrupting_replace):
+            with self.assertRaises(KeyboardInterrupt):
+                rec.main(["rewrite", "--role", ROLE] + sum([["--file", f] for f in files], []),
+                         stdin=io.StringIO(NEW), out=out, err=err)
+        for f in files:
+            self.assertEqual(self.read(f), ENV)
+        self.assertIn("stamp=", out.getvalue())
+        self.assertIn("teruggezet: 1", err.getvalue())
+        self.assertNoLeak(out.getvalue(), err.getvalue())
+
+    def test_sigterm_midbatch_restores(self):
+        import signal
+        files = [self.write(f"{i}.env", ENV) for i in range(2)]
+        real_replace = os.replace
+
+        def terminating_replace(src, dst):
+            if dst == files[1]:
+                os.kill(os.getpid(), signal.SIGTERM)
+            return real_replace(src, dst)
+
+        before = signal.getsignal(signal.SIGTERM)
+        with mock.patch.object(rec.os, "replace", side_effect=terminating_replace):
+            with self.assertRaises(KeyboardInterrupt):
+                run(["rewrite", "--role", ROLE] + sum([["--file", f] for f in files], []), NEW)
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+        for f in files:
+            self.assertEqual(self.read(f), ENV)
+
+    def test_broken_stdout_midbatch_restores(self):
+        files = [self.write(f"{i}.env", ENV) for i in range(2)]
+
+        class Breaking(io.StringIO):
+            def write(self, text):
+                if text.startswith("ok "):
+                    raise BrokenPipeError(32, "Broken pipe")
+                return super().write(text)
+
+        rc = rec.main(["rewrite", "--role", ROLE] + sum([["--file", f] for f in files], []),
+                      stdin=io.StringIO(NEW), out=Breaking(), err=io.StringIO())
+        self.assertEqual(rc, 1)
+        for f in files:
+            self.assertEqual(self.read(f), ENV)
+
     def test_changed_during_write_refuses(self):
         f = self.write("w.env", ENV)
         real_fsync = os.fsync

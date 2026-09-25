@@ -46,7 +46,7 @@ en print ze nooit.
 | `rollback --stamp S --file F…` | zet `F.bak-S` terug | — |
 | `alter-role --role R` | zet het wachtwoord als SCRAM-verifier, dus Postgres ziet de leesbare waarde nooit | nieuw |
 | `probe --role R --file F --expect ok\|reject` | logt in met de DSN uit F via een wegwerp-`postgres:17`-container | — |
-| `scan --role R PAD…` | vindt achtergebleven kopieën en deelt ze in als `huidig`, `placeholder/regex` of `ANDERS`; exitcode 1 als er `ANDERS` buiten back-ups is | het wachtwoord dat als `huidig` moet gelden |
+| `scan --role R [--consumer F…] [PAD…]` | vindt achtergebleven kopieën en deelt ze in als `huidig`, `placeholder/regex`, `ANDERS` of `LEK` (het huidige secret buiten de `--consumer`-bestanden); doorzoekt ook de consumers zelf; exitcode 1 bij `ANDERS`/`LEK` buiten back-ups of bij een ontbrekend pad (`MIST`) | het wachtwoord dat als `huidig` moet gelden |
 
 **Installeren of bijwerken op srv en max2.** Doe dit vanuit een checkout op de gewenste
 commit; de mac gebruikt het script direct uit de checkout.
@@ -103,9 +103,18 @@ security find-generic-password -s s4m-db-<rol> -a new -w \
 
 ### A.4 Fase 1: flip (achter elkaar, zonder pauze)
 
+Sluit vóór stap 1 de Claude/Codex-sessies op srv en max2 en alle andere sessies op de mac,
+behalve de sessie die de rotatie uitvoert. Claude Code schrijft `~/.claude.json` zelf bij, en
+`rewrite` weigert een bestand dat tijdens het schrijven wijzigt. Gebeurt dat toch, dan zet
+`rewrite` die hele host terug; herhaal dan alleen die host.
+
 1. **Herschrijf de bestanden** op alle hosts met `rewrite` (`new` via een pipe). Noteer de
    `stamp=` per host. Dit heeft nog geen effect: draaiende processen houden hun env in het
    geheugen.
+   **Stopregel:** ga pas naar stap 2 als elke host exitcode 0 gaf en een `ok`-regel per
+   bestand. Faalde een host, dan heeft `rewrite` die host al teruggezet. Herhaal die host, of
+   zet de geslaagde hosts terug met `rollback` en stop. `alter-role` met een half herschreven
+   inventaris sluit consumers buiten.
 2. **Voer `alter-role` uit** op srv en noteer `T_alter` uit de uitvoer. Vanaf nu falen nieuwe
    verbindingen met het oude wachtwoord.
 3. **Herlaad direct alle consumers** (de commando's staan op de kaart). Bestaande
@@ -119,11 +128,15 @@ security find-generic-password -s s4m-db-<rol> -a new -w \
 2. **Healthchecks.** Die staan op de kaart.
 3. **Negatieve proef.** `probe --expect reject` op de `.bak-<stamp>` van één bestand per host,
    en `probe --expect ok` op het huidige bestand. "Geweigerd" betekent een auth-weigering; een
-   netwerkfout telt niet.
+   netwerkfout telt niet. `probe` draait op het **hostnetwerk**. Kies daarom een bestand
+   waarvan de DSN-host vanaf de host bereikbaar is, dus een IP of `127.0.0.1` en geen
+   compose-naam als `postgres`. De kaart noemt welk bestand. Draai dezelfde `probe --expect ok`
+   al in fase 0, zodat een onbereikbare host niet pas na de flip opvalt.
 4. **`prisma_migrate_precheck` is groen.**
-5. **Residu.** `scan` met `new` op stdin over de consumerbestanden plus `~/.claude/projects`,
+5. **Residu.** `scan` met `new` op stdin, met de consumerbestanden als `--consumer`, plus `~/.claude/projects`,
    `~/.claude/file-history`, `~/.codex`, `~/.bash_history` en `~/.zsh_history` op elke host.
-   Verwachting: exitcode 0. `ANDERS (backup)` is toegestaan tot fase 4. Een `ANDERS` in een
+   Verwachting: exitcode 0. `ANDERS (backup)` is toegestaan tot fase 4. **`LEK` is rood:** dan
+   staat het nieuwe wachtwoord in een transcript of history, en dan roteer je opnieuw. Een `ANDERS` in een
    transcript is het oude, nu dode wachtwoord: noteer het en ruim het op in fase 4.
 
 ### A.6 Canary-query
@@ -219,19 +232,22 @@ behouden de ACL; dat is getest met `test_posix_acl_preserved`.
 ```bash
 SRV_FILES='--file /srv/scrum4me/compose/worker-idea.env --file /srv/scrum4me/compose/worker-deploy.env --file /srv/scrum4me/compose/worker-docs.env --file /srv/scrum4me/compose/worker-codex.env --file /srv/scrum4me/secrets/workers.env --file /srv/scrum4me/secrets/mcp-http.env --file /srv/scrum4me/secrets/copilot.env --file /srv/scrum4me/repos/Scrum4Me/.env --file /home/janpeter/.claude.json --file /home/janpeter/.codex/config.toml'
 MAX2_FILES='--file /srv/scrum4me/compose/worker-idea.env --file /srv/scrum4me/compose/worker-codex.env --file /home/janpeter/.claude.json'
-MAC_FILES="--file $HOME/.claude.json --file $HOME/.codex/config.toml"
+MAC_FILES=(--file ~/.claude.json --file ~/.codex/config.toml)   # zsh-array: zsh splitst een string niet
 REC=~/Development/scrum4me-server/scripts/rotate-env-credential   # mac: uit de checkout
 K='s4m-db-scrum4me_web_runtime'
 ```
 
-Deze variabelen bevatten alleen paden. Ze mogen dus gewoon in een `ssh`-string staan.
+`SRV_FILES` en `MAX2_FILES` bevatten alleen paden en gaan als één `ssh`-string naar de remote
+bash, die ze wél splitst. `MAC_FILES` is een zsh-array; gebruik hem als `"${MAC_FILES[@]}"`.
+`${SRV_FILES//--file/--consumer}` maakt er de `--consumer`-lijst voor `scan` van.
+Getest op 2026-09-25: `rewrite --dry-run "${MAC_FILES[@]}"` geeft 2 + 1 treffers.
 
 #### Fase 0
 
 ```bash
 ssh scrum4me-srv "sudo rotate-env-credential rewrite --role scrum4me_web_runtime --dry-run $SRV_FILES"
 ssh max2         "sudo rotate-env-credential rewrite --role scrum4me_web_runtime --dry-run $MAX2_FILES"
-"$REC" rewrite --role scrum4me_web_runtime --dry-run $MAC_FILES
+"$REC" rewrite --role scrum4me_web_runtime --dry-run "${MAC_FILES[@]}"
 
 # oud wachtwoord → Keychain 'old' (alleen pipes); controle: 64 hex-ok
 ssh scrum4me-srv 'sudo grep -m1 -oE "://scrum4me_web_runtime:[^@]+@" /srv/scrum4me/secrets/mcp-http.env' \
@@ -240,9 +256,14 @@ ssh scrum4me-srv 'sudo grep -m1 -oE "://scrum4me_web_runtime:[^@]+@" /srv/scrum4
 security find-generic-password -s "$K" -a old -w | awk '{print length($0), ($0 ~ /^[0-9a-f]{64}$/ ? "hex-ok" : "BAD")}'
 
 # consistentie: overal 'huidig' met old
-security find-generic-password -s "$K" -a old -w | ssh scrum4me-srv "sudo rotate-env-credential scan --role scrum4me_web_runtime $(echo $SRV_FILES | sed 's/--file //g')"
-security find-generic-password -s "$K" -a old -w | ssh max2 "sudo rotate-env-credential scan --role scrum4me_web_runtime $(echo $MAX2_FILES | sed 's/--file //g')"
-security find-generic-password -s "$K" -a old -w | "$REC" scan --role scrum4me_web_runtime ~/.claude.json ~/.codex/config.toml
+security find-generic-password -s "$K" -a old -w | ssh scrum4me-srv "sudo rotate-env-credential scan --role scrum4me_web_runtime ${SRV_FILES//--file/--consumer}"
+security find-generic-password -s "$K" -a old -w | ssh max2 "sudo rotate-env-credential scan --role scrum4me_web_runtime ${MAX2_FILES//--file/--consumer}"
+security find-generic-password -s "$K" -a old -w | "$REC" scan --role scrum4me_web_runtime --consumer ~/.claude.json --consumer ~/.codex/config.toml
+
+# probe vanaf het hostnetwerk: vóór de flip moet 'ok' al slagen
+ssh scrum4me-srv 'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/repos/Scrum4Me/.env --expect ok'
+ssh max2         'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/compose/worker-idea.env --expect ok'
+
 
 # nieuw wachtwoord → Keychain 'new' (A.2), daarna controleren
 openssl rand -hex 32 | awk '{print; print}' | security add-generic-password -U -s "$K" -a new -w >/dev/null 2>&1
@@ -264,13 +285,14 @@ ssh max2 'cd /srv/scrum4me/compose && sudo -u ops-agent docker compose -p scrum4
 ```bash
 security find-generic-password -s "$K" -a new -w | ssh scrum4me-srv "sudo rotate-env-credential rewrite --role scrum4me_web_runtime $SRV_FILES"
 security find-generic-password -s "$K" -a new -w | ssh max2         "sudo rotate-env-credential rewrite --role scrum4me_web_runtime $MAX2_FILES"
-security find-generic-password -s "$K" -a new -w | "$REC" rewrite --role scrum4me_web_runtime $MAC_FILES
-#   → noteer stamp= per host
+security find-generic-password -s "$K" -a new -w | "$REC" rewrite --role scrum4me_web_runtime "${MAC_FILES[@]}"
+#   → noteer stamp= per host. STOPREGEL: alle drie exit 0 met 'ok' per bestand, anders niet verder (A.4)
 
 security find-generic-password -s "$K" -a new -w | ssh scrum4me-srv 'sudo rotate-env-credential alter-role --role scrum4me_web_runtime'
 #   → noteer T_alter
 
-ssh scrum4me-srv 'cd /srv/scrum4me/compose && sudo -u ops-agent docker compose -p compose -f docker-compose.yml up -d --force-recreate --no-deps worker-idea worker-deploy worker-docs agent-codex scrum4me-workers scrum4me-mcp-http scrum4me-copilot && sudo systemctl restart scrum4me-web'
+ssh scrum4me-srv 'cd /srv/scrum4me/compose && sudo -u ops-agent docker compose -p compose -f docker-compose.yml up -d --force-recreate --no-deps worker-idea worker-deploy worker-docs agent-codex scrum4me-workers scrum4me-mcp-http scrum4me-copilot'
+ssh scrum4me-srv 'sudo systemctl restart scrum4me-web'   # los: ook als compose faalt moet de web herstarten
 ssh max2 'cd /srv/scrum4me/compose && sudo -u ops-agent docker compose -p scrum4me -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.codex.yml up -d --force-recreate --no-deps --scale worker-idea=<N_max2> worker-idea agent-codex'
 # host-MCP's: sluit de lopende Claude/Codex-sessies op srv, max2 en de mac en start ze opnieuw
 ```
@@ -284,13 +306,15 @@ ssh max2 'cd /srv/scrum4me/compose && sudo -u ops-agent docker compose -p scrum4
   (status `Up`, waar een healthcheck bestaat `healthy`).
 - **MCP:** een `health`-aanroep vanuit een nieuwe sessie op elke host.
 - **Negatieve proef**, met `<S>` de stempel van die host:
-  - `ssh scrum4me-srv 'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/secrets/mcp-http.env.bak-<S> --expect reject'`
-  - `ssh scrum4me-srv 'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/secrets/mcp-http.env --expect ok'`
+  - `ssh scrum4me-srv 'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/repos/Scrum4Me/.env.bak-<S> --expect reject'`
+  - `ssh scrum4me-srv 'sudo rotate-env-credential probe --role scrum4me_web_runtime --file /srv/scrum4me/repos/Scrum4Me/.env --expect ok'`
   - hetzelfde op max2 met `/srv/scrum4me/compose/worker-idea.env`.
+  - **Niet** `compose/*.env` of `secrets/*.env` op srv: hun DSN-host is `postgres`, en die naam
+    bestaat alleen binnen het compose-netwerk.
 - **Residu:**
 
 ```bash
-security find-generic-password -s "$K" -a new -w | ssh scrum4me-srv "sudo rotate-env-credential scan --role scrum4me_web_runtime $(echo $SRV_FILES | sed 's/--file //g') /home/janpeter/.claude/projects /home/janpeter/.claude/file-history /home/janpeter/.codex /home/janpeter/.bash_history"
+security find-generic-password -s "$K" -a new -w | ssh scrum4me-srv "sudo rotate-env-credential scan --role scrum4me_web_runtime ${SRV_FILES//--file/--consumer} /home/janpeter/.claude/projects /home/janpeter/.claude/file-history /home/janpeter/.codex /home/janpeter/.bash_history"
 ```
 
 Doe hetzelfde op max2 en de mac, met hun eigen bestanden en home-mappen.
@@ -300,7 +324,7 @@ Doe hetzelfde op max2 en de mac, met hun eigen bestanden en home-mappen.
 ```bash
 ssh scrum4me-srv "sudo rotate-env-credential rollback --stamp <S_srv> $SRV_FILES"
 ssh max2         "sudo rotate-env-credential rollback --stamp <S_max2> $MAX2_FILES"
-"$REC" rollback --stamp <S_mac> $MAC_FILES
+"$REC" rollback --stamp <S_mac> "${MAC_FILES[@]}"
 security find-generic-password -s "$K" -a old -w | ssh scrum4me-srv 'sudo rotate-env-credential alter-role --role scrum4me_web_runtime'
 # daarna dezelfde herlaadcommando's als in fase 1
 ```

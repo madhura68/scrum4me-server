@@ -71,6 +71,28 @@ class ScanTest(unittest.TestCase):
             rc, out, err = run(["scan", "--role", ROLE, os.path.join(self.root, "scan")], NEW)
             self.assertIn(f"SKIP {locked}: geen toegang", out + err)
 
+    def test_current_secret_outside_consumers_is_leak(self):
+        cur = self.put("current.env", f"URL=postgresql://{ROLE}:{NEW}@h/db\n")
+        tr = self.put("projects/t.jsonl", f'{{"x":"postgresql://{ROLE}:{NEW}@h/db"}}\n')
+        rc, out, err = run(["scan", "--role", ROLE, "--consumer", cur, self.root], NEW)
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"{cur}:1 huidig", out)
+        self.assertIn(f"{tr}:1 LEK", out)
+        self.assertNotIn(NEW, out + err)
+
+    def test_consumers_are_scanned_without_positional_paths(self):
+        cur = self.put("current.env", f"URL=postgresql://{ROLE}:{OLD}@h/db\n")
+        rc, out, err = run(["scan", "--role", ROLE, "--consumer", cur], NEW)
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{cur}:1 ANDERS", out)
+
+    def test_missing_path_is_not_green(self):
+        self.put("current.env", f"URL=postgresql://{ROLE}:{NEW}@h/db\n")
+        missing = os.path.join(self.root, "typo")
+        rc, out, err = run(["scan", "--role", ROLE, self.root, missing], NEW)
+        self.assertEqual(rc, 1)
+        self.assertIn(f"MIST {missing}", out + err)
+
     def test_bad_secret_refused(self):
         rc, out, err = run(["scan", "--role", ROLE, self.root], "x")
         self.assertEqual(rc, 2)
