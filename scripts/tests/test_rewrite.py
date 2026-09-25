@@ -2,7 +2,9 @@ import glob
 import io
 import json
 import os
+import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -105,6 +107,26 @@ class RewriteTest(Base):
         self.assertEqual(stat.S_IMODE(os.stat(bak).st_mode), 0o600)
         self.assertEqual(os.stat(bak).st_uid, uid)
         self.assertEqual(self.read(bak), ENV)
+
+    @unittest.skipUnless(hasattr(os, "listxattr") and shutil.which("setfacl") and shutil.which("getfacl"),
+                         "POSIX-ACL's alleen op Linux met setfacl")
+    def test_posix_acl_preserved(self):
+        # Scrum4Me/.env leest ops-agent via een ACL; os.replace mag die niet wegpoetsen
+        f = self.write("w.env", ENV, mode=0o600)
+        subprocess.run(["setfacl", "-m", "u:nobody:rw", f], check=True)
+        before = subprocess.run(["getfacl", "-cp", f], capture_output=True, text=True, check=True).stdout
+        self.assertIn("user:nobody:rw-", before)
+        rc, out, err = run(["rewrite", "--role", ROLE, "--file", f], NEW)
+        self.assertEqual(rc, 0, err)
+        after = subprocess.run(["getfacl", "-cp", f], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(after, before)
+        [bak] = self.backups(f)
+        bak_acl = subprocess.run(["getfacl", "-cp", bak], capture_output=True, text=True, check=True).stdout
+        self.assertNotIn("nobody", bak_acl)  # back-up blijft strikt 0600, zonder extra rechten
+        stamp = out.split("stamp=")[1].split()[0]
+        rc, out, err = run(["rollback", "--stamp", stamp, "--file", f])
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(subprocess.run(["getfacl", "-cp", f], capture_output=True, text=True, check=True).stdout, before)
 
     def test_warns_on_wide_mode(self):
         f = self.write("w.env", ENV, mode=0o670)
