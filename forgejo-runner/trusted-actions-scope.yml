@@ -72,10 +72,12 @@ repositories:
     actions_enabled: true
     workflow_source: null
     writers: [janpeter]
+  # When2Watch: Actions aan op verzoek van JP (2026-09-25). Nog geen workflowmap;
+  # dat geeft een ZACHTE afwijking die sinds #27 het verdict groen laat.
   - full_name: janpeter/When2Watch
-    actions_enabled: false
+    actions_enabled: true
     workflow_source: null
-    writers: [janpeter]
+    writers: [janpeter, s4m-codex-reviewer]
   - full_name: janpeter/inspannings-monitor
     actions_enabled: true
     workflow_source: .github/workflows
