@@ -22,6 +22,13 @@ approved_at: "2026-08-31T21:56:04Z"
 identities:
   - name: janpeter
   - name: s4m-codex-reviewer
+  # mcp-release (ISS-28, besluit JP 2026-09-25): restricted bot, write-collaborator
+  # op alleen scrum4me-mcp, token repo-beperkt en alleen leesbaar voor root en
+  # ops-agent op scrum4me-srv. Doel: deploy/*-tags snijden (pin_mcp_to_main).
+  # Aanvaard restrisico: de token-houder kan een niet-beschermde branch met een
+  # workflow pushen; een '*'-branchbescherming is afgewezen omdat Forgejo
+  # beschermde branches dan voor niemand meer laat verwijderen.
+  - name: mcp-release
 
 repositories:
   - full_name: janpeter/DigiPlein
@@ -104,7 +111,7 @@ repositories:
   - full_name: janpeter/scrum4me-mcp
     actions_enabled: true
     workflow_source: .forgejo/workflows
-    writers: [janpeter, s4m-codex-reviewer]
+    writers: [janpeter, mcp-release, s4m-codex-reviewer]
     risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-server
     actions_enabled: true
