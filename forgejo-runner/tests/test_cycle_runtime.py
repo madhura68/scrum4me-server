@@ -267,5 +267,39 @@ class TestLogging(unittest.TestCase):
                 rt._drain_events()
             self.assertTrue(any("alarm" in m for m in cm.output))
 
+class TestTrustgateLogging(unittest.TestCase):
+    """Een rode trustgate moet zijn reden loggen, één keer per wissel (max2 ISS-8)."""
+    def test_red_gate_logs_reason_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            rt._trust_green = lambda: (False, "verdict is te oud")
+            with self.assertLogs(rt.log, level="INFO") as cm:
+                for _ in range(3):
+                    rt._readiness_and_gates(clock()[1])
+            rood = [m for m in cm.output if "trustgate ROOD" in m]
+            self.assertEqual(len(rood), 1)
+            self.assertIn("WARNING", rood[0])
+            self.assertIn("verdict is te oud", rood[0])
+            self.assertFalse(ctrl.gates_groen)
+    def test_recovery_and_new_reason_are_logged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            staat = {"v": (False, "ok is niet true")}
+            rt._trust_green = lambda: staat["v"]
+            with self.assertLogs(rt.log, level="INFO") as cm:
+                rt._readiness_and_gates(clock()[1])
+                staat["v"] = (False, "allowlist-binding mismatch")
+                rt._readiness_and_gates(clock()[1])
+                staat["v"] = (True, "groen")
+                rt._readiness_and_gates(clock()[1])
+                rt._readiness_and_gates(clock()[1])
+            berichten = [m.split(":", 2)[2] for m in cm.output]
+            self.assertEqual(berichten, [
+                "trustgate ROOD: ok is niet true → geen nieuwe runners",
+                "trustgate ROOD: allowlist-binding mismatch → geen nieuwe runners",
+                "trustgate groen",
+            ])
+            self.assertTrue(ctrl.gates_groen)
+
 if __name__ == "__main__":
     unittest.main()
