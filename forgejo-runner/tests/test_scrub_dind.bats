@@ -16,7 +16,8 @@ setup() {
   mkdir -p "$STATE"
   : > "$STATE/containers" ; : > "$STATE/volumes"
   printf 'bridge\nhost\nnone\n' > "$STATE/networks"
-  echo "catthehacker/ubuntu@sha256:abc" > "$STATE/images"
+  # Regels "ID repo@digest [dangling]"; dangling alleen zichtbaar met -a.
+  echo "idallow catthehacker/ubuntu@sha256:abc" > "$STATE/images"
   echo "0B" > "$STATE/buildcache"
   : > "$STATE/calls"
   cat > "$FAKE_BIN/docker" <<EOS
@@ -27,7 +28,12 @@ case "\$*" in
   *"ps -aq"*)          cat "\$STATE/containers" ;;
   *"volume ls -q"*)    cat "\$STATE/volumes" ;;
   *"network ls"*)      cat "\$STATE/networks" ;;
-  *"images --digests"*|*"image ls"*) cat "\$STATE/images" ;;
+  *"images "*|*"image ls"*)
+    # Docker 29 + containerd-snapshotter: zonder -a geen dangling images.
+    case " \$* " in *" -a "*) filter=cat ;; *) filter="grep -v dangling\$" ;; esac
+    \$filter "\$STATE/images" | while read -r id ref _; do
+      case "\$*" in *"{{.ID}}"*) echo "\$id \$ref" ;; *) echo "\$ref" ;; esac
+    done ;;
   *"system df"*)       printf 'Images\\t1GB\\nContainers\\t0B\\nLocal Volumes\\t0B\\nBuild Cache\\t%s\\n' "\$(cat "\$STATE/buildcache")" ;;
   *"builder prune"*|*"rm "*|*"volume rm"*|*"network rm"*|*"rmi"*) : ;;
 esac
@@ -65,7 +71,7 @@ scrub() { bash "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW" "$@"; 
 }
 
 @test "een image buiten de allowlist faalt met 50" {
-  echo "zelfgebouwd@sha256:def" >> "$STATE/images"
+  echo "idzelf zelfgebouwd@sha256:def" >> "$STATE/images"
   run scrub
   [ "$status" -eq 50 ]
   [[ "$output" == *"image"* ]]
@@ -80,22 +86,42 @@ scrub() { bash "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW" "$@"; 
 }
 
 @test "de scrub probeert een niet-toegestane image te verwijderen en een toegestane niet" {
-  echo "zelfgebouwd@sha256:def" >> "$STATE/images"
+  echo "idzelf zelfgebouwd@sha256:def" >> "$STATE/images"
   run scrub
-  grep -q 'rmi -f zelfgebouwd@sha256:def' "$STATE/calls"
-  run grep -c 'rmi -f catthehacker/ubuntu@sha256:abc' "$STATE/calls"
+  grep -q 'rmi -f idzelf' "$STATE/calls"
+  run grep -c 'rmi -f idallow' "$STATE/calls"
   [ "$output" = "0" ]
 }
 
 @test "een dangling image zonder digest wordt niet als toegestaan gezien" {
-  echo "<none>@<none>" >> "$STATE/images"
+  echo "idnone <none>@<none>" >> "$STATE/images"
   run scrub
   [ "$status" -eq 50 ]
 }
 
+@test "een untagged image die alleen met -a zichtbaar is faalt met 50 (ISS-10)" {
+  echo "iddang <none>@<none> dangling" >> "$STATE/images"
+  run scrub
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"images: FAIL"* ]]
+}
+
+@test "de scrub verwijdert untagged images op ID (ISS-10)" {
+  echo "iddang <none>@<none> dangling" >> "$STATE/images"
+  run scrub
+  grep -q 'rmi -f iddang' "$STATE/calls"
+}
+
+@test "een tweede label op het ID van een toegestane image sloopt die niet" {
+  echo "idallow ander/label@sha256:fff" >> "$STATE/images"
+  run scrub
+  run grep -c 'rmi -f idallow' "$STATE/calls"
+  [ "$output" = "0" ]
+}
+
 @test "commentaarregels in de allowlist tellen niet als toegestane image" {
   printf '# uitleg\n\ncatthehacker/ubuntu@sha256:abc\t1\n' > "$ALLOW"
-  echo "#@sha256:zzz" >> "$STATE/images"
+  echo "idhash #@sha256:zzz" >> "$STATE/images"
   run scrub
   [ "$status" -eq 50 ]
 }

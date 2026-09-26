@@ -28,7 +28,15 @@ d() { docker -H "$ENDPOINT" "$@" ; }
 toegestaan() {
   awk '!/^[[:space:]]*(#|$)/ {print $1}' "$ALLOW" | grep -Fxq -- "$1"
 }
-images() { d images --digests --format '{{.Repository}}@{{.Digest}}' ; }
+# Regels "ID repo@digest". Met -a, want met de containerd-snapshotter (Docker
+# 29) toont `images` zonder -a geen untagged/dangling images (ISS-10).
+images() { d images -a --digests --format '{{.ID}} {{.Repository}}@{{.Digest}}' ; }
+# IDs van toegestane images: een ander label op hetzelfde ID mag hem niet slopen.
+bewaar_ids() {
+  images | while read -r id img; do
+    if toegestaan "$img"; then printf '%s\n' "$id"; fi
+  done
+}
 
 # Opruimen. Fouten worden genegeerd; het bewijs hieronder is wat telt.
 d ps -aq | while read -r id; do
@@ -41,9 +49,12 @@ d network ls --format '{{.Name}}' | while read -r n; do
   case "$n" in bridge|host|none|'') : ;; *) d network rm "$n" || true ;; esac
 done
 d builder prune -af >/dev/null 2>&1 || true
-images | while read -r img; do
-  [ -n "$img" ] || continue
-  toegestaan "$img" || d rmi -f "$img" || true
+BEWAAR="$(bewaar_ids)"
+images | while read -r id img; do
+  [ -n "$id" ] || continue
+  toegestaan "$img" && continue
+  printf '%s\n' "$BEWAAR" | grep -Fxq -- "$id" && continue
+  d rmi -f "$id" || true
 done
 
 # Bewijs. Vanaf hier bepaalt de meting de exitcode.
@@ -59,9 +70,9 @@ if [ -z "$(d volume ls -q)" ]; then melden volumes OK; else melden volumes FAIL;
 VREEMD="$(d network ls --format '{{.Name}}' | grep -vxE 'bridge|host|none' || true)"
 if [ -z "$VREEMD" ]; then melden netwerken OK; else melden netwerken FAIL; fi
 
-NIET_TOEGESTAAN="$(images | while read -r img; do
-  [ -n "$img" ] || continue
-  toegestaan "$img" || printf '%s ' "$img"
+NIET_TOEGESTAAN="$(images | while read -r id img; do
+  [ -n "$id" ] || continue
+  toegestaan "$img" || printf '%s(%s) ' "$img" "$id"
 done)"
 if [ -z "$NIET_TOEGESTAAN" ]; then melden images OK; else melden images FAIL; fi
 
