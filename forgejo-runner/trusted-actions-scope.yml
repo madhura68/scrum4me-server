@@ -72,12 +72,21 @@ repositories:
     actions_enabled: true
     workflow_source: null
     writers: [janpeter]
-  # When2Watch: Actions aan op verzoek van JP (2026-09-25). Nog geen workflowmap;
-  # dat geeft een ZACHTE afwijking die sinds #27 het verdict groen laat.
+  # When2Watch: Actions aan op verzoek van JP (2026-09-25). De CI staat op main
+  # (.forgejo/workflows/ci.yml, pull_request + push); de defaultbranch gaat naar
+  # main. pull_request bevestigd door JP op 2026-09-26 (zie de ack-toelichting).
   - full_name: janpeter/When2Watch
     actions_enabled: true
-    workflow_source: null
+    workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
+    risky_triggers_acknowledged: [pull_request]
+  # agent-harness: nieuwe repo (2026-09-25) met Actions aan en nog geen workflows.
+  # Zonder deze entry was de trustmeting HARD en lag de max2-runner stil
+  # (2026-09-26 06:09). Nog geen risky triggers bevestigd.
+  - full_name: janpeter/agent-harness
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
   - full_name: janpeter/inspannings-monitor
     actions_enabled: true
     workflow_source: .github/workflows
