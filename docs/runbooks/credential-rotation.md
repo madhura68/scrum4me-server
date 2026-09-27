@@ -1,5 +1,5 @@
 ---
-last_updated: "2026-09-27"
+last_updated: "2026-09-28"
 idea: IDEA-221
 ---
 
@@ -386,13 +386,23 @@ opnieuw bij de eerste rotatie** (fase 0) en werk ze dan uit tot het niveau van B
 - **Herladen:** CLI-aanroepen lezen de env per aanroep. Draaiende `s4m-queue watch`- en
   inbox-processen moet je opnieuw starten.
 
-#### `scrum4me` (migrator/superuser)
+#### `scrum4me` (migrator/superuser) — measured during rotation ISS-38 (2026-09-27)
 
-- **Locaties:** `/etc/ops-agent/db-access/scrum4me-prisma.env`. Daarnaast de resterende
-  consumers tot ISS-1 dicht is, waaronder **`/srv/scrum4me/secrets/workers.env` op max2**
-  (3 treffers, gemeten 2026-09-25).
-- **Let op:** deze rol wordt gebruikt voor `alter-role` (`--db-user scrum4me`), via de
-  `trust`-regel binnen de container. Het roteren van `scrum4me` raakt dat pad niet.
+- **srv consumers (TCP, scram):**
+  - `/etc/ops-agent/db-access/scrum4me-prisma.env` `MIGRATOR_DIRECT_URL` (prisma-operator.sh, policy-bundle-flow.sh, schema-lock.py);
+  - `/root/.hub-watch-operator.env` `HUB_WATCH_HUB_DB_URL` + `HUB_WATCH_QUEUE_DB_URL`;
+  - `/srv/scrum4me/secrets/ops-dashboard-migrate.env` `MIGRATE_DATABASE_URL` (host `postgres`, db `ops_dashboard`);
+  - `/srv/scrum4me/compose/.env` `POSTGRES_PASSWORD` (initdb only; via `rewrite-key`).
+- **max2:** no live consumer (no `scrum4me-postgres`; `compose/.env` and `secrets/ops-dashboard-migrate.env` are dead clones). Reachable over LAN `192.168.0.158` if Tailscale TCP/22 hangs.
+- **mac:** Ops-dashboard `SCRUM4ME_DATABASE_URL` now runs as `ops_readonly`. Seven dev projects used the superuser against prod; they are deliberately broken until ISS-39.
+- **Do not break:** backups, health collector and `alter-role` run via `docker exec` + local `trust`.
+- **Old password ≠ 64-hex:** `read_secret` (scan/rewrite/alter-role) accepts only `SECRET_RE` (64 hex). For a legacy password, use your own in-process scan; the old password goes only to `rewrite-key` (`TOKEN_RE`). New password: `openssl rand -hex 32`.
+- **Canaries (read-only):**
+  - command_key `prisma_migrate_status` via `/agent/v1/exec`;
+  - per DSN: `begin read only; select current_user` (migrate env via `--network compose_default`, the rest via `--network host`);
+  - reject: old password via TCP → `password authentication failed`;
+  - then postgres log since `T_alter`: no unexpected `password authentication failed`.
+- **Residue:** redact in place with a same-length placeholder (keeps tar, sqlite and jsonl valid). Also check Docker volumes (`worker-docs` transcripts under `.claude/projects`), `~/.codex/logs_2.sqlite`, VS Code `User/History`, Beekeeper logs, and the journal (`_CMDLINE`, see ISS-41).
 
 #### `ops_dashboard_mac`
 
