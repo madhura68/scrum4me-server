@@ -549,7 +549,7 @@ Voor eigen tokens van janpeter kan het ook in de UI: Instellingen → Toepassing
 
 | Forgejo-id, account, naam | Scope | Consumers | Herladen |
 |---|---|---|---|
-| 11 s4m-codex-reviewer `CODEX_FORGEJO` | write: activitypub, misc, notification, organization, package, issue, repository, user | srv + max2 `compose/worker-codex.env` | recreate `agent-codex` (srv `-p compose`; max2 `-p scrum4me` met de codex-override) |
+| 36 s4m-codex-reviewer `CODEX_FORGEJO-2026-09-27` (voorheen 11 `CODEX_FORGEJO`) | write: activitypub, misc, notification, organization, package, issue, repository, user | srv + max2 `compose/worker-codex.env` | recreate `agent-codex` (srv `-p compose`; max2 `-p scrum4me` met de codex-override) |
 | 6 janpeter `FORGEJO_TOKEN_SERVER` | write:repository | srv + max2 `compose/worker-idea.env` | recreate `worker-idea` (max2 met `--scale`, zie B.1) |
 | 13 janpeter `worker-deploy-proread` | read:repository | srv `compose/worker-deploy.env` | recreate `worker-deploy` |
 | 7 janpeter `janpeter-shell` | write: admin, repository, user | srv `secrets/workers.env` (max2: vervallen op 2026-09-27 15:33) | recreate `scrum4me-workers` |
@@ -592,7 +592,17 @@ Daarna staan er 21 PAT's.
 `compose/.env.bak*`, `/home/ops-agent/mcp-env-backups/`, `~/.forgejo-pat.tmp`) en de
 docs-worker-logs. Ruim ze op na JP's akkoord, en roteer de tokens die in de logs staan.
 
-**Laatste rotatie:** nog geen. De eerste staat gepland onder T-107: `CODEX_FORGEJO`.
+**Laatste rotatie:** `worker-codex`, 2026-09-27 (T-107): id 11 → 36, zonder faalvenster. Zie
+[evidence/2026-09-27-rotation-forgejo-pat-worker-codex.md](evidence/2026-09-27-rotation-forgejo-pat-worker-codex.md).
+Keychain: `s4m-tok-forgejo-codex/new`.
+
+**Een PAT uit een consumerbestand naar de Keychain halen:** gebruik het vaste patroon (40 hex).
+De generieke regex uit C.2 is lastig te quoten binnen `zsh -c` en `ssh`.
+
+```bash
+ssh <host> 'sudo grep -m1 -oE "^FORGEJO_TOKEN=[0-9a-f]{40}$" <bestand>' | cut -d= -f2 \
+  | awk '{print; print}' | security add-generic-password -U -s s4m-tok-<naam> -a old -w >/dev/null 2>&1
+```
 
 ### C.5 Kaart: Scrum4Me API-tokens
 
