@@ -202,6 +202,8 @@ te rollen.
 `scrum4me-postgres`, 192.168.0.154:5432). Web, workers, agent-containers, MCP-HTTP, Copilot en
 de host-MCP's gebruiken hem. Het wachtwoord is hex64 en overal hetzelfde (gemeten 2026-09-25).
 
+**Keychain:** `s4m-db-scrum4me_web_runtime/new` (mac) bevat het huidige wachtwoord.
+
 **Laatste rotatie:** 2026-09-27 (T-86), `T_alter` 10:28:40Z. Het faalvenster duurde ~16 s,
 en alle stappen van fase 2 waren groen. Het journal-lek van 2026-09-24 is daarmee dood.
 Zie [evidence/2026-09-27-rotation-scrum4me_web_runtime.md](evidence/2026-09-27-rotation-scrum4me_web_runtime.md).
@@ -353,13 +355,12 @@ security find-generic-password -s "$K" -a old -w | ssh scrum4me-srv 'sudo rotate
 - **journal van srv, 2026-09-24:** het wachtwoord staat in de argv van een `sudo sed`-regel.
   Na de eerste rotatie is dat een dood wachtwoord. Het journal wordt niet gewist; deze regel
   documenteert het.
-- **`/srv/scrum4me/secrets/workers.env.bak.20260926T080930Z`:** handmatige kopie van
-  2026-09-26 met het wachtwoord van vóór T-86, nu dood. Niet het `.bak-<stempel>`-patroon.
 - **Transcripts** op de mac (scrum4me-mcp-subagents) bevatten een oudere, niet-hex waarde
   voor deze rol. Getest op 2026-09-27: die wordt geweigerd.
-- **`/srv/scrum4me/repos/Scrum4Me/.env.bak.pre-docsaudit-20260707-234434`:** een oude
-  handmatige back-up met dezelfde ACL. `scan` noemt hem niet als back-up, omdat hij niet het
-  `.bak-<stempel>`-patroon volgt. Beoordeel hem in fase 0 en verwijder hem na JP's akkoord.
+- De oude handmatige kopieën `secrets/workers.env.bak.20260926T080930Z` en
+  `Scrum4Me/.env.bak.pre-docsaudit-20260707-234434` zijn op 2026-09-27 verwijderd. Handmatige
+  kopieën volgen niet het `.bak-<stempel>`-patroon, dus `scan` telt ze als `ANDERS`. Zoek er
+  in fase 0 naar.
 
 ---
 

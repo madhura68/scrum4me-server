@@ -42,8 +42,11 @@ srv en max2). **Geen waarden in dit document.**
 
 ## Fase 4 — afronden
 
-Back-ups (15, stempels hierboven), twee oudere handmatige kopieën op srv en het
-Keychain-item `old`: verwijderen na JP's akkoord (zie hieronder).
+Na JP's akkoord (2026-09-27) verwijderd: 15 back-ups (srv 10, max2 3, mac 2), de twee oudere
+handmatige kopieën op srv (`secrets/workers.env.bak.20260926T080930Z` en
+`Scrum4Me/.env.bak.pre-docsaudit-20260707-234434`) en het Keychain-item `old`. Het
+Keychain-item `new` blijft bewaard: het is het huidige wachtwoord en de bron voor een volgende
+rotatie of een herstel.
 
 ## Opmerkingen
 
