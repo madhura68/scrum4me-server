@@ -1,14 +1,20 @@
 ---
-last_updated: "2026-09-25"
+last_updated: "2026-09-27"
 idea: IDEA-221
 ---
 
 # Credentials roteren — runbook
 
 Hoe je een DB-wachtwoord of token vervangt op alle plekken waar het staat, zonder dat het
-ergens lekt en met hooguit een korte onderbreking. Deel A is de procedure en die geldt voor
-elke credential. Deel B bevat de **kaarten**: per credential waar hij staat, wie hem gebruikt
-en hoe je elke consumer herlaadt.
+ergens lekt en met hooguit een korte onderbreking.
+
+- **Deel A** is de procedure voor DB-wachtwoorden. Een rol heeft precies één wachtwoord, dus er
+  is een kort faalvenster.
+- **Deel B** bevat de kaarten van de DB-rollen: per rol waar hij staat, wie hem gebruikt en hoe
+  je elke consumer herlaadt.
+- **Deel C** gaat over tokens: Forgejo-PAT's, Scrum4Me-tokens, Claude- en Codex-credentials.
+  Oud en nieuw kunnen daar tegelijk geldig zijn, dus er is geen faalvenster. Het principe uit A.1
+  geldt onverkort.
 
 Ontwerp: [`docs/superpowers/specs/2026-09-25-credential-rotation-design.md`](../superpowers/specs/2026-09-25-credential-rotation-design.md).
 Hulpscript: [`scripts/rotate-env-credential`](../../scripts/rotate-env-credential).
@@ -403,10 +409,238 @@ opnieuw bij de eerste rotatie** (fase 0) en werk ze dan uit tot het niveau van B
 - Beide NOLOGIN tot de uitrol van IDEA-213. Er is dan nog niets te roteren. Maak de kaart bij
   die uitrol.
 
-#### Tokens: `SCRUM4ME_TOKEN`, `FORGEJO_TOKEN`, `forgejo-tag.token`, dispatch-sleutels
+#### Tokens
 
-- Dit zijn geen DB-rollen. `alter-role` en `probe` zijn niet van toepassing, en `rewrite`
-  alleen als het token in een `://user:<token>@`-URL staat. Leg bij de eerste rotatie vast
-  hoe je het token bij de uitgever intrekt en opnieuw uitgeeft: Scrum4Me-UI, Forgejo-UI of
-  API. Verwijzingen: `FORGEJO_TOKEN` in `~/.zshenv` (mac), `forgejo-tag.token` (ISS-28),
-  dispatch-sleutels (IDEA-213).
+Tokens staan in deel C. Dispatch-sleutels (IDEA-213) krijgen een kaart bij hun uitrol.
+
+---
+
+## C. Tokens
+
+Metingen en proeven: [evidence/2026-09-27-token-probes.md](evidence/2026-09-27-token-probes.md).
+
+### C.1 Wat anders is dan bij een wachtwoord
+
+- **Oud en nieuw zijn tegelijk geldig.** Maak eerst de nieuwe token aan, zet alle consumers
+  om, bewijs dat ze werken, en trek pas daarna de oude in. Er is dus geen faalvenster en geen
+  haast.
+- **Dezelfde sleutel kan op verschillende plekken een andere token bevatten.** Op 2026-09-27
+  waren er bijvoorbeeld 7 verschillende `FORGEJO_TOKEN`-waarden. Roteer daarom **per token**,
+  niet per sleutelnaam. `rewrite-key` vervangt alleen de plekken waar de waarde gelijk is aan de
+  oude token.
+- **Zoek elke token op bij zijn uitgever.** Forgejo: `access_token`, via `token_last_eight`.
+  Scrum4Me: `api_tokens`, via `sha256(token)`. Zo weet je welke rij je intrekt. Doe de
+  vergelijking in-process en print nooit tekens, hashes of prefixen van een token.
+
+### C.2 Gereedschap
+
+| Subcommando | Wat het doet | stdin |
+|---|---|---|
+| `rewrite-key --key K --file F… [--dry-run]` | vervangt de waarde van `K` in env- (`K=`, `export K=`, quotes), JSON- (`"K": "…"`) en TOML-bestanden (`K = "…"`), **alleen waar die gelijk is aan de oude token**; exact op de sleutelnaam | regel 1 oud, regel 2 nieuw (bij `--dry-run` alleen oud) |
+| `rewrite-key --whole-file --file F…` | idem, voor een bestand dat alleen de token bevat (bijv. `forgejo-tag.token`) | idem |
+| `classes --key K PAD…` / `classes --whole-file PAD…` | groepeert de waarden als `waarde-A/B/…` met een willekeurige salt per run; **labels gelden alleen binnen één run** | — |
+| `rollback`, `scan` | zoals in deel A | |
+
+`rewrite-key` heeft dezelfde garanties als `rewrite`: back-up, behoud van mode, eigenaar en ACL,
+en terugzetten van de hele batch bij elke fout of onderbreking.
+
+**Keychain op de mac:** `s4m-tok-<naam>`, met account `new` of `old`. Twee regels via stdin maak je
+zonder variabele:
+
+```bash
+{ security find-generic-password -s s4m-tok-<naam> -a old -w; security find-generic-password -s s4m-tok-<naam> -a new -w; } \
+  | ssh <host> 'sudo rotate-env-credential rewrite-key --key <K> --file …'
+```
+
+**Een token uit een consumerbestand naar de Keychain halen** (alleen pipes):
+
+```bash
+ssh <host> 'sudo grep -m1 -oE "^(export +)?<K>=[\"'"'"']?[^\"'"'"' ]+" <bestand>' | sed -E 's/^(export +)?<K>=["'"'"']?//' \
+  | awk '{print; print}' | security add-generic-password -U -s s4m-tok-<naam> -a old -w >/dev/null 2>&1
+```
+
+**Een token uit de UI van een uitgever** (Scrum4Me, Anthropic-console): kopieer hem en zet hem
+direct in de Keychain. Wis daarna het klembord.
+
+```bash
+pbpaste | awk '{print; print}' | security add-generic-password -U -s s4m-tok-<naam> -a new -w >/dev/null 2>&1; pbcopy </dev/null
+```
+
+### C.3 Procedure
+
+**Fase 0: inventaris (verandert niets).**
+1. Zoek de token bij zijn uitgever op (C.4 en verder) en noteer id, naam, scope en eigenaar.
+2. Zoek alle consumers. Zoek breed op de sleutelnaam, ook in build-kopieën zoals
+   `.next/standalone/.env`, in `auth.json`/`.claude.json`/`config.toml` en in systemd-env-
+   bestanden. Draai daarna per host `classes` om te zien welke plekken **deze** token hebben.
+   Een label geldt alleen binnen één run. Vergelijk over hosts heen via de uitgever
+   (`token_last_eight` of `sha256`), in-process.
+3. Zet de oude token in de Keychain (`old`). `rewrite-key --dry-run` per host met `old` moet
+   exact de consumers van de kaart geven.
+4. Kies een moment waarop de consumer niets doet: geen lopende job op die container.
+
+**Fase 1: nieuwe token.** Maak hem aan bij de uitgever, met **dezelfde scope** en een naam met de
+datum (bijv. `CODEX_FORGEJO-2026-09-27`). Zet hem direct in de Keychain (`new`) en controleer
+met een API-aanroep dat hij werkt en bij het juiste account hoort.
+
+**Fase 2: omzetten.** `rewrite-key` per host met oud en nieuw via stdin, noteer `stamp=`, en
+herlaad de consumers (kaart). Nieuwe processen lezen de nieuwe token; de oude token werkt nog,
+dus er valt niets om.
+
+**Fase 3: bewijzen.**
+- De consumer draait met de nieuwe token. Controleer dat zonder de waarde te zien:
+  ```bash
+  { security find-generic-password -s s4m-tok-<naam> -a new -w; } | ssh <host> 'P=$(docker inspect -f "{{.State.Pid}}" <container>); T=$(sudo mktemp); sudo sh -c "tr \"\\0\" \"\\n\" < /proc/$P/environ > $T"; sudo rotate-env-credential rewrite-key --key <K> --dry-run --file $T; sudo rm -f $T'
+  ```
+  Dit geeft `treffers=1`. Bij de oude token weigert hetzelfde commando met "0 treffers".
+- De functie werkt: de canary op de kaart, en geen auth-fouten in de log van de consumer.
+- De uitgever meldt dat de nieuwe token gebruikt is: Forgejo `updated_unix`, of het laatste
+  gebruik in de UI.
+
+**Fase 4: oude token intrekken en opruimen.**
+1. Trek de oude token in bij de uitgever (kaart).
+2. Bewijs dat hij geweigerd wordt: een API-aanroep met `old` geeft 401.
+3. Met JP's akkoord: verwijder de back-ups `.bak-<stamp>` en het Keychain-item `old`. Het item
+   `new` blijft als het huidige.
+4. Werk de kaart bij en schrijf een evidence-bestand.
+
+**Rollback:** tot fase 4 is de oude token nog geldig. `rollback --stamp S` plus herladen zet
+alles terug zonder dat er iets uitvalt.
+
+---
+
+### C.4 Kaart: Forgejo-PAT's
+
+**Uitgever:** Forgejo 15 op srv (container `scrum4me-forgejo`, DB `forgejo` in `scrum4me-postgres`).
+
+**Aanmaken:** bewezen op 2026-09-27. Dit werkt voor elk account, ook een bot; de waarde komt
+alleen op stdout.
+
+```bash
+ssh scrum4me-srv 'sudo docker exec -u git scrum4me-forgejo forgejo admin user generate-access-token -u <account> -t <naam-met-datum> --scopes <scopes> --raw' \
+  | awk '{print; print}' | security add-generic-password -U -s s4m-tok-<naam> -a new -w >/dev/null 2>&1
+```
+
+**Controleren of de token werkt** (geeft status en login):
+
+```bash
+security find-generic-password -s s4m-tok-<naam> -a <new|old> -w | python3 -c 'import sys,json,urllib.request as u,urllib.error as e
+t=sys.stdin.readline().strip()
+try: r=u.urlopen(u.Request("https://git.jp-visser.nl/api/v1/user",headers={"Authorization":"token "+t}),timeout=10); print(r.status, json.load(r)["login"])
+except e.HTTPError as x: print(x.code)'
+```
+
+Een 403 betekent dat de token geldig is maar geen `read:user`-scope heeft. Een 401 betekent
+ongeldig of ingetrokken.
+
+**Intrekken:** bewezen op 2026-09-27; direct 401, zonder vertraging door de cache.
+- De API (`DELETE /users/{u}/tokens/{id}`) vraagt basic-auth, dus het wachtwoord van dat
+  account. Dat is geen optie voor bots.
+- Trek daarom in via de DB, op **id**. Controleer vooraf dat id en naam kloppen:
+
+```bash
+echo "DELETE FROM access_token WHERE id = <id> AND name = '<naam>' RETURNING id, name;" \
+  | ssh scrum4me-srv 'docker exec -i scrum4me-postgres psql -U scrum4me -d forgejo -tA -v ON_ERROR_STOP=1'
+```
+
+Voor eigen tokens van janpeter kan het ook in de UI: Instellingen → Toepassingen.
+
+**Tokens en consumers** (gemeten op 2026-09-27):
+
+| Forgejo-id, account, naam | Scope | Consumers | Herladen |
+|---|---|---|---|
+| 11 s4m-codex-reviewer `CODEX_FORGEJO` | write: activitypub, misc, notification, organization, package, issue, repository, user | srv + max2 `compose/worker-codex.env` | recreate `agent-codex` (srv `-p compose`; max2 `-p scrum4me` met de codex-override) |
+| 6 janpeter `FORGEJO_TOKEN_SERVER` | write:repository | srv + max2 `compose/worker-idea.env` | recreate `worker-idea` (max2 met `--scale`, zie B.1) |
+| 13 janpeter `worker-deploy-proread` | read:repository | srv `compose/worker-deploy.env` | recreate `worker-deploy` |
+| 7 janpeter `janpeter-shell` | write: admin, repository, user | srv `secrets/workers.env` (max2: vervallen op 2026-09-27 15:33) | recreate `scrum4me-workers` |
+| 21 janpeter `ISSUE_TOKEN2` | all | srv `repos/Scrum4Me/.env` | `systemctl restart scrum4me-web` |
+| 2 janpeter `Sync-forgejo-github` | write:organization, write:repository, read:user | srv `/etc/forgejo-mirror/forgejo.env` | geen: `forgejo-mirror-sync.service` leest per run |
+| 29 mcp-release `ops-agent-deploy-tag` | write:repository | srv `/etc/ops-agent/forgejo-tag.token` (`--whole-file`) | geen: gelezen per deploy |
+| 26 janpeter `FREX_RUNNER` | read: activitypub, admin; write: misc, notification, organization, package, issue, repository | max2 `/opt/forgejo-runner/credentials/trust-scan.env` | geen: `forgejo-runner-trust.service` leest per run |
+| 24 janpeter `s4m-queue-2026-08-29` | write: activitypub, admin, misc, notification, organization, package, issue, repository; read:user | mac `~/.zshenv` | nieuwe shell of sessie |
+
+**Opruimkandidaten.** Voor 17 van de 26 PAT's is geen consumer gevonden in deze inventaris. Zoek
+eerst in mac-production-secrets, CI-secrets en de Scrum4Us-stack, en trek ze anders in. Tokens
+met scope `all` of `write:admin` zonder bekende consumer gaan eerst: `SCRUM4ME_FORGEJO`,
+`mac-Forgejo`, `SCRUM4ME_MAX2`, `ISSUE_TOKEN`, `JP_FORGEJO`, `DOCS_AUDIT_PUSH_TOKEN`.
+`TEMP_OPS` is naar zijn naam tijdelijk.
+
+**Laatste rotatie:** nog geen. De eerste staat gepland onder T-107: `CODEX_FORGEJO`.
+
+### C.5 Kaart: Scrum4Me API-tokens
+
+**Uitgever:** scrum4me-workers-UI `/api-tokens` (alleen admin), tabel `api_tokens`.
+- De token wordt één keer getoond.
+- Soorten: `IMPLEMENTATION`, `PLANNING`, `WORKERS_UI`, `COPILOT` (verplicht met product-scope).
+- Een vervaldatum is optioneel.
+- Per gebruiker mogen **maximaal 10 tokens actief** zijn. Trek oude tokens tijdig in, zodat er
+  ruimte blijft voor de overlap.
+
+**Aanmaken:** in de UI, met dezelfde soort en scope en een label met de datum. Zet hem daarna
+met `pbpaste` in de Keychain (C.2).
+
+**Controleren en koppelen** via de hash, zonder de waarde te tonen:
+
+```bash
+security find-generic-password -s s4m-tok-<naam> -a <new|old> -w \
+  | python3 -c 'import sys,hashlib;print("SELECT id,label,kind,coalesce(revoked_at::text,$$actief$$) FROM api_tokens WHERE token_hash=$$"+hashlib.sha256(sys.stdin.readline().strip().encode()).hexdigest()+"$$;")' \
+  | ssh scrum4me-srv 'docker exec -i scrum4me-postgres psql -U scrum4me -d scrum4me -tA'
+```
+
+**Intrekken:** met de knop in de UI (`revoked_at`). Bewijs: bovenstaande query geeft een datum
+in plaats van `actief`, en een MCP-aanroep met de oude token wordt geweigerd.
+
+| Token (label, soort) | Consumers | Herladen |
+|---|---|---|
+| "Srum4Me server" (IMPLEMENTATION) | srv + max2 `compose/worker-idea.env` en `compose/worker-codex.env`; max2 `~/.claude.json` | recreate `worker-idea` en `agent-codex`; Claude-sessie op max2 herstarten |
+| "worker-deploy" (IMPLEMENTATION) | srv `compose/worker-docs.env`, `compose/worker-deploy.env` | recreate `worker-docs` en `worker-deploy`. **Mee-roteren:** op 2026-09-27 zijn 6 tekens ervan in een transcript gekomen. |
+| "scrum4me-server" (IMPLEMENTATION) | srv `~/.claude.json`, `~/.codex/config.toml` | sessies op srv herstarten |
+| "S4M_MCP_MAC" (IMPLEMENTATION) | mac `~/.zshenv`, `~/.claude.json`, `~/.codex/config.toml` | nieuwe shell en sessies |
+| **geen `api_tokens`-rij** | srv `repos/Scrum4Me/.env`; srv + max2 `ops-dashboard/.env`; srv `ops-dashboard/.next/standalone/.env` | eerst uitzoeken waarvoor deze `SCRUM4ME_TOKEN` dient. Hij authenticeert niet als API-token. |
+
+Actief zonder gevonden consumer: "voor mcp-tester", "Janpeter", "agent-harness-local-llm-max2",
+en de COPILOT-tokens voor digiplein en mediaorganizer (consumers buiten deze inventaris).
+
+### C.6 Kaart: Claude
+
+**`CLAUDE_CODE_OAUTH_TOKEN`** (een abonnementstoken; mag alleen model-aanroepen doen)
+- Er zijn 2 waarden: srv `compose/worker-docs.env`, `worker-idea.env` en `worker-deploy.env`
+  hebben er één, max2 `compose/worker-idea.env` heeft een andere.
+- **Aanmaken:** `claude setup-token` op de mac. Die opent de browser en toont de token in de
+  terminal. Kopieer hem, zet hem met `pbpaste` in de Keychain, en wis daarna het klembord en de
+  terminal-scrollback.
+- **Omzetten:** `rewrite-key --key CLAUDE_CODE_OAUTH_TOKEN` en de workers recreaten.
+- **Intrekken: niet bewezen.** Volgens de docs maak je een nieuwe en herstart je, maar hoe je
+  de oude intrekt staat er niet. JP controleert dat in de instellingen van claude.ai en vult
+  het hier aan. Tot dan blijft de oude geldig tot hij verloopt.
+
+**`ANTHROPIC_API_KEY`**
+- Eén waarde, in srv `secrets/copilot.env`, srv + max2 `ops-dashboard/.env`, en srv
+  `ops-dashboard/.next/standalone/.env` (een build-kopie).
+- In sommige worker-env's staat de sleutel leeg. Een gevulde `ANTHROPIC_API_KEY` wint in
+  `claude -p` altijd van de OAuth-token.
+- **Aanmaken en intrekken:** Anthropic Console → API Keys (maken; oude uitschakelen of
+  verwijderen, direct effectief).
+- **Herladen:** recreate `scrum4me-copilot` en `scrum4me-ops-dashboard`.
+
+**Interactieve login**
+- srv/max2: `~/.claude/.credentials.json` (access- en refresh-token, vernieuwt zichzelf).
+- mac: Keychain "Claude Code-credentials".
+- **Vervangen:** `/logout` en daarna `/login` in een Claude-sessie op die host.
+- **Alles intrekken:** sessies beëindigen in claude.ai.
+
+### C.7 Kaart: ChatGPT / Codex
+
+- **Eén ChatGPT-account, vijf eigen sessies:** srv `~/.codex/auth.json`, srv
+  `/srv/scrum4me/worker-codex-home/auth.json`, max2 idem (beide), mac `~/.codex/auth.json`.
+  Alle vijf hebben `auth_mode=chatgpt` en een eigen refresh-token.
+- **Opnieuw inloggen per plek:**
+  ```bash
+  CODEX_HOME=/srv/scrum4me/worker-codex-home codex login --device-auth
+  ```
+  JP opent de getoonde URL en code in de browser. Voor `~/.codex` laat je `CODEX_HOME` weg.
+  Controleer met `codex login status`. Herstart daarna `agent-codex` of de Codex-sessie.
+- **Intrekken:** `codex logout` per plek verwijdert de lokale sessie. Alle sessies tegelijk
+  intrekken gaat via het ChatGPT-account ("overal uitloggen"); daarna moeten alle vijf plekken
+  opnieuw inloggen.
+- `--with-api-key` en `--with-access-token` lezen van stdin, voor als er ooit een API-sleutel komt.
