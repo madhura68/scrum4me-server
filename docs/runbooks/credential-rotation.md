@@ -125,6 +125,15 @@ behalve de sessie die de rotatie uitvoert. Claude Code schrijft `~/.claude.json`
 1. **Canary (A.6) met `T_alter`.** Elke consumer op de kaart heeft `nieuw ≥ 1`. Rijen met
    alleen `oud` zijn verbindingen van vóór de flip: kijk na ongeveer 30 minuten opnieuw en
    herlaad de consumer als ze dan nog bestaan.
+   **Tel ook de mislukte logins** sinds `T_alter`:
+   `docker logs --since <T_alter> scrum4me-postgres 2>&1 | grep -c "password authentication failed for user .<rol>"`.
+   Een paar fouten tijdens het herladen is normaal. Blijven ze oplopen, dan draait er nog een
+   consumer met het oude wachtwoord in het geheugen. Dat is vaak een host-MCP van een nog niet
+   herstarte sessie: bestaande verbindingen blijven werken, maar de pool opent steeds nieuwe.
+   Vind de bron met de verbindingsmetadata. Postgres stuurt de foutmelding leesbaar terug
+   (`ssl=off`), dus
+   `sudo tcpdump -nn -l -A -i any "tcp src port 5432" | grep -B5 "authentication failed"` toont
+   het doeladres. Het wachtwoord komt in dit verkeer niet voor, want SCRAM verstuurt het niet.
 2. **Healthchecks.** Die staan op de kaart.
 3. **Negatieve proef.** `probe --expect reject` op de `.bak-<stamp>` van één bestand per host,
    en `probe --expect ok` op het huidige bestand. "Geweigerd" betekent een auth-weigering; een
@@ -193,8 +202,20 @@ te rollen.
 `scrum4me-postgres`, 192.168.0.154:5432). Web, workers, agent-containers, MCP-HTTP, Copilot en
 de host-MCP's gebruiken hem. Het wachtwoord is hex64 en overal hetzelfde (gemeten 2026-09-25).
 
-**Laatste rotatie:** nog niet uitgevoerd. De eerste rotatie is gepland onder T-86 en sluit
-het journal-lek van 2026-09-24.
+**Keychain:** `s4m-db-scrum4me_web_runtime/new` (mac) bevat het huidige wachtwoord.
+
+**Laatste rotatie:** 2026-09-27 (T-86), `T_alter` 10:28:40Z. Het faalvenster duurde ~16 s,
+en alle stappen van fase 2 waren groen. Het journal-lek van 2026-09-24 is daarmee dood.
+Zie [evidence/2026-09-27-rotation-scrum4me_web_runtime.md](evidence/2026-09-27-rotation-scrum4me_web_runtime.md).
+
+**Lessen uit die rotatie:**
+- De host-MCP's (`s4m-mcp:<host>:claude`) blijven na de flip op hun oude verbinding. Hun pool
+  gaf tot ~13 mislukte logins per minuut totdat de sessies herstart waren. Herstart de sessies
+  daarom **direct** na stap 3 van fase 1, in hetzelfde venster.
+- `scan` telt fixture-tekst zoals `…:OLD@` of `…:{OLD}@` in transcripts en in plannen als
+  `ANDERS`. Een waarde die niet gelijk is aan het huidige wachtwoord kan na `alter-role` nooit
+  meer inloggen, want een rol heeft precies één wachtwoord. Beoordeel `ANDERS` dus op herkomst,
+  niet als lek; alleen `LEK` is rood.
 
 #### Consumers
 
@@ -334,9 +355,12 @@ security find-generic-password -s "$K" -a old -w | ssh scrum4me-srv 'sudo rotate
 - **journal van srv, 2026-09-24:** het wachtwoord staat in de argv van een `sudo sed`-regel.
   Na de eerste rotatie is dat een dood wachtwoord. Het journal wordt niet gewist; deze regel
   documenteert het.
-- **`/srv/scrum4me/repos/Scrum4Me/.env.bak.pre-docsaudit-20260707-234434`:** een oude
-  handmatige back-up met dezelfde ACL. `scan` noemt hem niet als back-up, omdat hij niet het
-  `.bak-<stempel>`-patroon volgt. Beoordeel hem in fase 0 en verwijder hem na JP's akkoord.
+- **Transcripts** op de mac (scrum4me-mcp-subagents) bevatten een oudere, niet-hex waarde
+  voor deze rol. Getest op 2026-09-27: die wordt geweigerd.
+- De oude handmatige kopieën `secrets/workers.env.bak.20260926T080930Z` en
+  `Scrum4Me/.env.bak.pre-docsaudit-20260707-234434` zijn op 2026-09-27 verwijderd. Handmatige
+  kopieën volgen niet het `.bak-<stempel>`-patroon, dus `scan` telt ze als `ANDERS`. Zoek er
+  in fase 0 naar.
 
 ---
 
