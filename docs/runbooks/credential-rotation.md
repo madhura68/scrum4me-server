@@ -559,11 +559,38 @@ Voor eigen tokens van janpeter kan het ook in de UI: Instellingen → Toepassing
 | 26 janpeter `FREX_RUNNER` | read: activitypub, admin; write: misc, notification, organization, package, issue, repository | max2 `/opt/forgejo-runner/credentials/trust-scan.env` | geen: `forgejo-runner-trust.service` leest per run |
 | 24 janpeter `s4m-queue-2026-08-29` | write: activitypub, admin, misc, notification, organization, package, issue, repository; read:user | mac `~/.zshenv` | nieuwe shell of sessie |
 
-**Opruimkandidaten.** Voor 17 van de 26 PAT's is geen consumer gevonden in deze inventaris. Zoek
-eerst in mac-production-secrets, CI-secrets en de Scrum4Us-stack, en trek ze anders in. Tokens
-met scope `all` of `write:admin` zonder bekende consumer gaan eerst: `SCRUM4ME_FORGEJO`,
-`mac-Forgejo`, `SCRUM4ME_MAX2`, `ISSUE_TOKEN`, `JP_FORGEJO`, `DOCS_AUDIT_PUSH_TOKEN`.
-`TEMP_OPS` is naar zijn naam tijdelijk.
+**Overige PAT's en hun consumers** (gemeten 2026-09-27: in-process gezocht op `token_last_eight`
+in `/srv`, `/etc`, `/opt`, `/home` van srv en max2 en in `~/Development`/`~/.config` op de mac,
+plus de namen van de Forgejo Actions-secrets):
+
+| id, account, naam | Consumer |
+|---|---|
+| 1 janpeter `SCRUM4ME_FORGEJO` | tweede sleutel in `compose/worker-idea.env` (srv + max2) en `compose/worker-codex.env` (max2); `~/.forgejo-pat.tmp` (srv) |
+| 8 janpeter `mac-Forgejo` (all) | mac `~/Development/MotherlessScrapper/.env` |
+| 10 janpeter `ops-agent-ro` | srv `/home/ops-agent/.git-credentials` |
+| 12 janpeter `scrum4me-copilot-token` | vermoedelijk Actions-secret `digiplein/SUBMODULE_TOKEN` (zelfde aanmaakdatum) |
+| 14/15 janpeter `DOCS_AUDIT_READ/PUSH_TOKEN` | `compose/.env` (srv + max2). **Lek:** de READ-token staat in 9 run-logs onder `/srv/scrum4me/worker-logs/docs/` |
+| 19 janpeter `MEDIA-ORG` | vermoedelijk Actions-secret `media-organizer/SUBMODULE_TOKEN` |
+| 22/23 janpeter `idea187-scrum4me-mcp-package-write/read` | Actions-secrets `scrum4me-mcp/PACKAGE_WRITE_TOKEN` / `PACKAGE_READ_TOKEN` |
+| 27 janpeter `PACKAGE_WRITE_TOKEN` | Actions-secret `ops-dashboard/PACKAGE_WRITE_TOKEN` |
+| 30 janpeter `max2-ops-agent-2026-09` | max2 `/etc/ops-agent/git-credentials` |
+| 31 janpeter `jp-cli-2026-09` | `~/.forgejo-pat` (srv + max2) |
+
+**Ingetrokken op 2026-09-27** (JP-akkoord; via DB-delete, met als voorwaarde "niet gebruikt sinds
+de meting"):
+
+- 17 `SCRUM4ME_MAX2` (all, laatst gebruikt 07-23)
+- 18 `PACKEGES` (07-31)
+- 20 `ISSUE_TOKEN` (08-17)
+- 16 `m23b-smoke` (s4us-smoke-bot, 08-18)
+- 25 `JP_FORGEJO` (all, 09-09; stond in `~/.bash_history` op max2, en die waarde geeft nu 401)
+- 28 `TEMP_OPS` (09-20)
+
+Daarna staan er 21 PAT's.
+
+**Residu met werkende tokens:** oude handmatige kopieën (`compose/worker-*.env.bak.*`,
+`compose/.env.bak*`, `/home/ops-agent/mcp-env-backups/`, `~/.forgejo-pat.tmp`) en de
+docs-worker-logs. Ruim ze op na JP's akkoord, en roteer de tokens die in de logs staan.
 
 **Laatste rotatie:** nog geen. De eerste staat gepland onder T-107: `CODEX_FORGEJO`.
 
