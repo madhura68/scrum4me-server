@@ -20,5 +20,4 @@ afgekapt werd. Er is niets geprint. De dry-runs weigerden terecht (0 treffers) e
 vervangen. Voor een PAT haal je de waarde op met het patroon `^FORGEJO_TOKEN=[0-9a-f]{40}$`
 (kaart C.4).
 
-Opruimen (back-ups `worker-codex.env.bak-<stamp>` op srv en max2, en het Keychain-item `old`):
-na JP's akkoord.
+Opgeruimd na JP-akkoord (2026-09-27): de back-ups `worker-codex.env.bak-<stamp>` op srv en max2, en het Keychain-item `old`.
