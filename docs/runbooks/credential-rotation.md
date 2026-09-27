@@ -569,7 +569,8 @@ plus de namen van de Forgejo Actions-secrets):
 | 8 janpeter `mac-Forgejo` (all) | mac `~/Development/MotherlessScrapper/.env` |
 | 10 janpeter `ops-agent-ro` | srv `/home/ops-agent/.git-credentials` |
 | 12 janpeter `scrum4me-copilot-token` | vermoedelijk Actions-secret `digiplein/SUBMODULE_TOKEN` (zelfde aanmaakdatum) |
-| 14/15 janpeter `DOCS_AUDIT_READ/PUSH_TOKEN` | `compose/.env` (srv + max2). **Lek:** de READ-token staat in 9 run-logs onder `/srv/scrum4me/worker-logs/docs/` |
+| 37 janpeter `DOCS_AUDIT_READ-2026-09-27` (read:repository; voorheen 14 `DOCS_AUDIT_READ_TOKEN`) | srv `compose/.env` → `worker-docs` (child krijgt hem als `FORGEJO_TOKEN`). max2: sleutel verwijderd op 2026-09-27 (compose gebruikte hem niet) |
+| 15 janpeter `DOCS_AUDIT_PUSH_TOKEN` | srv `compose/.env` (runner pusht; de agent krijgt hem niet) |
 | 19 janpeter `MEDIA-ORG` | vermoedelijk Actions-secret `media-organizer/SUBMODULE_TOKEN` |
 | 22/23 janpeter `idea187-scrum4me-mcp-package-write/read` | Actions-secrets `scrum4me-mcp/PACKAGE_WRITE_TOKEN` / `PACKAGE_READ_TOKEN` |
 | 27 janpeter `PACKAGE_WRITE_TOKEN` | Actions-secret `ops-dashboard/PACKAGE_WRITE_TOKEN` |
@@ -591,6 +592,18 @@ Daarna staan er 21 PAT's.
 **Residu met werkende tokens:** oude handmatige kopieën (`compose/worker-*.env.bak.*`,
 `compose/.env.bak*`, `/home/ops-agent/mcp-env-backups/`, `~/.forgejo-pat.tmp`) en de
 docs-worker-logs. Ruim ze op na JP's akkoord, en roteer de tokens die in de logs staan.
+
+**Docs-worker-lek (ISS-37), afgehandeld op 2026-09-27:** de agent draaide soms een env-dump,
+en `run-one-job` schreef die ongefilterd naar de run-log; de worker-log-ingest kopieerde hem
+naar `ops_dashboard."WorkerEvent"`. Sinds scrum4me-docker PR #88 (`dd889a6`) maskeert
+`run-one-job` de waarden van secret-achtige variabelen in de run-log (`lib/log-redact.ts`).
+Token 14 is geroteerd naar 37 (alleen `read:repository`) en ingetrokken (401). Geredigeerd:
+21 run-logs (ook `.log.gz`), 25 `WorkerEvent`-rijen, twee `compose/.env`-backups. **Niet**
+geredigeerd (de waarde is ingetrokken): de nachtelijke `pg_dumpall`-dumps en restic-snapshots
+(retentie), `/root/t1775-backup-*/pg_dumpall.sql.gz`, zes kopieën in
+`/home/ops-agent/mcp-env-backups/` en 27 agent-transcripts in het home-volume van
+`worker-docs` (`~/.claude/projects/`). Let op: de masking dekt alleen de run-log, niet die
+transcripts.
 
 **Laatste rotatie:** `worker-codex`, 2026-09-27 (T-107): id 11 → 36, zonder faalvenster. Zie
 [evidence/2026-09-27-rotation-forgejo-pat-worker-codex.md](evidence/2026-09-27-rotation-forgejo-pat-worker-codex.md).
