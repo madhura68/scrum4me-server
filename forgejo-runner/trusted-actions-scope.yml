@@ -36,6 +36,13 @@ identities:
   # workflow pushen; een '*'-branchbescherming is afgewezen omdat Forgejo
   # beschermde branches dan voor niemand meer laat verwijderen.
   - name: mcp-release
+  # agent-harness (ISS-42-vervolg, besluit JP 2026-09-28): account van het lokale
+  # model (M3). Pusht alleen taakbranches; per repo goedgekeurd voor uitsluitend
+  # scrum4me-mcp en agent-harness. main is op beide repo's beschermd met een
+  # push- en merge-whitelist van alleen janpeter, dus modelcode landt alleen via
+  # een branch en een merge door JP. Leesrecht (scrum4me-shared, Scrum4Me) telt
+  # niet als schrijver.
+  - name: agent-harness
 
 repositories:
   - full_name: janpeter/DigiPlein
@@ -93,7 +100,7 @@ repositories:
   - full_name: janpeter/agent-harness
     actions_enabled: true
     workflow_source: null
-    writers: [janpeter]
+    writers: [agent-harness, janpeter, s4m-codex-reviewer]
   - full_name: janpeter/inspannings-monitor
     actions_enabled: true
     workflow_source: .github/workflows
@@ -129,7 +136,7 @@ repositories:
   - full_name: janpeter/scrum4me-mcp
     actions_enabled: true
     workflow_source: .forgejo/workflows
-    writers: [janpeter, mcp-release, s4m-codex-reviewer]
+    writers: [agent-harness, janpeter, mcp-release, s4m-codex-reviewer]
     risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-server
     actions_enabled: true
