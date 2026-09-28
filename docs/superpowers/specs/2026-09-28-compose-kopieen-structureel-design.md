@@ -1,6 +1,6 @@
 ---
 status: draft
-review: "ronde 1, 2 en 3 NO-GO (mac:codex), alle bevindingen verwerkt; ronde 4 aangevraagd; zie §12"
+review: "GO in ronde 4 (mac:codex, commit 026ff0c); ronde 1, 2 en 3 waren NO-GO; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
 last_updated: "2026-09-28"
@@ -480,9 +480,11 @@ voor het eerst op max2 te draaien.
 | 1 | `mac:codex` | `9a1a253` | NO-GO | 0 BLOCKER, 4 MAJOR, 1 MINOR |
 | 2 (delta) | `mac:codex` | `c6bef0f` | NO-GO | 0 BLOCKER, 2 MAJOR, 0 MINOR |
 | 3 (delta) | `mac:codex` | `7f75cb9` | NO-GO | 1 BLOCKER, 0 MAJOR, 1 MINOR |
+| 4 (delta) | `mac:codex` | `026ff0c` | **GO** | geen |
 
-De versie na ronde 3 is niet herbeoordeeld. JP heeft op 2026-09-28 om een vierde ronde
-gevraagd.
+Het GO geldt voor commit `026ff0c`. De commit daarna voegt alleen dit review record toe en
+wijzigt het ontwerp niet. Een technisch GO autoriseert geen materialisatie, merge of
+uitvoering; die volgen op de beslissingen van JP in §7.
 
 ### Ronde 1
 
@@ -539,3 +541,17 @@ het werkbestand te raken. Eén pad is kleiner en laat minder ruimte voor de fout
 
 **Terugkerend patroon.** De bevindingen in ronde 2 en 3 zaten in procedures die zonder proef
 waren opgeschreven. JP heeft op 2026-09-28 besloten B1 te houden (beslissing 8 in §7).
+
+### Ronde 4 (delta)
+
+Verzoek `e3bcb799-c448-4c0e-8795-569beb2737bc`, antwoord
+`3dbd639c-564f-4273-9920-c4132443b304`. Oordeel: GO, geen nieuwe bevindingen.
+
+- Beide bevindingen uit ronde 3 zijn als opgelost beoordeeld.
+- De reviewer heeft de twee gewone gevallen van de herstelproef zelf herhaald in een
+  tijdelijke repo met git 2.53.0 en kwam op dezelfde uitkomst.
+- Eén herstelpad in plaats van twee is aanvaard.
+- A2, A4, B2, D2 en het inpakrecept E zijn door de delta niet geraakt; hun eerdere
+  beoordeling blijft gelden.
+- Niet getoetst: uitvoering op de hosts, een live `.env`, het initialiseren van de repo's,
+  een herstart van Compose en het productiearchief. Die toetsen horen bij de taken.
