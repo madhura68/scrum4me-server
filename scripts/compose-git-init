@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Zet een live compose-map onder lokaal versiebeheer, met een allowlist en een hook.
+
+Dit is onderdeel B1 van
+docs/superpowers/specs/2026-09-28-compose-kopieen-structureel-design.md.
+Het script wijzigt geen compose-bestand en toont nooit bestandsinhoud.
+"""
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import os
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+HOOK_SOURCE = os.path.join(HERE, "compose-git-pre-commit")
+IGNORE = ".gitignore"
+FIRST_COMMIT = "Eerste commit: live compose-bestanden onder versiebeheer"
+
+
+class Stop(Exception):
+    """Een toets faalde. De melding bevat geen bestandsinhoud."""
+
+
+def load_hook():
+    loader = importlib.machinery.SourceFileLoader("compose_git_pre_commit", HOOK_SOURCE)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def sha256_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def git(directory, *args):
+    return subprocess.run(["git", "-C", directory] + list(args), check=True, capture_output=True, text=True).stdout
+
+
+def check(directory, names, hook):
+    if os.geteuid() == 0:
+        raise Stop("draai dit niet als root; git hoort van de eigenaar van de map te zijn")
+    if not os.path.isdir(directory):
+        raise Stop(f"is geen map: {directory}")
+    inside = subprocess.run(["git", "-C", directory, "rev-parse", "--show-toplevel"], capture_output=True)
+    if inside.returncode == 0 or os.path.lexists(os.path.join(directory, ".git")):
+        raise Stop(f"is al een git-repo of ligt in een werkboom: {directory}")
+    if os.path.lexists(os.path.join(directory, IGNORE)):
+        raise Stop(f"{IGNORE} bestaat al en wordt niet overschreven")
+    if not os.path.isfile(HOOK_SOURCE):
+        raise Stop(f"de hook ontbreekt naast dit script: {HOOK_SOURCE}")
+    if len(set(names)) != len(names):
+        raise Stop("een bestand staat dubbel op de allowlist")
+    for name in names:
+        if name != os.path.basename(name) or name in (".", "..") or any(c in name for c in "*?[] \t"):
+            raise Stop(f"geen kale bestandsnaam: {name}")
+        if hook.forbidden_name(name) or name == IGNORE:
+            raise Stop(f"hoort nooit op de allowlist: {name}")
+        path = os.path.join(directory, name)
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            raise Stop(f"bestaat niet: {path}")
+        if not stat.S_ISREG(mode):
+            raise Stop(f"is geen gewoon bestand: {path}")
+        with open(path, encoding="utf-8", errors="replace") as f:
+            hits = hook.find_literals(f.read())
+        if hits:
+            found = ", ".join(f"regel {number} ({key})" for number, key in hits)
+            raise Stop(f"letterlijke secret-vormige waarde in {name}: {found}")
+
+
+def ignore_text(names):
+    lines = ["# Allowlist: alles is genegeerd, behalve wat hieronder staat.",
+             "# Stage alleen met `git add <bestandsnaam>`, nooit met -f, -A of een punt.",
+             "/*", f"!/{IGNORE}"]
+    return "\n".join(lines + [f"!/{name}" for name in names]) + "\n"
+
+
+def run(directory, names, out):
+    before = {name: sha256_file(os.path.join(directory, name)) for name in names}
+    git_dir = os.path.join(directory, ".git")
+    ignore_path = os.path.join(directory, IGNORE)
+    try:
+        subprocess.run(["git", "init", "-q", "-b", "main", directory], check=True, capture_output=True)
+        os.chmod(git_dir, 0o700)
+        host = socket.gethostname()
+        git(directory, "config", "user.name", f"compose-git op {host}")
+        git(directory, "config", "user.email", f"compose-git@{host}.invalid")
+        hook_path = os.path.join(git_dir, "hooks", "pre-commit")
+        os.makedirs(os.path.dirname(hook_path), exist_ok=True)
+        shutil.copyfile(HOOK_SOURCE, hook_path)
+        os.chmod(hook_path, 0o755)
+        with open(ignore_path, "x", encoding="utf-8") as f:
+            f.write(ignore_text(names))
+        git(directory, "add", "--", IGNORE, *names)
+        git(directory, "commit", "-q", "-m", FIRST_COMMIT)
+        tracked = sorted(git(directory, "ls-files").split())
+        if tracked != sorted([IGNORE] + names):
+            raise Stop("de eerste commit bevat niet precies de allowlist")
+        if git(directory, "status", "--porcelain") != "":
+            raise Stop("de werkboom is niet schoon na de eerste commit")
+        for name in names:
+            if sha256_file(os.path.join(directory, name)) != before[name]:
+                raise Stop(f"bestand is gewijzigd tijdens de installatie: {name}")
+    except (Stop, subprocess.CalledProcessError, OSError):
+        shutil.rmtree(git_dir, ignore_errors=True)
+        if os.path.isfile(ignore_path):
+            os.remove(ignore_path)
+        raise
+    commit = git(directory, "rev-parse", "--short", "HEAD").strip()
+    print(f"repo gemaakt in {directory}, eerste commit {commit}", file=out)
+    for name in names:
+        print(f"  {before[name]}  {name}", file=out)
+    print(f"hook: {sha256_file(os.path.join(git_dir, 'hooks', 'pre-commit'))}", file=out)
+
+
+def main(argv, out=sys.stdout, err=sys.stderr):
+    parser = argparse.ArgumentParser(prog="compose-git-init", description=__doc__.split("\n")[0])
+    parser.add_argument("--dry-run", action="store_true", help="toon alleen wat er zou gebeuren")
+    parser.add_argument("map", help="de live compose-map")
+    parser.add_argument("bestand", nargs="+", help="bestandsnaam voor de allowlist")
+    args = parser.parse_args(argv)
+    directory = os.path.abspath(args.map)
+    try:
+        hook = load_hook()
+        check(directory, args.bestand, hook)
+        if args.dry_run:
+            print(f"droogloop: {directory}", file=out)
+            for name in args.bestand:
+                print(f"  op de allowlist: {name}", file=out)
+            print("droogloop: alle toetsen geslaagd; er is niets gewijzigd", file=out)
+            return 0
+        run(directory, args.bestand, out)
+        return 0
+    except Stop as e:
+        print(f"STOP: {e}", file=err)
+        return 1
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or "").strip().split("\n")[0] if isinstance(e.stderr, str) else ""
+        print(f"STOP: {' '.join(e.cmd[:3])} eindigde met code {e.returncode}: {detail}", file=err)
+        return 1
+    except OSError as e:
+        print(f"STOP: {e.strerror}: {e.filename}", file=err)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
