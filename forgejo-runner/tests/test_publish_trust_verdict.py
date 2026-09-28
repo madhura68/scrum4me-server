@@ -19,7 +19,7 @@ class PublisherTests(unittest.TestCase):
         self.allow = self.path / "allow.yml"
         self.out = self.path / "verdict.json"
         self.labels.write_text("ubuntu-latest:docker://example@sha256:abc\n")
-        self.allow.write_text('approved_by: "test"\nidentities:\n  - name: janpeter\nrepositories:\n  - full_name: janpeter/app\n    actions_enabled: true\n')
+        self.allow.write_text('approved_by: "test"\nidentities:\n  - name: janpeter\nrepositories:\n  - full_name: janpeter/app\n    actions_enabled: true\n    writers: [janpeter]\n')
         self.old_green = dict(GOOD, forgejo_target="https://offline.invalid",
                               labels_sha256=hashlib.sha256(self.labels.read_bytes()).hexdigest(),
                               allowlist_sha256=hashlib.sha256(self.allow.read_bytes()).hexdigest())

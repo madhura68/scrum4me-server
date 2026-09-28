@@ -307,10 +307,29 @@ def classify(inv, allowlist):
                 f"{name}: Actions staat aan maar de allowlist bevestigt actions_enabled "
                 f"niet als True (drift of ongeldig type)")
 
+        # Een schrijver moet een goedgekeurde identiteit zijn én voor déze repo in
+        # `writers:` staan (ISS-42). Alleen de globale lijst handhaven keurde een
+        # per-repo bedoelde identiteit stil voor elke repo goed. Fail-closed: een
+        # ontbrekende of niet-lijstvormige `writers` (ook een gequote "[...]") geeft
+        # geen enkele schrijver toestemming.
+        repo_writers_raw = entry.get("writers")
+        if isinstance(repo_writers_raw, list) and all(
+                isinstance(w, str) for w in repo_writers_raw):
+            repo_writers = set(repo_writers_raw)
+        else:
+            repo_writers = set()
+            verdict.hard.append(
+                f"{name}: writers ontbreekt of is ongeldig in de allowlist "
+                f"(verwacht een lijst van namen)")
+
         for writer in repo.get("writers", []):
             if writer not in approved_identities:
                 verdict.hard.append(
                     f"{name}: niet-goedgekeurde workflow-schrijver {writer}")
+            elif writer not in repo_writers:
+                verdict.hard.append(
+                    f"{name}: schrijver {writer} is niet goedgekeurd voor deze repository "
+                    f"(ontbreekt in writers)")
 
         # §7.7 (ISS-9-delta): een risky-trigger op een gedeeld label is HARD, tenzij
         # JP hem voor deze repo expliciet heeft bevestigd. Fail-closed: alleen een

@@ -2,6 +2,13 @@ version: 1
 approved_by: "janpeter"
 approved_at: "2026-08-31T21:56:04Z"
 
+# writers (ISS-42, 2026-09-28): per repo afgedwongen. Een gemeten schrijver
+# (owner, admin- of write-collaborator of teamlid) moet een goedgekeurde identiteit
+# zijn EN in de writers-lijst van die repo staan; anders HARD. Een identiteit in
+# `identities` keurt dus niet langer alle repo's goed: voeg hem expliciet toe aan
+# de writers van elke repo waar hij mag schrijven. Ontbrekende of ongeldige
+# writers (ook een gequote "[...]") is fail-closed.
+
 # risky_triggers_acknowledged (ISS-9, toegevoegd 2026-09-05, besluit JP):
 # een per-repo lijst van risicovolle triggers (pull_request, pull_request_target,
 # workflow_run) waarvan JP de kruising met een gedeeld runnerlabel expliciet
