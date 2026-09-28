@@ -1,5 +1,6 @@
 ---
 status: draft
+review: "ronde 1 NO-GO (mac:codex, commit 9a1a253), verwerkt; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
 last_updated: "2026-09-28"
@@ -22,8 +23,8 @@ ernaast, en When2Watch heeft één runnable compose-bestand.
 
 **Hoe het resultaat zich toont.**
 
-- Een droogloop van de scanner geeft op beide hosts exitcode 0, met dezelfde scanner-hash in
-  de uitvoer.
+- De geïnstalleerde scanner geeft op beide hosts exitcode 0 en noemt op beide dezelfde
+  scanner-hash.
 - Veertien nachten achter elkaar komt er geen collision-melding binnen bij `mac:jp`, terwijl
   er in die periode op elke host minstens één compose-wijziging is gedaan. Die wijziging is
   zichtbaar als commit in `git log`, niet als `.bak`.
@@ -56,6 +57,9 @@ De metingen waren read-only en toonden alleen namen en aantallen.
 | Live compose-map onder git | nee | nee |
 | Letterlijke secret-vormige waarden in live bestanden | 0 | 0 |
 | Idem in kopieën | 0 los, 4 in de tar van 25 sep | 8 |
+| Codex en Claude geïnstalleerd | ja | ja |
+| Codex laatst gebruikt | 28 sep | 14 sep |
+| `~/.codex/AGENTS.md` | aanwezig | ontbreekt |
 
 Op scrum4me-server liep het aantal destructieve bevindingen in drie nachten op van 2 naar 3
 naar 4.
@@ -84,15 +88,37 @@ Canoniek blijft Ops-dashboard `deploy/ops-agent/check-compose-collision.sh`.
 | # | Wijziging | Waarom |
 |---|---|---|
 | A1 | scrum4me-docker krijgt een byte-identieke kopie, met een bronvermelding (`scripts/check-compose-collision.sh.source`: repo, commit, sha256) en een CI-toets op die sha256 | max2 ziet dan ook losse kopieën; een wijziging aan de kopie zonder de bron valt in CI |
-| A2 | De push krijgt `--idempotency-key "compose-collision:<host>:<ISO-week>:<hash>"`. De hash is sha256 over de gesorteerde destructieve bevindingen | Ongewijzigde bevindingen geven binnen een week geen tweede bericht; een wijziging geeft direct een nieuw bericht; een nieuwe week geeft een herinnering |
+| A2 | De push krijgt `--idempotency-key "compose-collision:<host>:<weekjaar-week>:<hash>"`. Weekjaar en week komen uit `date -u +%G-W%V`. De hash is sha256 over de gesorteerde destructieve bevindingen | Ongewijzigde bevindingen geven binnen een week geen tweede bericht; een wijziging geeft direct een nieuw bericht; een nieuwe week geeft een herinnering |
 | A3 | De ernst kijkt of de status `running(` bevát, niet of hij ermee begint | `exited(1), running(4)` is nu ten onrechte een waarschuwing |
-| A4 | De kop van het rapport noemt de scanner-hash (eerste 12 tekens) en de bevindingen-hash | Uiteenlopen van de hosts is dan in de meldingen zelf te zien |
+| A4 | Elke run noemt de scanner-hash (eerste 12 tekens) in de eerste logregel, ook bij een schone uitkomst. Het rapport noemt hem in de kop, samen met de bevindingen-hash | Uiteenlopen van de hosts is te zien in het journal en in de meldingen |
 
-A2 heeft geen statusbestand nodig: de queue bewaakt de uniciteit van de sleutel, ongeacht de
-status van het eerdere bericht. Waarschuwingen tellen niet mee in de hash; alleen
-destructieve bevindingen alarmeren, net als nu.
+**A2.** Er is geen statusbestand nodig: de queue bewaakt de uniciteit van de sleutel,
+ongeacht de status van het eerdere bericht. Het weekjaar hoort in de sleutel; alleen het
+weeknummer zou na een jaar dezelfde sleutel geven voor een bevinding die er nog staat.
+Waarschuwingen tellen niet mee in de hash; alleen destructieve bevindingen alarmeren, net
+als nu.
+
+**A4.** De huidige scanner stopt bij een schone uitkomst vóór de rapportopbouw. De hash moet
+dus vóór die uitgang gelogd worden. De bron van de hash, in deze volgorde:
+
+1. sha256 van het scriptbestand zelf, als `BASH_SOURCE[0]` een leesbaar bestand is. Dit is
+   de geïnstalleerde vorm.
+2. De waarde van `COMPOSE_COLLISION_SCANNER_SHA`, als die gezet is. Dit is de droogloop over
+   SSH, waarbij het script via stdin komt en er geen bestand is om te hashen.
+3. Anders `onbekend`.
 
 De scanner blijft read-only.
+
+**Droogloop over SSH.** De beheerder berekent de hash lokaal en geeft hem mee:
+
+```bash
+H=$(shasum -a 256 deploy/ops-agent/check-compose-collision.sh | cut -d' ' -f1)
+ssh max2 "sudo COMPOSE_COLLISION_SCANNER_SHA=$H DRIFT_NO_NOTIFY=1 bash -s -- max2 /srv" \
+  < deploy/ops-agent/check-compose-collision.sh
+```
+
+Zolang A4 niet is uitgerold, drukt de scanner de hash niet af. Het bewijs van een droogloop
+bestaat dan uit de lokaal berekende hash plus de uitvoer.
 
 ### B. Versiebeheer ter plekke en een regel die de sessies bereikt
 
@@ -104,25 +130,39 @@ De scanner blijft read-only.
 | scrum4me-server | `/srv/scrum4me/forgejo` | `docker-compose.yml`, `runner-config.yaml` |
 | max2 | `/srv/scrum4me/compose` | `docker-compose.yml`, `docker-compose.override.yml`, `docker-compose.codex.yml` |
 
-- `.gitignore` is een allowlist: alles genegeerd, behalve de bestanden uit de tabel en
-  `.gitignore` zelf. In deze mappen staan `.env`-bestanden en, in de forgejo-map, bestanden
-  die op sleutelparen lijken.
-- Een `pre-commit`-hook weigert elk pad buiten de allowlist. Reden: een blob in
-  `.git/objects` is leesbaar voor iedereen op de host, ook als het bronbestand mode 600 had.
-- `.git` krijgt mode 700.
+In deze mappen staan `.env`-bestanden en, in de forgejo-map, bestanden die op sleutelparen
+lijken. Vier lagen houden die buiten git. Geen ervan is een garantie.
+
+| Laag | Wat hij doet | Wat hij niet doet |
+|---|---|---|
+| `.gitignore` als allowlist | Alles is genegeerd, behalve de bestanden uit de tabel en `.gitignore` zelf. `git add <naam>` van een ander bestand weigert | Houdt `git add -f` niet tegen |
+| Stage-afspraak | Stagen gaat alleen met `git add <bestandsnaam>` van een allowlist-bestand. Nooit `-f`, `-A` of `.`. Vóór de commit leest de editor `git diff --cached` | Is een afspraak, geen techniek |
+| `pre-commit`-hook | Weigert een commit met een pad buiten de allowlist, en een commit waarin de gestagede inhoud een letterlijke secret-vormige waarde heeft (dezelfde patroontoets als in het meetbewijs) | Draait pas bij de commit. `git add` heeft de blob dan al in `.git/objects` geschreven, en een geweigerde commit haalt hem niet weg. De patroontoets is geen volledige scan |
+| `.git` op mode 700 | Alleen `janpeter` en root lezen de objecten | Agents draaien zelf als `janpeter` |
+
+**Herstel als er toch iets verkeerds is gestaged.** `git rm --cached <pad>`, daarna
+`git gc --prune=now`, en controleren dat `git cat-file -e <blob>` faalt. Behandel de waarde
+als gezien door wie `.git` kon lezen.
+
+Verder:
+
 - Identiteit staat in de repo zelf (`git config user.name`), niet globaal.
 - Git draait als `janpeter`. Root gebruikt `sudo -u janpeter git …`, anders weigert git op
   eigenaarschap.
+- De eerste commit bevat alleen de allowlist. Vóór die commit wordt elk bestand getoetst met
+  de patroontoets en gelezen.
+- Hook en installatie komen uit deze repo: `scripts/compose-git-init` en
+  `scripts/compose-git-pre-commit`, met tests in `scripts/tests/`.
 
-**B2. De regel in de instructies die hostsessies laden.** Dezelfde korte sectie komt in elk
-instructiebestand dat op de host bestaat:
+**B2. De regel in de instructies die hostsessies laden.** Op beide hosts zijn Claude en
+Codex geïnstalleerd. Dezelfde korte sectie komt in elk bestand uit de tabel.
 
-| Host | Bestanden |
-|---|---|
-| scrum4me-server | `/home/janpeter/claude/CLAUDE.md`, `~/.claude/rules/compose-wijzigen.md`, `~/.codex/AGENTS.md` |
-| max2 | `/home/janpeter/claude/CLAUDE.md`, `~/.claude/rules/compose-wijzigen.md` |
-
-`AGENTS.md` in `/home/janpeter/claude` is op beide hosts een symlink naar `CLAUDE.md`.
+| Host | Bestand | Bereikt |
+|---|---|---|
+| beide | `/home/janpeter/claude/CLAUDE.md` | Claude en Codex gestart in die map (`AGENTS.md` is er een symlink naar) |
+| beide | `~/.claude/rules/compose-wijzigen.md` (nieuw) | Claude, ongeacht de werkmap |
+| scrum4me-server | `~/.codex/AGENTS.md` (bestaat) | Codex, ongeacht de werkmap |
+| max2 | `~/.codex/AGENTS.md` (nieuw) | Codex, ongeacht de werkmap |
 
 ```markdown
 ## Compose-bestanden wijzigen
@@ -130,19 +170,26 @@ instructiebestand dat op de host bestaat:
 - Maak nooit een kopie van een compose-bestand naast het origineel (`cp … .bak`). Zo'n kopie
   erft het project en de `.env` van de live stack; `docker compose -f <kopie> down` stopt
   productie (incident 2026-07-09, ISS-5).
-- De live compose-mappen staan onder git. Werkwijze: `git status`; commit eerst wat er nog
-  ongecommit staat; wijzig; valideer met `docker compose -f <bestand> config -q`; commit met
+- De live compose-mappen staan onder git. Begin met `git status`. Staat er een wijziging die
+  niet van jou is: stop, toon `git status` en `git diff --stat`, en vraag JP. Commit
+  andermans wijziging niet.
+- Werkwijze: wijzig; valideer met `docker compose -f <bestand> config -q`; stage met
+  `git add <bestandsnaam>`, nooit met `-f`, `-A` of `.`; lees `git diff --cached`; commit met
   het waarom. Terugdraaien: `git checkout <commit> -- <bestand>`.
+- In een compose-bestand hoort geen letterlijk wachtwoord, token of URL met credentials.
+  Gebruik `${VARIABELE}` en zet de waarde in de `.env`.
 - Draai git daar als `janpeter`, niet als root.
 - Toch een momentopname buiten git nodig? Een tarball onder `/srv/_attic/<datum>/` met
   MANIFEST, mode 600. Nooit een los bestand.
 ```
 
+Een vuile werkboom is het enige signaal dat een andere sessie met hetzelfde bestand bezig
+is. Daarom stopt de regel daar, in plaats van andermans wijziging mee te committen.
+
 **B3. Eenmalige opruiming.** De bestaande losse kopieën gaan als tarball naar
-`/srv/_attic/2026-09-28/`, volgens het recept van ISS-5: tar maken, uitpakken in een
-tijdelijke map, checksums vergelijken, en pas daarna de originelen verwijderen. Verschil met
-ISS-5: tar, MANIFEST en SHA256SUMS krijgen mode 600 (root), omdat een deel van de kopieën
-letterlijke secret-vormige waarden bevat. De tar van 25 september krijgt alsnog mode 600.
+`/srv/_attic/2026-09-28/`, volgens het inpakrecept in E. Tar, MANIFEST en SHA256SUMS krijgen
+mode 600 (root), omdat een deel van de kopieën letterlijke secret-vormige waarden bevat. De
+tar van 25 september krijgt alsnog mode 600.
 
 ### C. Vangnet: automatische quarantaine (voorwaardelijk)
 
@@ -150,15 +197,19 @@ Niet in increment 1. Zie §6 voor de voorwaarde en de schets.
 
 ### D. When2Watch: één runnable compose per project
 
-- **D1. Eenmalig.** In de 15 releases die niet `current` zijn, gaat `compose.yaml` in
-  `release-compose.tar` in dezelfde releasemap. Het losse bestand verdwijnt. Die naam valt
-  buiten de zoekpatronen van de scanner. De release `5dd8b3f` en de draaiende stack blijven
-  onaangeroerd; het geregistreerde configbestand verandert niet.
-- **D2. Procedure.** `deploy/README.md` van When2Watch krijgt twee stappen. Na het omzetten
-  van `current`: pak `compose.yaml` van de vorige release in. Bij terugdraaien: pak hem eerst
-  uit in de doelrelease. De terugdraaistappen in `docs/runbooks/idea-219-r1-cutover.md` en
-  `docs/runbooks/idea-219-r2-cutover.md` starten een oude release vanuit zijn releasemap
-  (`fb7a690`, `8b87838`); die krijgen dezelfde uitpakstap.
+- **D2. Procedure, eerst.** `deploy/README.md` van When2Watch krijgt twee stappen. Na het
+  omzetten van `current`: pak `compose.yaml` van de vorige release in. Bij terugdraaien: pak
+  hem eerst uit in de doelrelease. De terugdraaistappen in
+  `docs/runbooks/idea-219-r1-cutover.md` en `docs/runbooks/idea-219-r2-cutover.md` starten
+  een oude release vanuit zijn releasemap (`fb7a690`, `8b87838`); die krijgen dezelfde
+  uitpakstap.
+- **D1. Eenmalig, daarna.** In de 15 releases die niet `current` zijn, gaat `compose.yaml` in
+  `release-compose.tar` in dezelfde releasemap, volgens het inpakrecept in E. Die naam valt
+  buiten de zoekpatronen van de scanner. De release waar `current` naar wijst en de
+  draaiende stack blijven onaangeroerd; het geregistreerde configbestand verandert niet.
+
+D2 gaat vóór D1. Anders verwijzen de herstelstappen een tijd lang naar een bestand dat er
+niet meer staat.
 
 De dagelijkse cron hangt niet af van een oude release: `deploy/when2watch-sync.sh` doet
 alleen `docker exec when2watch-web-1`.
@@ -166,63 +217,103 @@ alleen `docker exec when2watch-web-1`.
 Tijdens een deploy hebben twee releases kort een los `compose.yaml`. Dat is aanvaard: de
 scanner draait eenmaal per nacht.
 
+### E. Inpakrecept (gedeeld door B3 en D1)
+
+Runbook §9 in scrum4me-docker toont `tar … && rm -rf` zonder de tar terug te lezen. Dit
+recept leest hem wel terug.
+
+1. **Lijst vastleggen.** Eén lijst met het volledige pad en de sha256 van elk bronbestand.
+   Geen globs. De lijst is wat JP goedkeurt.
+2. **Opnieuw toetsen vlak vóór de uitvoering.** Lees `docker compose ls --all` en, voor
+   When2Watch, `readlink current`. Staat een geregistreerd configbestand of een bestand
+   onder `current` op de lijst, of wijkt een sha256 af van de lijst: stop.
+3. **Tar maken** met `--format=posix --numeric-owner`, mode 600.
+4. **Teruglezen.** Pak de tar uit in een map van `mktemp -d` en vergelijk de sha256 van elk
+   uitgepakt bestand met de lijst.
+5. **Verwijderen.** Pas daarna, en precies de paden van de lijst.
+6. **Natoets.** De sha256 van de live configbestanden is gelijk aan vóór receptstap 1, en
+   `docker compose ls --all` toont dezelfde projecten, statussen en configbestanden.
+
+Receptstap 4 is tegelijk de proef van het uitpakken: hij voert de extractie uit die de
+terugdraaiprocedure voorschrijft.
+
 ## 5. Increment 1 — uitwerking
 
 Volgorde: eerst opruimen (het gevaar weg), dan de oorzaken, dan de detector. De opruiming
-hangt niet af van de scanner-PR's; de droogloop kan de actuele scanner over SSH aanleveren.
+hangt niet af van de scanner-PR's; de droogloop levert de actuele scanner over SSH aan.
 
 ### Stap 1 — Opruiming scrum4me-server (B3)
 
 - **Doel:** geen losse compose-kopie meer naast een live `.env`.
 - **Raakt:** 5 bestanden in `/srv/scrum4me/forgejo` en `/srv/scrum4me/compose`; de kopie in
-  `/srv/scrum4me/backups/forgejo-pre-v15-2026-05-16/` wordt ter plekke een tarball (runbook
-  §9); `chmod 600` op de drie bestanden in `/srv/_attic/2026-09-25/`.
-- **Acceptatie:** sha256 van de live compose-bestanden is voor en na gelijk;
-  `docker compose ls` toont dezelfde projecten, statussen en configbestanden; de tar bevat
-  precies de bestanden uit het MANIFEST.
+  `/srv/scrum4me/backups/forgejo-pre-v15-2026-05-16/` wordt ter plekke een tarball;
+  `chmod 600` op de drie bestanden in `/srv/_attic/2026-09-25/`.
+- **Acceptatie:** het inpakrecept is volledig doorlopen; de tar bevat precies de bestanden
+  van de lijst.
 - **Verificatie:**
   `sudo DRIFT_NO_NOTIFY=1 /srv/scrum4me/ops-agent-drift/check-compose-collision.sh 154 /srv`
   geeft exitcode 0.
 
-### Stap 2 — Opruiming max2 (B3 en D1)
+### Stap 2 — When2Watch-procedure (D2)
+
+- **Doel:** de herstelstappen kloppen vóórdat er een `compose.yaml` verdwijnt.
+- **Raakt:** in When2Watch `deploy/README.md`, `docs/runbooks/idea-219-r1-cutover.md` en
+  `docs/runbooks/idea-219-r2-cutover.md`.
+- **Acceptatie:** elke stap die een oude release start, noemt eerst het uitpakken van
+  `release-compose.tar`. De PR is gemerged.
+
+### Stap 3 — Opruiming max2 (B3 en D1)
 
 - **Doel:** als stap 1, plus één runnable compose voor When2Watch.
+- **Afhankelijk van:** stap 2 gemerged.
 - **Raakt:** 30 losse kopieën (24 in `/srv/scrum4me/compose`, 2 in `/srv/immich`, 2 in
   `/srv/apps/media-organizer/repo/deploy`, 1 in `/srv/apps/tei`, 1 in
   `/srv/scrum4me/backups/forgejo-pre-v15-2026-05-16`) en `compose.yaml` in 15
   When2Watch-releases.
-- **Acceptatie:** als stap 1; daarnaast zijn `when2watch-web-1` en `when2watch-db-1` healthy,
-  geeft de publieke health 200, en staat `compose.yaml` alleen nog in `releases/5dd8b3f`.
-- **Verificatie:** droogloop van de actuele scanner geeft 0 destructief:
-  `ssh max2 'sudo DRIFT_NO_NOTIFY=1 bash -s -- max2 /srv' < deploy/ops-agent/check-compose-collision.sh`.
+- **Acceptatie:** het inpakrecept is volledig doorlopen, per releasemap en voor de losse
+  kopieën; `when2watch-web-1` en `when2watch-db-1` zijn healthy; de publieke health geeft
+  200; `compose.yaml` staat alleen nog in de release waar `current` naar wijst.
+- **Verificatie:** de droogloop over SSH uit onderdeel A geeft 0 destructief. De lokaal
+  berekende hash van de scanner staat bij het bewijs.
 
-### Stap 3 — Git ter plekke (B1)
+### Stap 4 — Git ter plekke (B1)
 
 - **Doel:** historie en terugdraaien zonder kopie.
-- **Raakt:** de drie mappen uit B1: `.git/`, `.gitignore`, `.git/hooks/pre-commit`.
-- **Acceptatie:** `git ls-files` toont precies de allowlist; `git status --porcelain` is leeg;
-  de eerste commit bevat de live bestanden ongewijzigd (sha256 gelijk aan vóór de stap).
-- **Verificatie:**
-  - Negatieve proef: een leeg proefbestand `hook-proof.env` toevoegen met `git add -f` en
-    committen moet falen. Daarna het proefbestand verwijderen.
-  - `docker compose -f <bestand> config -q` slaagt; de droogloop van de scanner blijft 0.
-  - De eerstvolgende run van `ops-agent-drift` en van de deploy-flows wijkt niet af van de
-    vorige.
+- **Raakt:** in deze repo `scripts/compose-git-init`, `scripts/compose-git-pre-commit` en
+  `scripts/tests/test_compose_git.py`; op de hosts de drie mappen uit B1 (`.git/`,
+  `.gitignore`, `.git/hooks/pre-commit`).
+- **Acceptatie, in een tijdelijke repo zonder echte secrets:**
+  1. `git add <naam>` van een bestand buiten de allowlist weigert.
+  2. Een commit met een geforceerd gestaged pad buiten de allowlist wordt geweigerd.
+  3. Een commit van een allowlist-bestand met een letterlijke proefwaarde onder
+     `POSTGRES_PASSWORD` wordt geweigerd.
+  4. Een commit met alleen geïnterpoleerde waarden slaagt.
+  5. Na het herstelrecept faalt `git cat-file -e` op de blob uit punt 2.
+- **Acceptatie, op de hosts:** `git ls-files` toont precies de allowlist;
+  `git status --porcelain` is leeg; `.git` heeft mode 700; de hook is byte-gelijk aan de
+  bron; de eerste commit bevat de live bestanden ongewijzigd.
+- **Verificatie:** `docker compose -f <bestand> config -q` slaagt; de scanner blijft op 0;
+  de eerstvolgende run van `ops-agent-drift` en van de deploy-flows wijkt niet af van de
+  vorige. De hookproeven draaien niet in een live map.
 
-### Stap 4 — Hostregel (B2)
+### Stap 5 — Hostregel (B2)
 
 - **Doel:** elke hostsessie kent de regel, ongeacht de werkmap.
-- **Raakt:** de instructiebestanden uit B2 op beide hosts.
+- **Raakt:** de bestanden uit B2 op beide hosts.
 - **Acceptatie:** de sectie staat woordelijk gelijk in alle genoemde bestanden.
-- **Verificatie (praktijkproef):** een verse Claude-sessie en een verse Codex-sessie op de
-  host, gestart buiten `/home/janpeter/claude`, krijgen de opdracht een poort te wijzigen in
-  een proef-compose-bestand in een tijdelijke map met een git-repo. Bewijs: de mapinhoud na
-  afloop. Geslaagd als er een commit is en geen kopie. Dit bewijst dat de regel geladen
-  wordt; of hij standhoudt, blijkt in stap 8.
+- **Verificatie (praktijkproef, vier sessies):** per host een verse Claude-sessie en een
+  verse Codex-sessie, gestart buiten `/home/janpeter/claude`.
+  1. *Geladen.* De sessie krijgt de vraag wat de regel is voor het wijzigen van een
+     compose-bestand. Ze noemt uit zichzelf: geen kopie ernaast, en git.
+  2. *Gevolgd.* De sessie wijzigt een poort in een proef-compose-bestand in een tijdelijke
+     map met een git-repo. Na afloop is er een commit en geen kopie.
+- **Poort:** de observatie van stap 9 begint pas als alle vier de sessies op beide punten
+  slagen. Slaagt een sessie niet op punt 1, dan is de laadroute voor dat sessietype fout en
+  wordt die eerst hersteld.
 
-### Stap 5 — Scanner in Ops-dashboard (A2, A3, A4)
+### Stap 6 — Scanner in Ops-dashboard (A2, A3, A4)
 
-- **Doel:** melden bij verandering, juiste ernst, zelf-identificerend rapport.
+- **Doel:** melden bij verandering, juiste ernst, zelf-identificerende uitvoer.
 - **Raakt:** `deploy/ops-agent/check-compose-collision.sh`; nieuw
   `test/compose-collision-check.test.ts` naar het patroon van
   `test/repo-ownership-check.test.ts` (script uitvoeren in een tijdelijke map, met een
@@ -230,26 +321,29 @@ hangt niet af van de scanner-PR's; de droogloop kan de actuele scanner over SSH 
 - **Acceptatie:**
   1. Twee runs met dezelfde bevindingen geven dezelfde sleutel.
   2. Eén extra losse kopie geeft een andere sleutel.
-  3. Een andere ISO-week geeft een andere sleutel.
-  4. Een resolvende kopie bij status `exited(1), running(4)` telt als destructief.
-  5. Een schone root geeft exitcode 0 en geen push.
-  6. De kop noemt de sha256 van het script zelf.
+  3. Een andere week geeft een andere sleutel; dezelfde week in een ander weekjaar ook.
+  4. Een resolvende kopie bij status `exited(1), running(4)` telt als destructief; bij
+     status `exited(1)` blijft het een waarschuwing.
+  5. Een schone root geeft exitcode 0, geen push, en wél de scanner-hash in de log.
+  6. Uitgevoerd als bestand noemt de scanner de sha256 van dat bestand.
+  7. Uitgevoerd via stdin noemt de scanner de waarde van `COMPOSE_COLLISION_SCANNER_SHA`, en
+     zonder die variabele `onbekend`.
 - **Verificatie:** de tests zijn eerst rood zonder de wijziging en daarna groen. De
   nagebootste `docker` bewijst alleen de logica van het script; het gedrag van Compose zelf
   is bewezen met de drooglopen op de hosts.
 
-### Stap 6 — Scanner in scrum4me-docker (A1)
+### Stap 7 — Scanner in scrum4me-docker (A1)
 
 - **Doel:** max2 draait dezelfde scanner.
+- **Afhankelijk van:** stap 6 gemerged.
 - **Raakt:** `scripts/check-compose-collision.sh` (vervangen), nieuw
   `scripts/check-compose-collision.sh.source`, een sha256-toets in `.forgejo/workflows/ci.yml`,
-  en runbook `ops-agent-host-config-discipline.md` §9 (verwijzing naar git ter plekke en naar
-  de plek van de hostregel).
-- **Acceptatie:** de kopie is byte-gelijk aan de gemergede versie uit stap 5; de CI-toets is
+  en runbook `ops-agent-host-config-discipline.md` §9 (het inpakrecept met teruglezen, en een
+  verwijzing naar git ter plekke en naar de plek van de hostregel).
+- **Acceptatie:** de kopie is byte-gelijk aan de gemergede versie uit stap 6; de CI-toets is
   rood als de kopie wijzigt zonder de bronvermelding.
-- **Afhankelijk van:** stap 5 gemerged.
 
-### Stap 7 — Uitrol van de scanner
+### Stap 8 — Uitrol van de scanner
 
 - **Doel:** beide hosts draaien de nieuwe versie.
 - **Raakt:** scrum4me-server via `deploy/ops-agent/scripts/apply-drift-runtime.sh` (de merge
@@ -257,19 +351,20 @@ hangt niet af van de scanner-PR's; de droogloop kan de actuele scanner over SSH 
   `/srv/scrum4me/repos/scrum4me-docker`.
 - **Acceptatie:** `sha256sum` van het bestand uit `ExecStart` is op beide hosts gelijk aan de
   bron in Ops-dashboard.
-- **Verificatie:** droogloop op beide hosts geeft exitcode 0 en noemt dezelfde scanner-hash.
+- **Verificatie:** de geïnstalleerde scanner geeft op beide hosts exitcode 0 en logt dezelfde
+  scanner-hash.
 
-### Stap 8 — When2Watch-procedure (D2) en observatie
+### Stap 9 — Observatie
 
-- **Raakt:** in When2Watch `deploy/README.md`, `docs/runbooks/idea-219-r1-cutover.md` en
-  `docs/runbooks/idea-219-r2-cutover.md`.
+- **Afhankelijk van:** de poort van stap 5.
 - **Observatie:** veertien nachten. Afsluiten van ISS-5, ISS-15 en ISS-16 met resolutie als
   het resultaat uit §1 zichtbaar is.
 
 ## 6. Increment 2 — automatische quarantaine (voorwaardelijk)
 
-**Voorwaarde.** Na stap 4 verschijnt binnen veertien dagen opnieuw een losse compose-kopie
-naast een live configbestand. Dan is aangetoond dat een regel niet volstaat.
+**Voorwaarde.** Nadat de poort van stap 5 is gehaald, verschijnt binnen veertien dagen
+opnieuw een losse compose-kopie naast een live configbestand. Dan is aangetoond dat een
+geladen regel niet volstaat.
 
 **Schets.** Een apart script met eigen timer, vóór de nachtelijke scan. Het verplaatst een
 bestand alleen als alles hieronder geldt:
@@ -280,8 +375,8 @@ bestand alleen als alles hieronder geldt:
 4. De ctime is ouder dan een uur. De mtime is onbruikbaar, want `cp -p` bewaart die van het
    origineel.
 
-Het bestand gaat als tarball naar `/srv/_attic/<datum>/`, mode 600, met MANIFEST en het
-terugzetcommando. Eén melding per quarantaine. Het script kent een droogloop.
+Het bestand gaat volgens het inpakrecept naar `/srv/_attic/<datum>/`, met het
+terugzetcommando in het MANIFEST. Eén melding per quarantaine. Het script kent een droogloop.
 
 Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoord van JP.
 
@@ -289,25 +384,26 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 
 | # | Beslissing | Voorstel |
 |---|---|---|
-| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 2) | Ja; het is hetzelfde recept als ISS-5 |
-| 2 | Akkoord op git in de drie live mappen en op de hostregel (stap 3 en 4) | Ja |
+| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 3) | Ja; de lijst uit het inpakrecept is wat je goedkeurt |
+| 2 | Akkoord op git in de drie live mappen en op de hostregel (stap 4 en 5) | Ja |
 | 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | 90 dagen, daarna verwijderen |
 | 4 | Ritme van de herinnering | Wekelijks |
-| 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk |
-| 6 | Review vóór materialisatie | Eén gewone review door `mac:codex`; A en B1 raken een veiligheidscheck en productiemappen |
-| 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 8 als story onder When2Watch |
+| 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk; de reviewer noemt dat proportioneel |
+| 6 | Deltareview door `mac:codex` op deze versie | Ja; ronde 1 was NO-GO |
+| 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
 
 ## 8. Risico's
 
 | Risico | Gevolg | Maatregel |
 |---|---|---|
-| Een secret belandt in git | Blob leesbaar voor iedereen op de host | Allowlist, `pre-commit`-hook, `.git` op 700, negatieve proef in stap 3 |
-| De regel wordt niet geladen in een sessietype | Kopieën blijven komen | Praktijkproef in stap 4; observatie in stap 8; onderdeel C als vangnet |
+| Een secret belandt in git | Blob leesbaar voor `janpeter` en root | De vier lagen uit B1, het herstelrecept, en de proeven in stap 4 |
+| De regel wordt niet geladen in een sessietype | Kopieën blijven komen | De poort in stap 5; onderdeel C als vangnet |
+| Twee sessies wijzigen tegelijk hetzelfde bestand | Een wijziging gaat verloren | De regel stopt bij een vuile werkboom |
 | A2 onderdrukt een blijvend gevaar | Bevinding raakt uit beeld | Wekelijkse herinnering; de issues blijven open tot de host veertien nachten schoon is |
-| Een ops-agent-flow verwacht een schone map | Flow faalt op `.git` of `.gitignore` | Verificatie in stap 3 |
-| Terugdraaien van When2Watch kost een extra stap | Vertraging onder druk | Procedure in de README (D2) |
+| Een ops-agent-flow verwacht een schone map | Flow faalt op `.git` of `.gitignore` | Verificatie in stap 4 |
+| `current` verschuift tussen lijst en uitvoering | De actieve release verliest zijn `compose.yaml` | Receptstap 2 in onderdeel E |
+| Terugdraaien van When2Watch kost een extra stap | Vertraging onder druk | De procedure staat er vóór de opruiming (stap 2) |
 | max2 heeft geen backup van `/srv/scrum4me/compose` | Lokale git-historie verdwijnt bij schijfverlies | Aanvaard in increment 1; een remote hoort bij optie 5 |
-| Een wijziging door een flow blijft ongecommit | Historie mist het waarom | De regel laat de volgende editor eerst committen |
 
 ## 9. Overwogen en afgewezen
 
@@ -322,6 +418,8 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
   containers opnieuw aanmaakt is niet gemeten en vraagt eerst een repetitie. Kan later, samen
   met het geplande deployscript.
 - **Issues aanmaken vanuit de scanner.** De queue-CLI heeft daar geen commando voor.
+- **Andermans ongecommitte wijziging eerst committen.** Stond in de eerste versie van de
+  hostregel. Het mengt twee wijzigingen en verbergt dat een andere sessie bezig is.
 
 ## 10. Wijziging ten opzichte van het eerste advies
 
@@ -334,12 +432,34 @@ Twee dingen zijn erbij gekomen. Onderdeel B geldt ook voor max2, dat 24 losse ko
 live compose-map heeft. En de scanner heeft een rangschikkingsdefect (A3), gevonden door hem
 voor het eerst op max2 te draaien.
 
-## 11. Reviewfocus
+## 11. Reviewfocus voor de deltareview
 
-1. A2: kan een bevinding die blijft staan langer dan een week uit beeld raken?
-2. A3: geeft de nieuwe statustoets een vals alarm bij een project dat alleen `exited` is?
-3. B1: sluit de allowlist met de hook elk pad naar een secret in `.git/objects` af?
-4. B3 en D1: kan een stap de draaiende stack raken, of een bestand verwijderen vóór de tar is
-   geverifieerd?
-5. D1: breekt nog een andere procedure dan de twee cutover-runbooks op het ontbreken van
-   `compose.yaml` in een oude release?
+1. B2: bereikt elk van de vier bestanden het sessietype dat de tabel noemt?
+2. E: kan een stap van het inpakrecept de draaiende stack raken?
+3. B1: zijn de grenzen van de vier lagen juist beschreven, en is het herstelrecept volledig?
+4. A4: dekt de volgorde van hashbronnen beide uitvoeringsvormen en de schone uitgang?
+5. A2: klopt de sleutel op de jaargrens?
+
+## 12. Review record
+
+| Ronde | Reviewer | Commit | Oordeel | Bevindingen |
+|---|---|---|---|---|
+| 1 | `mac:codex` | `9a1a253` | NO-GO | 0 BLOCKER, 4 MAJOR, 1 MINOR |
+
+Verzoek `7a9bbffd-843d-43f4-abd2-5a021d462e24`, antwoord
+`7bf728f5-71ad-4172-ac99-550361b0068d`. Alle vijf bevindingen zijn nagemeten en juist
+bevonden.
+
+| # | Ernst | Bevinding | Verwerking |
+|---|---|---|---|
+| 1 | MAJOR | De regel bereikt Codex op max2 niet buiten `/home/janpeter/claude`; de proef toont niet dat de regel geladen is | Overgenomen. Nagemeten: Codex is op beide hosts geïnstalleerd en `~/.codex/AGENTS.md` ontbreekt op max2. B2 voegt dat bestand toe. Stap 5 toetst eerst of de regel geladen is en is een poort vóór de observatie |
+| 2 | MAJOR | D1 komt vóór de aangepaste herstelprocedure; D1 mist de tarcontrole vóór het verwijderen | Overgenomen. D2 is stap 2 en gaat vóór D1. Onderdeel E is één inpakrecept met teruglezen, voor B3 en D1 |
+| 3 | MAJOR | De hook kan een blob niet uit `.git/objects` weren; hij laat een secret in een toegelaten bestand door | Overgenomen. B1 beschrijft vier lagen met hun grenzen, een stage-afspraak, een inhoudstoets in de hook en een herstelrecept. De hostregel commit andermans wijziging niet meer |
+| 4 | MAJOR | A4 werkt niet bij een droogloop via stdin en niet bij een schone uitgang | Overgenomen. A4 logt de hash op elke uitgang en kent drie hashbronnen. Stap 6 toetst beide uitvoeringsvormen |
+| 5 | MINOR | De sleutel legt het ISO-weekjaar niet vast | Overgenomen. A2 pint `date -u +%G-W%V`; stap 6 toetst de jaargrens |
+
+**Eén deelvoorstel is niet overgenomen.** De reviewer stelde bij bevinding 2 een proef voor
+met `docker compose config -q` op een uitgepakte oude release in een tijdelijke map.
+Receptstap 4 in onderdeel E voert de extractie al uit en bewijst dat het teruggezette bestand
+byte-gelijk is aan het origineel. Een proef in een tijdelijke map toetst daarbovenop vooral
+de proefopstelling, want de `.env`-symlinks staan daar niet.

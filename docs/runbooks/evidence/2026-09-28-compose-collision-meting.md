@@ -256,3 +256,20 @@ dezelfde lengte. Het filter kan een plaatshouder niet van een echte waarde onder
 idempotency_key IS NOT NULL DO NOTHING`, gevolgd door het teruggeven van de bestaande id. De
 sleutel is dus uniek over alle berichten, ongeacht hun status. De CLI staat op beide hosts
 als `/usr/bin/s4m-queue`. De CLI heeft geen commando om issues aan te maken.
+
+## 8. Hostagenten (nameting 14:57Z, na reviewronde 1)
+
+| | scrum4me-server | max2 |
+|---|---|---|
+| `codex` op het PATH | `/home/janpeter/.local/bin/codex` | `/home/janpeter/.local/bin/codex` |
+| `claude` op het PATH | `/home/janpeter/.local/bin/claude` | `/home/janpeter/.local/bin/claude` |
+| Processen met de naam `codex` | 0 | 0 |
+| Processen met de naam `claude` | 1 | 1 |
+| `~/.codex/AGENTS.md` | aanwezig, mtime 2026-09-23 | ontbreekt |
+| `~/.codex/config.toml` | mtime 2026-09-27 | mtime 2026-09-14 |
+| Nieuwste statusbestand in `~/.codex` | 2026-09-28 00:32 | 2026-09-14 20:12 |
+
+Codex is dus op beide hosts geïnstalleerd. Op scrum4me-server is het recent gebruikt, op max2
+voor het laatst op 14 september. Een eerdere telling met `pgrep -f` gaf op beide hosts 2
+codex-processen; die telling was een artefact, want het patroon stond in de opdrachtregel
+van de meting zelf.
