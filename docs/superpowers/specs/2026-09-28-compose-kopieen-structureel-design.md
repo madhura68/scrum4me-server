@@ -1,6 +1,6 @@
 ---
 status: draft
-review: "ronde 1 en 2 NO-GO (mac:codex), alle bevindingen verwerkt; deze versie is nog niet herbeoordeeld; zie §12"
+review: "ronde 1, 2 en 3 NO-GO (mac:codex), alle bevindingen verwerkt; deze versie is nog niet herbeoordeeld; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
 last_updated: "2026-09-28"
@@ -140,20 +140,32 @@ lijken. Vier lagen houden die buiten git. Geen ervan is een garantie.
 | `pre-commit`-hook | Weigert een commit met een pad buiten de allowlist, en een commit waarin de gestagede inhoud een letterlijke secret-vormige waarde heeft (dezelfde patroontoets als in het meetbewijs) | Draait pas bij de commit. `git add` heeft de blob dan al in `.git/objects` geschreven, en een geweigerde commit haalt hem niet weg. De patroontoets is geen volledige scan |
 | `.git` op mode 700 | Alleen `janpeter` en root lezen de objecten | Agents draaien zelf als `janpeter` |
 
-**Herstel als er toch iets verkeerds is gestaged.**
+**Herstel als er toch iets verkeerds is gestaged.** Het recept herstelt alleen de index.
+Het wijzigt geen werkbestand, dus ook geen live `.env`. Beproefd in een tijdelijke repo:
+[2026-09-28-compose-git-herstelproef.md](../../runbooks/evidence/2026-09-28-compose-git-herstelproef.md).
 
-1. Leg de blob-ID vast vóór je de index wijzigt: `git ls-files -s -- <pad>`.
-2. Haal de wijziging uit de index. Welk commando hangt af van het pad:
-   - een nieuw, geforceerd toegevoegd pad: `git rm --cached -- <pad>`;
-   - een bestand dat git al volgt: `git restore --staged -- <pad>`. `git rm --cached` zou
-     hier het verwijderen van het live bestand uit git klaarzetten.
-3. Haal de letterlijke waarde uit het werkbestand en vervang hem door `${VARIABELE}`.
-4. Ruim op met `git gc --prune=now`, alleen als er geen andere schrijver in de repo bezig is.
-5. Controleer dat `git cat-file -e <blob-ID>` faalt.
-6. Vindt git de blob nog: stop. Bepaal welke ref of index hem vasthoudt en vraag JP. Ga niet
+1. Leg de sha256 van het werkbestand vast.
+2. Leg de blob-ID vast: `git ls-files -s -- <pad>` moet precies één regel geven met stage 0;
+   de blob-ID is het tweede veld. Geeft het nul of meer regels: stop en vraag JP.
+3. Herstel de index: `git restore --staged -- <pad>`. Dit ene commando dekt beide gevallen.
+   Een nieuw, geforceerd toegevoegd pad verdwijnt uit de index; een bestand dat git al volgt
+   krijgt de index van HEAD terug.
+4. Controleer dat de sha256 van het werkbestand gelijk is aan die uit stap 1.
+5. Ruim op met `git gc --prune=now`, alleen als er geen andere schrijver in de repo bezig is.
+6. Controleer dat `git cat-file -e <blob-ID>` faalt.
+7. Vindt git de blob nog: stop. Bepaal welke ref of index hem vasthoudt en vraag JP. Ga niet
    door met gewone commits.
 
 Behandel een echte waarde in alle gevallen als gezien door wie `.git` kon lezen.
+
+Staat er daarna nog een letterlijke waarde in een compose-bestand, dan is dat een gewone
+wijziging volgens de hostregel: terug naar de laatste commit met `git restore -- <bestand>`,
+of de waarde naar de `.env` en `${VARIABELE}` in het compose-bestand, gevalideerd met
+`docker compose -f <bestand> config -q`. De editor kiest en weegt mee of de wijziging al op
+de draaiende stack is toegepast.
+
+Het recept geldt voor een repo met minstens één commit; de installatie maakt die. Zonder
+commit faalt `git restore --staged` en is `git rm --cached -- <pad>` het juiste commando.
 
 Verder:
 
@@ -300,15 +312,17 @@ hangt niet af van de scanner-PR's; de droogloop levert de actuele scanner over S
 - **Raakt:** in deze repo `scripts/compose-git-init`, `scripts/compose-git-pre-commit` en
   `scripts/tests/test_compose_git.py`; op de hosts de drie mappen uit B1 (`.git/`,
   `.gitignore`, `.git/hooks/pre-commit`).
-- **Acceptatie, in een tijdelijke repo zonder echte secrets:**
+- **Acceptatie, in een tijdelijke repo zonder echte secrets.** Proefwaarden zijn korter dan
+  20 tekens; de secret-scan van deze repo weigert langere:
   1. `git add <naam>` van een bestand buiten de allowlist weigert.
   2. Een commit met een geforceerd gestaged pad buiten de allowlist wordt geweigerd.
   3. Een commit van een allowlist-bestand met een letterlijke proefwaarde onder
      `POSTGRES_PASSWORD` wordt geweigerd.
   4. Een commit met alleen geïnterpoleerde waarden slaagt.
   5. Het herstelrecept is doorlopen voor punt 2 (nieuw pad) en voor punt 3 (gevolgd
-     bestand). In beide gevallen faalt `git cat-file -e` daarna op de vastgelegde blob-ID.
-     Bij punt 3 is de index weer gelijk aan HEAD en staat het bestand nog in `git ls-files`.
+     bestand). In beide gevallen is het werkbestand daarna byte-gelijk aan vóór het herstel
+     en faalt `git cat-file -e` op de vastgelegde blob-ID. Bij punt 3 is de index weer
+     gelijk aan HEAD en staat het bestand nog in `git ls-files`.
 - **Acceptatie, op de hosts:** `git ls-files` toont precies de allowlist;
   `git status --porcelain` is leeg; `.git` heeft mode 700; de hook is byte-gelijk aan de
   bron; de eerste commit bevat de live bestanden ongewijzigd.
@@ -409,8 +423,9 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 | 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | 90 dagen, daarna verwijderen |
 | 4 | Ritme van de herinnering | Wekelijks |
 | 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk; de reviewer noemt dat proportioneel |
-| 6 | Derde reviewronde door `mac:codex` op deze versie | Ja; ronde 1 en 2 waren NO-GO en de verwerking van ronde 2 is niet herbeoordeeld |
+| 6 | Vierde reviewronde door `mac:codex` op deze versie | Ja; de verwerking van ronde 3 is niet herbeoordeeld |
 | 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
+| 8 | B1 houden, of vervangen door een momentopname-helper die een tarball in `/srv/_attic` zet | Houden. Alle drie de rondes raakten de omgang met secrets in B1. Een helper heeft daar minder oppervlak, maar geeft geen diff-historie en vraagt `sudo` |
 
 ## 8. Risico's
 
@@ -454,9 +469,9 @@ voor het eerst op max2 te draaien.
 
 ## 11. Reviewfocus voor de deltareview
 
-1. E: sluit de hertoets per bestand het interval tussen controle en verwijderen?
-2. B1: laat het herstelrecept de index en het live bestand in beide gevallen heel?
-3. Heeft de verwerking van ronde 2 iets stukgemaakt dat in ronde 1 of 2 als opgelost gold?
+1. B1: laat het herstelrecept elk werkbestand ongemoeid, en dekt de proef wat het recept
+   belooft?
+2. Heeft de verwerking van ronde 3 iets stukgemaakt dat eerder als opgelost gold?
 
 ## 12. Review record
 
@@ -464,8 +479,9 @@ voor het eerst op max2 te draaien.
 |---|---|---|---|---|
 | 1 | `mac:codex` | `9a1a253` | NO-GO | 0 BLOCKER, 4 MAJOR, 1 MINOR |
 | 2 (delta) | `mac:codex` | `c6bef0f` | NO-GO | 0 BLOCKER, 2 MAJOR, 0 MINOR |
+| 3 (delta) | `mac:codex` | `7f75cb9` | NO-GO | 1 BLOCKER, 0 MAJOR, 1 MINOR |
 
-De versie na ronde 2 is niet herbeoordeeld. Een derde ronde is een beslissing van JP.
+De versie na ronde 3 is niet herbeoordeeld. Een vierde ronde is een beslissing van JP.
 
 ### Ronde 1
 
@@ -499,4 +515,26 @@ bevindingen gaan over tekst die in ronde 1 is toegevoegd.
 | # | Ernst | Bevinding | Verwerking |
 |---|---|---|---|
 | 1 | MAJOR | Het inpakrecept toetst alleen vooraf. Verschuift `current` of wijzigt een bronbestand daarna, dan verwijdert het recept een actief bestand of inhoud die niet in de tar zit | Overgenomen. Onderdeel E vraagt een onderhoudsvenster, en receptstap 5 toetst per bestand opnieuw vlak vóór het verwijderen |
-| 2 | MAJOR | Het herstelrecept gebruikt `git rm --cached` ook voor een bestand dat git al volgt, en zet daarmee het verwijderen van het live bestand klaar. De blob-ID wordt niet vooraf vastgelegd en er is geen stoppad | Overgenomen. B1 onderscheidt een nieuw pad van een gevolgd bestand, legt de blob-ID eerst vast, en stopt als de blob blijft bestaan. Stap 4 stuurt beide gevallen door het herstelrecept |
+| 2 | MAJOR | Het herstelrecept gebruikt `git rm --cached` ook voor een bestand dat git al volgt, en zet daarmee het verwijderen van het live bestand klaar. De blob-ID wordt niet vooraf vastgelegd en er is geen stoppad | Overgenomen. B1 onderscheidt een nieuw pad van een gevolgd bestand, legt de blob-ID eerst vast, en stopt als de blob blijft bestaan. Stap 4 stuurt beide gevallen door het herstelrecept. In ronde 3 vervangen door één commando voor beide gevallen |
+
+### Ronde 3 (delta)
+
+Verzoek `5de71ced-e9fc-4dcd-b292-adbcbf2e00dc`, antwoord
+`1f2688c7-f58e-4faa-a3fe-429a6b9517f5`.
+
+De reviewer beoordeelde bevinding 1 uit ronde 2 (inpakrecept) als opgelost op ontwerpniveau
+en bevinding 2 (herstelrecept) als deels opgelost. A2, A4, B2 en de volgorde van D2 en D1
+bleven correct.
+
+| # | Ernst | Bevinding | Verwerking |
+|---|---|---|---|
+| 1 | BLOCKER | Het herstelrecept schrijft voor beide gevallen voor om de letterlijke waarde in het werkbestand te vervangen. Bij een geforceerd gestagede live `.env` breekt dat de credential | Overgenomen, en kleiner opgelost dan voorgesteld. Het recept herstelt alleen de index met één commando en wijzigt geen werkbestand. Een letterlijke waarde in een compose-bestand is een gewone wijziging buiten het recept. Het recept is eerst beproefd |
+| 2 | MINOR | `git ls-files -s` geeft meer dan alleen de blob-ID, en bij een unmerged pad meerdere regels | Overgenomen. Receptstap 2 eist precies één regel met stage 0 en neemt het tweede veld |
+
+**Afwijking van het voorstel bij bevinding 1.** De reviewer stelde twee volledig gescheiden
+herstelpaden voor. De proef laat zien dat `git restore --staged` beide gevallen dekt zonder
+het werkbestand te raken. Eén pad is kleiner en laat minder ruimte voor de fout die in ronde
+2 en 3 is gevonden.
+
+**Terugkerend patroon.** De bevindingen in ronde 2 en 3 zaten in procedures die zonder proef
+waren opgeschreven. Beslissing 8 in §7 legt de vraag bij JP of B1 de moeite waard blijft.
