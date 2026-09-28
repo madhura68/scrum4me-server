@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Pak losse compose-kopieën in en verwijder ze pas nadat de tar is teruggelezen.
+
+Dit is het inpakrecept uit onderdeel E van
+docs/superpowers/specs/2026-09-28-compose-kopieen-structureel-design.md.
+Het script toont paden en hashes, nooit bestandsinhoud.
+"""
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+
+DIGEST_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+GLOB_CHARS = "*?["
+
+
+class Stop(Exception):
+    """Een toets faalde. De melding bevat alleen paden en hashes."""
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def read_list(path):
+    """Lees regels '<sha256>  <absoluut pad>'; dit is de lijst die JP goedkeurt."""
+    entries, seen = [], set()
+    with open(path, encoding="utf-8") as f:
+        for n, line in enumerate(f, 1):
+            line = line.rstrip("\n")
+            if not line.strip() or line.startswith("#"):
+                continue
+            digest, sep, p = line.partition("  ")
+            if not sep or not DIGEST_RE.match(digest):
+                raise Stop(f"lijst regel {n}: verwacht '<sha256>  <pad>'")
+            if any(c in p for c in GLOB_CHARS):
+                raise Stop(f"lijst regel {n}: globs zijn niet toegestaan")
+            if not os.path.isabs(p) or os.path.normpath(p) != p:
+                raise Stop(f"lijst regel {n}: pad is niet absoluut of niet genormaliseerd")
+            if p in seen:
+                raise Stop(f"lijst regel {n}: pad staat dubbel op de lijst")
+            seen.add(p)
+            entries.append((digest, p))
+    if not entries:
+        raise Stop("de lijst is leeg")
+    return entries
+
+
+def compose_ls():
+    """Projecten, statussen en configbestanden zoals Compose ze kent."""
+    res = subprocess.run(
+        ["docker", "compose", "ls", "--all", "--format", "json"],
+        check=True, capture_output=True, text=True)
+    rows = json.loads(res.stdout or "[]")
+    return sorted((r.get("Name", ""), r.get("Status", ""), r.get("ConfigFiles", "")) for r in rows)
+
+
+def registered_configs(rows):
+    paths = set()
+    for _, _, configs in rows:
+        for c in configs.split(","):
+            if c:
+                paths.add(os.path.normpath(c))
+    return paths
+
+
+def before_tar():
+    """Haak voor de tests; doet in productie niets."""
+
+
+def before_remove(path):
+    """Haak voor de tests; doet in productie niets."""
+
+
+def check_entry(digest, path, rows, current_link):
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        raise Stop(f"bestaat niet: {path}")
+    if not stat.S_ISREG(st.st_mode):
+        raise Stop(f"is geen gewoon bestand: {path}")
+    registered = registered_configs(rows)
+    real = os.path.realpath(path)
+    if path in registered or real in {os.path.realpath(c) for c in registered}:
+        raise Stop(f"is een geregistreerd configbestand: {path}")
+    if current_link:
+        target = os.path.realpath(current_link)
+        if real == target or real.startswith(target + os.sep):
+            raise Stop(f"staat onder de actieve release: {path}")
+    actual = sha256_file(path)
+    if actual != digest:
+        raise Stop(f"sha256 wijkt af van de lijst: {path}")
+
+
+def members(entries, base):
+    rels = []
+    for _, path in entries:
+        rel = os.path.relpath(path, base)
+        if rel.startswith(".."):
+            raise Stop(f"staat buiten de basismap {base}: {path}")
+        rels.append(rel)
+    return rels
+
+
+def sidecars(tar_path):
+    stem = tar_path[:-4] if tar_path.endswith(".tar") else tar_path
+    return stem + ".MANIFEST.txt", stem + ".SHA256SUMS"
+
+
+def config_hashes(rows):
+    out = {}
+    for path in sorted(registered_configs(rows)):
+        out[path] = sha256_file(path) if os.path.isfile(path) else None
+    return out
+
+
+def precheck(args):
+    entries = read_list(args.list)
+    rows = compose_ls()
+    for digest, path in entries:
+        check_entry(digest, path, rows, args.current_link)
+    rels = members(entries, args.base)
+    if not args.tar.endswith(".tar"):
+        raise Stop("het doel moet op .tar eindigen")
+    for target in (args.tar,) + sidecars(args.tar):
+        if os.path.lexists(target):
+            raise Stop(f"bestaat al en wordt niet overschreven: {target}")
+    return entries, rels, rows
+
+
+def cmd_plan(args, out):
+    entries, rels, rows = precheck(args)
+    print(f"plan: {len(entries)} bestand(en) naar {args.tar}", file=out)
+    for (digest, path), rel in zip(entries, rels):
+        print(f"  {digest}  {path}", file=out)
+        print(f"    terugzetten: tar -xpf {args.tar} -C {args.base} {rel}", file=out)
+    print("plan: alle toetsen geslaagd; er is niets gewijzigd", file=out)
+    return 0
+
+
+def write_private(path, text):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def cmd_run(args, out):
+    try:
+        expires = datetime.date.fromisoformat(args.expires)
+    except ValueError:
+        raise Stop("--expires verwacht JJJJ-MM-DD")
+
+    # Receptstap 1 en 2: de lijst, en opnieuw toetsen vlak voor de uitvoering.
+    entries, rels, rows_before = precheck(args)
+    hashes_before = config_hashes(rows_before)
+    print(f"toets vooraf geslaagd: {len(entries)} bestand(en)", file=out)
+
+    # Receptstap 3: de tar, alleen leesbaar voor de eigenaar. De map zelf toont
+    # alleen namen en volgt de bestaande conventie van /srv/_attic (755).
+    target_dir = os.path.dirname(args.tar)
+    if not os.path.isdir(target_dir):
+        os.makedirs(target_dir)
+        os.chmod(target_dir, 0o755)
+    os.umask(0o077)
+    before_tar()
+    subprocess.run(
+        ["tar", "--format=posix", "--numeric-owner", "-C", args.base, "-cpf", args.tar, "--"] + rels,
+        check=True)
+    os.chmod(args.tar, 0o600)
+    manifest_path, sums_path = sidecars(args.tar)
+    write_private(sums_path, "".join(f"{d}  {rel}\n" for (d, _), rel in zip(entries, rels)))
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        f"gemaakt: {now}",
+        f"host: {socket.gethostname()}",
+        f"tar: {args.tar}",
+        f"sha256 van de tar: {sha256_file(args.tar)}",
+        f"basismap: {args.base}",
+        f"verwijderen na: {expires.isoformat()}",
+        "",
+        "sha256  bron  terugzetcommando",
+    ]
+    for (digest, path), rel in zip(entries, rels):
+        lines.append(f"{digest}  {path}  tar -xpf {args.tar} -C {args.base} {rel}")
+    write_private(manifest_path, "\n".join(lines) + "\n")
+    print(f"tar gemaakt: {args.tar}", file=out)
+
+    # Receptstap 4: teruglezen met dezelfde extractie als het terugzetcommando.
+    tmp = tempfile.mkdtemp(prefix="compose-inpak-")
+    try:
+        subprocess.run(["tar", "-xpf", args.tar, "-C", tmp], check=True)
+        listed = subprocess.run(
+            ["tar", "-tf", args.tar], check=True, capture_output=True, text=True).stdout.split("\n")
+        found = sorted(m for m in listed if m and not m.endswith("/"))
+        if found != sorted(rels):
+            raise Stop("de tar bevat niet precies de bestanden van de lijst")
+        for (digest, _), rel in zip(entries, rels):
+            if sha256_file(os.path.join(tmp, rel)) != digest:
+                raise Stop(f"teruggelezen bestand wijkt af: {rel}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"teruggelezen: {len(entries)} bestand(en) gelijk aan de lijst", file=out)
+
+    # Receptstap 5: een voor een verwijderen, met een hertoets vlak voor elk bestand.
+    removed = 0
+    for digest, path in entries:
+        before_remove(path)
+        try:
+            check_entry(digest, path, compose_ls(), args.current_link)
+        except Stop as e:
+            raise Stop(f"{e}; gestopt na {removed} van {len(entries)}, de rest blijft staan")
+        os.remove(path)
+        removed += 1
+        print(f"verwijderd: {path}", file=out)
+
+    # Receptstap 6: de draaiende stacks en hun configbestanden zijn ongewijzigd.
+    rows_after = compose_ls()
+    if rows_after != rows_before:
+        raise Stop("natoets: docker compose ls wijkt af van de stand vooraf")
+    if config_hashes(rows_after) != hashes_before:
+        raise Stop("natoets: een geregistreerd configbestand is gewijzigd")
+    print("natoets geslaagd: projecten, statussen en configbestanden zijn gelijk", file=out)
+    return 0
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="compose-inpak", description=__doc__.split("\n")[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("plan", "run"):
+        s = sub.add_parser(name)
+        s.add_argument("--list", required=True, help="bestand met '<sha256>  <absoluut pad>' per regel")
+        s.add_argument("--tar", required=True, help="doel; wordt nooit overschreven")
+        s.add_argument("--base", default="/", help="map waartegen de namen in de tar relatief zijn")
+        s.add_argument("--current-link", help="symlink naar de actieve release; niets daaronder mag op de lijst")
+        if name == "run":
+            s.add_argument("--expires", required=True, help="JJJJ-MM-DD, komt in het MANIFEST")
+    return p
+
+
+def main(argv, out=sys.stdout, err=sys.stderr):
+    args = build_parser().parse_args(argv)
+    args.tar = os.path.abspath(args.tar)
+    args.base = os.path.abspath(args.base)
+    try:
+        return cmd_plan(args, out) if args.cmd == "plan" else cmd_run(args, out)
+    except Stop as e:
+        print(f"STOP: {e}", file=err)
+        return 1
+    except subprocess.CalledProcessError as e:
+        print(f"STOP: {e.cmd[0]} eindigde met code {e.returncode}", file=err)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
