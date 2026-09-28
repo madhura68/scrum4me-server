@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""pre-commit voor een live compose-map: alleen de allowlist, geen letterlijke secrets.
+
+Geinstalleerd door compose-git-init. De hook toont paden, regelnummers en
+sleutelnamen, nooit waarden.
+
+De hook draait pas bij de commit. `git add` heeft de blob dan al in
+.git/objects geschreven, en een geweigerde commit haalt hem niet weg. Volg na
+een weigering het herstelrecept uit onderdeel B1 van
+docs/superpowers/specs/2026-09-28-compose-kopieen-structureel-design.md.
+"""
+import fnmatch
+import re
+import subprocess
+import sys
+
+IGNORE = ".gitignore"
+ALLOW_RE = re.compile(r"\A!/([^/*?\[\]\s]+)\Z")
+# Namen die per definitie een secret dragen; ook via de allowlist horen ze niet in git.
+FORBIDDEN_NAMES = (".env", ".env.*", "*.env", "*.key", "*.pem", "*.token")
+
+KEY_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"([A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|DSN|DATABASE_URL|DIRECT_URL)[A-Za-z0-9_]*)"
+    r"[\"']?\s*[:=]\s*(.*)\Z",
+    re.IGNORECASE)
+URL_CREDENTIALS_RE = re.compile(r"://[^/@\s$]+:[^/@\s$]+@")
+INTERPOLATED_RE = re.compile(r"\$\{?[A-Za-z_]")
+
+
+def forbidden_name(name):
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in FORBIDDEN_NAMES)
+
+
+def find_literals(text):
+    """Geef (regelnummer, sleutelnaam) voor elke letterlijke secret-vormige waarde.
+
+    Een patroontoets, geen volledige scan. Een geinterpoleerde waarde (${VAR}) en
+    een pad (begint met /) tellen niet; commentaar ook niet.
+    """
+    hits = []
+    for number, raw in enumerate(text.split("\n"), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if URL_CREDENTIALS_RE.search(line):
+            hits.append((number, "URL met inline credentials"))
+            continue
+        match = KEY_RE.search(line)
+        if not match:
+            continue
+        value = match.group(2).strip().strip("\"'")
+        if not value or value.startswith("/") or INTERPOLATED_RE.search(value):
+            continue
+        hits.append((number, match.group(1)))
+    return hits
+
+
+def parse_allowlist(ignore_text):
+    names = []
+    for raw in ignore_text.split("\n"):
+        match = ALLOW_RE.match(raw.strip())
+        if match and match.group(1) != IGNORE:
+            names.append(match.group(1))
+    return names
+
+
+def git(*args):
+    return subprocess.run(["git"] + list(args), check=True, capture_output=True).stdout
+
+
+def main():
+    head = subprocess.run(["git", "rev-parse", "--verify", "-q", "HEAD"], capture_output=True)
+    against = "HEAD" if head.returncode == 0 else git("hash-object", "-t", "tree", "/dev/null").decode().strip()
+    staged = [p for p in git("diff-index", "--cached", "--name-only", "--diff-filter=ACMR", "-z",
+                             against).decode().split("\0") if p]
+    try:
+        allow = parse_allowlist(git("show", ":" + IGNORE).decode())
+    except subprocess.CalledProcessError:
+        print(f"geweigerd: {IGNORE} staat niet in de index; de allowlist ontbreekt", file=sys.stderr)
+        return 1
+
+    problems = []
+    for name in allow:
+        if forbidden_name(name):
+            problems.append(f"{IGNORE}: {name} hoort nooit op de allowlist")
+    for path in staged:
+        if path == IGNORE:
+            continue
+        if path not in allow:
+            problems.append(f"{path}: staat niet op de allowlist in {IGNORE}")
+            continue
+        text = git("show", ":" + path).decode("utf-8", errors="replace")
+        for number, key in find_literals(text):
+            problems.append(f"{path} regel {number}: letterlijke waarde bij {key}")
+
+    if not problems:
+        return 0
+    print("commit geweigerd:", file=sys.stderr)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    print("Gebruik ${VARIABELE} in het compose-bestand en zet de waarde in de .env.", file=sys.stderr)
+    print("Haal een verkeerd pad uit de index met: git restore --staged -- <pad>", file=sys.stderr)
+    print("De blob staat dan nog in .git/objects; volg het herstelrecept (ontwerp, onderdeel B1).", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
