@@ -1,6 +1,6 @@
 ---
 status: draft
-review: "ronde 1, 2 en 3 NO-GO (mac:codex), alle bevindingen verwerkt; deze versie is nog niet herbeoordeeld; zie §12"
+review: "ronde 1, 2 en 3 NO-GO (mac:codex), alle bevindingen verwerkt; ronde 4 aangevraagd; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
 last_updated: "2026-09-28"
@@ -423,9 +423,9 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 | 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | 90 dagen, daarna verwijderen |
 | 4 | Ritme van de herinnering | Wekelijks |
 | 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk; de reviewer noemt dat proportioneel |
-| 6 | Vierde reviewronde door `mac:codex` op deze versie | Ja; de verwerking van ronde 3 is niet herbeoordeeld |
+| 6 | Vierde reviewronde door `mac:codex` op deze versie | **Besloten door JP op 2026-09-28: ja.** |
 | 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
-| 8 | B1 houden, of vervangen door een momentopname-helper die een tarball in `/srv/_attic` zet | Houden. Alle drie de rondes raakten de omgang met secrets in B1. Een helper heeft daar minder oppervlak, maar geeft geen diff-historie en vraagt `sudo` |
+| 8 | B1 houden, of vervangen door een momentopname-helper die een tarball in `/srv/_attic` zet | **Besloten door JP op 2026-09-28: B1 houden.** Een helper heeft minder oppervlak rond secrets, maar geeft geen diff-historie en vraagt `sudo` |
 
 ## 8. Risico's
 
@@ -481,7 +481,8 @@ voor het eerst op max2 te draaien.
 | 2 (delta) | `mac:codex` | `c6bef0f` | NO-GO | 0 BLOCKER, 2 MAJOR, 0 MINOR |
 | 3 (delta) | `mac:codex` | `7f75cb9` | NO-GO | 1 BLOCKER, 0 MAJOR, 1 MINOR |
 
-De versie na ronde 3 is niet herbeoordeeld. Een vierde ronde is een beslissing van JP.
+De versie na ronde 3 is niet herbeoordeeld. JP heeft op 2026-09-28 om een vierde ronde
+gevraagd.
 
 ### Ronde 1
 
@@ -537,4 +538,4 @@ het werkbestand te raken. Eén pad is kleiner en laat minder ruimte voor de fout
 2 en 3 is gevonden.
 
 **Terugkerend patroon.** De bevindingen in ronde 2 en 3 zaten in procedures die zonder proef
-waren opgeschreven. Beslissing 8 in §7 legt de vraag bij JP of B1 de moeite waard blijft.
+waren opgeschreven. JP heeft op 2026-09-28 besloten B1 te houden (beslissing 8 in §7).
