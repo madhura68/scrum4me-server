@@ -1,5 +1,7 @@
 ---
-status: draft
+title: "Losse compose-kopieën structureel voorkomen — ontwerp en plan increment 1"
+status: approved
+approved: "JP, 2026-09-28: akkoord op alle beslissingen in §7"
 review: "GO in ronde 4 (mac:codex, commit 026ff0c); ronde 1, 2 en 3 waren NO-GO; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
@@ -416,15 +418,15 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 
 ## 7. Beslissingen voor JP
 
-| # | Beslissing | Voorstel |
+| # | Beslissing | Uitkomst |
 |---|---|---|
-| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 3) | Ja; je keurt de lijst uit het inpakrecept goed en bevestigt het onderhoudsvenster |
-| 2 | Akkoord op git in de drie live mappen en op de hostregel (stap 4 en 5) | Ja |
-| 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | 90 dagen, daarna verwijderen |
-| 4 | Ritme van de herinnering | Wekelijks |
-| 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk; de reviewer noemt dat proportioneel |
+| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 3) | **Besloten door JP op 2026-09-28: akkoord.** JP keurt bij de uitvoering de lijst uit het inpakrecept goed en bevestigt het onderhoudsvenster |
+| 2 | Akkoord op git in de drie live mappen en op de hostregel (stap 4 en 5) | **Besloten door JP op 2026-09-28: akkoord.** |
+| 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | **Besloten door JP op 2026-09-28: 90 dagen, daarna verwijderen.** |
+| 4 | Ritme van de herinnering | **Besloten door JP op 2026-09-28: wekelijks.** |
+| 5 | Onderdeel C nu bouwen of voorwaardelijk houden | **Besloten door JP op 2026-09-28: voorwaardelijk.** De reviewer noemt dat proportioneel |
 | 6 | Vierde reviewronde door `mac:codex` op deze versie | **Besloten door JP op 2026-09-28: ja.** |
-| 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
+| 7 | Indeling bij materialisatie | **Besloten door JP op 2026-09-28:** één PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
 | 8 | B1 houden, of vervangen door een momentopname-helper die een tarball in `/srv/_attic` zet | **Besloten door JP op 2026-09-28: B1 houden.** Een helper heeft minder oppervlak rond secrets, maar geeft geen diff-historie en vraagt `sudo` |
 
 ## 8. Risico's
@@ -482,8 +484,8 @@ voor het eerst op max2 te draaien.
 | 3 (delta) | `mac:codex` | `7f75cb9` | NO-GO | 1 BLOCKER, 0 MAJOR, 1 MINOR |
 | 4 (delta) | `mac:codex` | `026ff0c` | **GO** | geen |
 
-Het GO geldt voor commit `026ff0c`. De commit daarna voegt alleen dit review record toe en
-wijzigt het ontwerp niet. Een technisch GO autoriseert geen materialisatie, merge of
+Het GO geldt voor commit `026ff0c`. De commits daarna voegen alleen dit review record en de
+beslissingen van JP toe; ze wijzigen het ontwerp niet. Een technisch GO autoriseert geen materialisatie, merge of
 uitvoering; die volgen op de beslissingen van JP in §7.
 
 ### Ronde 1
