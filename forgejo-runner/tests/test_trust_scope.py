@@ -514,6 +514,54 @@ class TestClassificatie(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("vreemdeling" in h for h in verdict.hard))
 
+    # ISS-42 (scrum4me-server): een schrijver moet in `identities` staan én in de
+    # `writers:` van déze repo. Alleen de globale lijst handhaven keurde een per-repo
+    # bedoelde identiteit (mcp-release, agent-harness) stil voor elke repo goed.
+    PER_REPO = {
+        "repositories": [
+            {"full_name": "janpeter/app", "actions_enabled": True,
+             "workflow_source": ".forgejo/workflows", "writers": ["janpeter", "bot"]},
+            {"full_name": "janpeter/ander", "actions_enabled": True,
+             "workflow_source": ".forgejo/workflows", "writers": ["janpeter"]},
+        ],
+        "identities": [{"name": "janpeter"}, {"name": "bot"}],
+    }
+
+    def test_identiteit_in_writers_van_de_repo_is_groen(self):
+        verdict = trust_scope.classify(self._inv(writers=["janpeter", "bot"]), self.PER_REPO)
+        self.assertTrue(verdict.ok, f"onverwacht rood: {verdict.hard}")
+
+    def test_goedgekeurde_identiteit_buiten_haar_repo_is_hard(self):
+        verdict = trust_scope.classify(
+            self._inv(full_name="janpeter/ander", writers=["janpeter", "bot"]), self.PER_REPO)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("janpeter/ander" in h and "bot" in h for h in verdict.hard),
+                        verdict.hard)
+
+    def test_per_repo_writer_zonder_identiteit_blijft_hard(self):
+        allowlist = {"repositories": self.PER_REPO["repositories"],
+                     "identities": [{"name": "janpeter"}]}
+        verdict = trust_scope.classify(self._inv(writers=["janpeter", "bot"]), allowlist)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("bot" in h for h in verdict.hard))
+
+    def test_ontbrekend_writers_veld_is_fail_closed(self):
+        allowlist = {"repositories": [{"full_name": "janpeter/app", "actions_enabled": True,
+                                       "workflow_source": ".forgejo/workflows"}],
+                     "identities": [{"name": "janpeter"}]}
+        verdict = trust_scope.classify(self._inv(), allowlist)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("writers" in h for h in verdict.hard), verdict.hard)
+
+    def test_writers_als_string_is_fail_closed(self):
+        allowlist = {"repositories": [{"full_name": "janpeter/app", "actions_enabled": True,
+                                       "workflow_source": ".forgejo/workflows",
+                                       "writers": "janpeter"}],
+                     "identities": [{"name": "janpeter"}]}
+        verdict = trust_scope.classify(self._inv(), allowlist)
+        self.assertFalse(verdict.ok)
+        self.assertTrue(any("writers" in h for h in verdict.hard), verdict.hard)
+
     def test_risicotrigger_met_gedeeld_label_is_hard(self):
         verdict = trust_scope.classify(
             self._inv(risky_triggers=["pull_request_target"], gebruikt_gedeeld_label=True),
@@ -721,6 +769,45 @@ class TestAckViaLoader(unittest.TestCase):
             "default_branch": "main", "unreadable": [],
         }], "unreadable": []}
         return trust_scope.classify(inv, allowlist)
+
+    def _classify_writers(self, writers_regel, gemeten):
+        yml = (
+            'version: 1\n'
+            'approved_by: "janpeter"\n'
+            'identities:\n'
+            '  - name: janpeter\n'
+            '  - name: bot\n'
+            'repositories:\n'
+            '  - full_name: janpeter/app\n'
+            '    actions_enabled: true\n'
+            '    workflow_source: .forgejo/workflows\n'
+            f'    {writers_regel}\n'
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+            fh.write(yml)
+            path = fh.name
+        try:
+            allowlist = trust_scope_cli.load_allowlist(path)
+        finally:
+            pathlib.Path(path).unlink()
+        inv = {"repositories": [{
+            "full_name": "janpeter/app", "has_actions": True,
+            "workflow_source": ".forgejo/workflows", "writers": gemeten,
+            "risky_triggers": [], "gebruikt_gedeeld_label": False,
+            "branch_protection": [{"branch_name": "main"}],
+            "default_branch": "main", "unreadable": [],
+        }], "unreadable": []}
+        return trust_scope.classify(inv, allowlist)
+
+    def test_writers_via_loader_handhaaft_per_repo(self):
+        self.assertTrue(self._classify_writers("writers: [janpeter, bot]", ["janpeter", "bot"]).ok)
+        v = self._classify_writers("writers: [janpeter]", ["janpeter", "bot"])
+        self.assertFalse(v.ok)
+        self.assertTrue(any("bot" in h for h in v.hard))
+
+    def test_gequote_writers_via_loader_is_fail_closed(self):
+        v = self._classify_writers('writers: "[janpeter, bot]"', ["janpeter", "bot"])
+        self.assertFalse(v.ok)
 
     def test_actions_enabled_bool_true_is_groen(self):
         v = self._classify_actions_regel("actions_enabled: true")
