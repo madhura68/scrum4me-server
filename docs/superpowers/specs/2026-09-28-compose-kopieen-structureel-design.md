@@ -1,6 +1,6 @@
 ---
 status: draft
-review: "ronde 1 NO-GO (mac:codex, commit 9a1a253), verwerkt; zie §12"
+review: "ronde 1 en 2 NO-GO (mac:codex), alle bevindingen verwerkt; deze versie is nog niet herbeoordeeld; zie §12"
 issues: "scrum4me-server ISS-5 (heropend), max2 ISS-15, max2 ISS-16"
 product: scrum4me-server (cmsx8zbdh0002hk7rcgxxr00k)
 last_updated: "2026-09-28"
@@ -140,9 +140,20 @@ lijken. Vier lagen houden die buiten git. Geen ervan is een garantie.
 | `pre-commit`-hook | Weigert een commit met een pad buiten de allowlist, en een commit waarin de gestagede inhoud een letterlijke secret-vormige waarde heeft (dezelfde patroontoets als in het meetbewijs) | Draait pas bij de commit. `git add` heeft de blob dan al in `.git/objects` geschreven, en een geweigerde commit haalt hem niet weg. De patroontoets is geen volledige scan |
 | `.git` op mode 700 | Alleen `janpeter` en root lezen de objecten | Agents draaien zelf als `janpeter` |
 
-**Herstel als er toch iets verkeerds is gestaged.** `git rm --cached <pad>`, daarna
-`git gc --prune=now`, en controleren dat `git cat-file -e <blob>` faalt. Behandel de waarde
-als gezien door wie `.git` kon lezen.
+**Herstel als er toch iets verkeerds is gestaged.**
+
+1. Leg de blob-ID vast vóór je de index wijzigt: `git ls-files -s -- <pad>`.
+2. Haal de wijziging uit de index. Welk commando hangt af van het pad:
+   - een nieuw, geforceerd toegevoegd pad: `git rm --cached -- <pad>`;
+   - een bestand dat git al volgt: `git restore --staged -- <pad>`. `git rm --cached` zou
+     hier het verwijderen van het live bestand uit git klaarzetten.
+3. Haal de letterlijke waarde uit het werkbestand en vervang hem door `${VARIABELE}`.
+4. Ruim op met `git gc --prune=now`, alleen als er geen andere schrijver in de repo bezig is.
+5. Controleer dat `git cat-file -e <blob-ID>` faalt.
+6. Vindt git de blob nog: stop. Bepaal welke ref of index hem vasthoudt en vraag JP. Ga niet
+   door met gewone commits.
+
+Behandel een echte waarde in alle gevallen als gezien door wie `.git` kon lezen.
 
 Verder:
 
@@ -222,6 +233,9 @@ scanner draait eenmaal per nacht.
 Runbook §9 in scrum4me-docker toont `tar … && rm -rf` zonder de tar terug te lezen. Dit
 recept leest hem wel terug.
 
+**Onderhoudsvenster.** Tijdens de opruiming loopt er geen deploy en schrijft niemand anders
+in de betrokken mappen. JP bevestigt dat vooraf. Het recept vraagt geen nieuwe component.
+
 1. **Lijst vastleggen.** Eén lijst met het volledige pad en de sha256 van elk bronbestand.
    Geen globs. De lijst is wat JP goedkeurt.
 2. **Opnieuw toetsen vlak vóór de uitvoering.** Lees `docker compose ls --all` en, voor
@@ -230,7 +244,11 @@ recept leest hem wel terug.
 3. **Tar maken** met `--format=posix --numeric-owner`, mode 600.
 4. **Teruglezen.** Pak de tar uit in een map van `mktemp -d` en vergelijk de sha256 van elk
    uitgepakt bestand met de lijst.
-5. **Verwijderen.** Pas daarna, en precies de paden van de lijst.
+5. **Verwijderen.** Pas daarna, precies de paden van de lijst, één voor één. Direct vóór
+   elk bestand: bereken de sha256 opnieuw en vergelijk hem met de lijst, en lees
+   `docker compose ls --all` en `readlink current` opnieuw. Wijkt er iets af, of is het pad
+   inmiddels een geregistreerd configbestand of een bestand onder `current`: stop, en
+   verwijder ook de rest niet.
 6. **Natoets.** De sha256 van de live configbestanden is gelijk aan vóór receptstap 1, en
    `docker compose ls --all` toont dezelfde projecten, statussen en configbestanden.
 
@@ -288,7 +306,9 @@ hangt niet af van de scanner-PR's; de droogloop levert de actuele scanner over S
   3. Een commit van een allowlist-bestand met een letterlijke proefwaarde onder
      `POSTGRES_PASSWORD` wordt geweigerd.
   4. Een commit met alleen geïnterpoleerde waarden slaagt.
-  5. Na het herstelrecept faalt `git cat-file -e` op de blob uit punt 2.
+  5. Het herstelrecept is doorlopen voor punt 2 (nieuw pad) en voor punt 3 (gevolgd
+     bestand). In beide gevallen faalt `git cat-file -e` daarna op de vastgelegde blob-ID.
+     Bij punt 3 is de index weer gelijk aan HEAD en staat het bestand nog in `git ls-files`.
 - **Acceptatie, op de hosts:** `git ls-files` toont precies de allowlist;
   `git status --porcelain` is leeg; `.git` heeft mode 700; de hook is byte-gelijk aan de
   bron; de eerste commit bevat de live bestanden ongewijzigd.
@@ -384,12 +404,12 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 
 | # | Beslissing | Voorstel |
 |---|---|---|
-| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 3) | Ja; de lijst uit het inpakrecept is wat je goedkeurt |
+| 1 | Akkoord op de eenmalige opruiming op beide hosts (stap 1 en 3) | Ja; je keurt de lijst uit het inpakrecept goed en bevestigt het onderhoudsvenster |
 | 2 | Akkoord op git in de drie live mappen en op de hostregel (stap 4 en 5) | Ja |
 | 3 | Bewaartermijn van de quarantaine-tars met letterlijke secret-vormige waarden | 90 dagen, daarna verwijderen |
 | 4 | Ritme van de herinnering | Wekelijks |
 | 5 | Onderdeel C nu bouwen of voorwaardelijk houden | Voorwaardelijk; de reviewer noemt dat proportioneel |
-| 6 | Deltareview door `mac:codex` op deze versie | Ja; ronde 1 was NO-GO |
+| 6 | Derde reviewronde door `mac:codex` op deze versie | Ja; ronde 1 en 2 waren NO-GO en de verwerking van ronde 2 is niet herbeoordeeld |
 | 7 | Indeling bij materialisatie | Eén PBI onder scrum4me-server, gekoppeld aan ISS-5; stap 2 als story onder When2Watch |
 
 ## 8. Risico's
@@ -401,7 +421,7 @@ Dit is een geautomatiseerde verplaatsing op productie en vraagt een staand akkoo
 | Twee sessies wijzigen tegelijk hetzelfde bestand | Een wijziging gaat verloren | De regel stopt bij een vuile werkboom |
 | A2 onderdrukt een blijvend gevaar | Bevinding raakt uit beeld | Wekelijkse herinnering; de issues blijven open tot de host veertien nachten schoon is |
 | Een ops-agent-flow verwacht een schone map | Flow faalt op `.git` of `.gitignore` | Verificatie in stap 4 |
-| `current` verschuift tussen lijst en uitvoering | De actieve release verliest zijn `compose.yaml` | Receptstap 2 in onderdeel E |
+| `current` verschuift of een bronbestand wijzigt tijdens de opruiming | De actieve release verliest zijn `compose.yaml`, of er verdwijnt inhoud die niet in de tar zit | Onderhoudsvenster, en de hertoets per bestand in receptstap 5 van onderdeel E |
 | Terugdraaien van When2Watch kost een extra stap | Vertraging onder druk | De procedure staat er vóór de opruiming (stap 2) |
 | max2 heeft geen backup van `/srv/scrum4me/compose` | Lokale git-historie verdwijnt bij schijfverlies | Aanvaard in increment 1; een remote hoort bij optie 5 |
 
@@ -434,17 +454,20 @@ voor het eerst op max2 te draaien.
 
 ## 11. Reviewfocus voor de deltareview
 
-1. B2: bereikt elk van de vier bestanden het sessietype dat de tabel noemt?
-2. E: kan een stap van het inpakrecept de draaiende stack raken?
-3. B1: zijn de grenzen van de vier lagen juist beschreven, en is het herstelrecept volledig?
-4. A4: dekt de volgorde van hashbronnen beide uitvoeringsvormen en de schone uitgang?
-5. A2: klopt de sleutel op de jaargrens?
+1. E: sluit de hertoets per bestand het interval tussen controle en verwijderen?
+2. B1: laat het herstelrecept de index en het live bestand in beide gevallen heel?
+3. Heeft de verwerking van ronde 2 iets stukgemaakt dat in ronde 1 of 2 als opgelost gold?
 
 ## 12. Review record
 
 | Ronde | Reviewer | Commit | Oordeel | Bevindingen |
 |---|---|---|---|---|
 | 1 | `mac:codex` | `9a1a253` | NO-GO | 0 BLOCKER, 4 MAJOR, 1 MINOR |
+| 2 (delta) | `mac:codex` | `c6bef0f` | NO-GO | 0 BLOCKER, 2 MAJOR, 0 MINOR |
+
+De versie na ronde 2 is niet herbeoordeeld. Een derde ronde is een beslissing van JP.
+
+### Ronde 1
 
 Verzoek `7a9bbffd-843d-43f4-abd2-5a021d462e24`, antwoord
 `7bf728f5-71ad-4172-ac99-550361b0068d`. Alle vijf bevindingen zijn nagemeten en juist
@@ -463,3 +486,17 @@ met `docker compose config -q` op een uitgepakte oude release in een tijdelijke 
 Receptstap 4 in onderdeel E voert de extractie al uit en bewijst dat het teruggezette bestand
 byte-gelijk is aan het origineel. Een proef in een tijdelijke map toetst daarbovenop vooral
 de proefopstelling, want de `.env`-symlinks staan daar niet.
+
+### Ronde 2 (delta)
+
+Verzoek `a59a3f9d-99c0-4bc4-96e0-8092e661b004`, antwoord
+`ad1c7421-ed67-4724-8dcc-5a6342d08288`.
+
+De reviewer beoordeelde de bevindingen 1, 3, 4 en 5 uit ronde 1 als opgelost en bevinding 2
+als deels opgelost. Hij onderschreef de afwijzing van het deelvoorstel. Beide nieuwe
+bevindingen gaan over tekst die in ronde 1 is toegevoegd.
+
+| # | Ernst | Bevinding | Verwerking |
+|---|---|---|---|
+| 1 | MAJOR | Het inpakrecept toetst alleen vooraf. Verschuift `current` of wijzigt een bronbestand daarna, dan verwijdert het recept een actief bestand of inhoud die niet in de tar zit | Overgenomen. Onderdeel E vraagt een onderhoudsvenster, en receptstap 5 toetst per bestand opnieuw vlak vóór het verwijderen |
+| 2 | MAJOR | Het herstelrecept gebruikt `git rm --cached` ook voor een bestand dat git al volgt, en zet daarmee het verwijderen van het live bestand klaar. De blob-ID wordt niet vooraf vastgelegd en er is geen stoppad | Overgenomen. B1 onderscheidt een nieuw pad van een gevolgd bestand, legt de blob-ID eerst vast, en stopt als de blob blijft bestaan. Stap 4 stuurt beide gevallen door het herstelrecept |
