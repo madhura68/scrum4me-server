@@ -40,6 +40,14 @@ Hulpscript: [`scripts/rotate-env-credential`](../../scripts/rotate-env-credentia
    `<bestand>.bak-<stempel>` (mode 0600) en zet bij een fout halverwege zelf alles terug.
 5. **Het oude wachtwoord blijft bewaard tot het bewijs groen is**, in de Keychain (`old`) en in
    de back-ups. Pas in fase 4 verdwijnt het.
+6. **Dit geldt ook voor de wrappers die een secret doorgeven.** `env -i DATABASE_URL=… prog` en
+   `runuser … env -i …` zetten het secret in argv; onder `runuser`/`sudo` logt pam die regel als
+   journald `_CMDLINE` (ISS-41: het net geroteerde superuser-wachtwoord stond er 4× in). Geef
+   secrets door via `export` in een schone subshell + `exec` (`exec_with_only_env` in
+   `prisma-operator.sh`, `runuser -m`). Controleer na elke root-flow:
+   `journalctl --since <start> _COMM=runuser -o json` bevat geen `postgresql://…:…@`. Rest-risico:
+   Prisma's `schema-engine` krijgt de DSN zelf als `--datasource` in argv (zichtbaar in `ps`,
+   niet in het journal); zie ISS-43 (hidepid).
 
 ### A.2 Gereedschap
 
@@ -397,7 +405,8 @@ opnieuw bij de eerste rotatie** (fase 0) en werk ze dan uit tot het niveau van B
 - **mac:** no consumer. Ops-dashboard `SCRUM4ME_DATABASE_URL` runs as `ops_readonly`. Dev projects use a local Postgres (`~/Development/local-postgres`, `dev@127.0.0.1:5433`, `refresh.sh`); ISS-39.
 - **Do not break:** backups, health collector and `alter-role` run via `docker exec` + local `trust`.
 - **pg_hba (ISS-39, 2026-09-28):** `scrum4me` only via the local socket and from `172.18.0.1/32` (host tools via the published port; `migrate.sh` rewrites `postgres` → `127.0.0.1`), `reject` from everywhere else, above the catch-all. So a canary from a container on `compose_default` (source 172.18.0.x) gets `pg_hba.conf rejects connection`: test via `--network host` + `127.0.0.1`. A leaked superuser password is worthless outside srv.
-- **`rewrite-key POSTGRES_PASSWORD` = a recreate on the next `compose up`.** Compose sees env drift on `postgres` and recreates the container (ISS-38: an unrelated flow did this 45 min after the flip, with ~3 s of DB outage). Do the recreate yourself in fase 1, in a quiet window: `docker compose -f /srv/scrum4me/compose/docker-compose.yml up -d postgres`, then prove it.
+- **`rewrite-key POSTGRES_PASSWORD` = a recreate on the next `compose up`.** Compose sees env drift on `postgres` and recreates the container (ISS-38: an unrelated flow did this 45 min after the flip, with ~3 s of DB outage). Do the recreate yourself in fase 1, in a quiet window: `docker compose -f /srv/scrum4me/compose/docker-compose.yml up -d --no-deps postgres`, compare `docker ps` IDs before/after (only `scrum4me-postgres` may change), wait for `pg_isready`, then prove it (done this way in ISS-41, 2026-09-28: ready in ~3 s). Long-running LISTEN clients (e.g. `s4m-queue watch`) drop and must re-arm.
+- **MCP flows copy `compose/.env`** (incl. `POSTGRES_PASSWORD` and `DOCS_AUDIT_*_TOKEN`) to `/home/ops-agent/mcp-env-backups/` on every run. After a rotation, scan there too; older copies hold dead values.
 - **Old password ≠ 64-hex:** `read_secret` (scan/rewrite/alter-role) accepts only `SECRET_RE` (64 hex). For a legacy password, use your own in-process scan; the old password goes only to `rewrite-key` (`TOKEN_RE`). New password: `openssl rand -hex 32`.
 - **Canaries (read-only):**
   - command_key `prisma_migrate_status` via `/agent/v1/exec`;
