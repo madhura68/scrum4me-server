@@ -59,6 +59,9 @@ repositories:
     workflow_source: .forgejo/workflows
     writers: [janpeter, s4m-codex-reviewer]
     risky_triggers_acknowledged: [pull_request]
+    # Schrijf-deploy-key van ops-agent (gemeten 30 sep 2026, aangemaakt 14 jun 2026);
+    # bevestigd door JP 30 sep 2026 (T-173, AUDIT-012). Aanvaard restrisico.
+    deploy_keys_acknowledged: [SHA256:pt2uHSMkjhJWUXaSPxByjjL/OHXbVBblUav6Ea1GtWs]
   - full_name: janpeter/ImageInventory
     actions_enabled: true
     workflow_source: null
@@ -149,7 +152,8 @@ repositories:
     risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/scrum4me-server
     actions_enabled: true
-    workflow_source: null
+    # Read-only CI (PBI-26): alleen een push-trigger, geen secrets (besluit JP 30 sep 2026).
+    workflow_source: .forgejo/workflows
     writers: [janpeter]
   - full_name: janpeter/scrum4me-shared
     actions_enabled: true
