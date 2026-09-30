@@ -71,6 +71,45 @@ def load_config(path):
     )
 
 
+# TimeoutStopSec van forgejo-runner-cycle.service: systemd SIGKILLt de controller na
+# deze tijd, dus de stopgrace van de runner-child moet er strikt onder blijven.
+UNIT_TIMEOUT_STOP_SEC = 300
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def validate_config(cfg):
+    """Semantische controle voor --check; geeft ALLE problemen terug (lege lijst = ok).
+    Bewust niet in load_config: die draait ook bij echte start, waar de
+    trust-verdict-map en bestanden door timers/installatie ontstaan."""
+    problems = []
+    for naam in ("compose_file", "allowed_images_file", "labels_file", "allowlist_file"):
+        pad = getattr(cfg, naam)
+        if not os.path.isfile(pad):
+            problems.append(f"{naam} is geen bestaand bestand: {pad}")
+    for naam in ("marker_path", "trust_verdict_path"):
+        map_ = os.path.dirname(getattr(cfg, naam))
+        if not os.path.isdir(map_):
+            problems.append(f"map van {naam} bestaat niet: {map_}")
+    for naam in (
+        "poll_interval",
+        "retry_interval",
+        "probe_timeout",
+        "subprocess_timeout",
+        "child_stop_grace",
+    ):
+        waarde = getattr(cfg, naam)
+        if not (math.isfinite(waarde) and waarde > 0):
+            problems.append(f"{naam} moet een eindig getal > 0 zijn: {waarde}")
+    if math.isfinite(cfg.child_stop_grace) and cfg.child_stop_grace >= UNIT_TIMEOUT_STOP_SEC:
+        problems.append(
+            f"child_stop_grace ({cfg.child_stop_grace}) moet < {UNIT_TIMEOUT_STOP_SEC} "
+            "(TimeoutStopSec van de unit)"
+        )
+    if cfg.log_level not in _LOG_LEVELS:
+        problems.append(f"log.level {cfg.log_level!r} niet in {', '.join(_LOG_LEVELS)}")
+    return problems
+
+
 _DIGEST_RE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 
 
@@ -404,6 +443,13 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         print(f"config-fout: {exc}", file=sys.stderr)
         return 2
+    if args.check:
+        # Vóór _build_adapters: --check raakt geen docker, netwerk of loop.
+        problems = validate_config(cfg)
+        if problems:
+            print("config-fout: " + "; ".join(problems), file=sys.stderr)
+            return 2
+        return 0
     logging.basicConfig(
         level=getattr(logging, cfg.log_level, logging.INFO),
         format="%(asctime)s %(levelname)s %(message)s",
@@ -413,6 +459,11 @@ def main(argv=None):
     rt = Runtime(
         cfg, controller, controller.loop, adapters, clock, logging.getLogger("cycle")
     )
-    if args.check:
-        return 0
     return rt.run()
+
+
+if __name__ == "__main__":
+    # Het gedocumenteerde `python3 scripts/cycle_runtime.py --config … --check`.
+    # Geen circulaire import: forgejo_runner_cycle importeert cycle_runtime alleen
+    # binnen zijn eigen __main__-blok.
+    raise SystemExit(main())

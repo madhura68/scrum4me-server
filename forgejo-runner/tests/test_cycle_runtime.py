@@ -1,5 +1,5 @@
 # forgejo-runner/tests/test_cycle_runtime.py
-import hashlib, io, os, subprocess, tempfile, unittest, urllib.error
+import contextlib, hashlib, io, os, subprocess, tempfile, unittest, urllib.error
 from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen, build_runtime, State
 import cycle_adapters as ca
 
@@ -248,14 +248,95 @@ class TestStop(unittest.TestCase):
             rt.child = rec._mk("runner"); rt.child.rc = None
             self.assertEqual(rt._stop_result(overshoot=True), 1)   # geen succes bij deadline
 
+def _check_toml(tmp, **wijzig):
+    """VALID_TOML met padverwijzingen naar echte tempbestanden; wijzig = {oud: nieuw}."""
+    for n in ("compose.yaml", "images.txt", "labels.txt", "allow.yml"):
+        open(os.path.join(tmp, n), "w").close()
+    t = VALID_TOML.decode()
+    for oud, nieuw in (
+        ("/opt/forgejo-runner/compose.yaml", f"{tmp}/compose.yaml"),
+        ("/opt/forgejo-runner/allowed-job-images.txt", f"{tmp}/images.txt"),
+        ("/opt/forgejo-runner/labels.txt", f"{tmp}/labels.txt"),
+        ("/opt/forgejo-runner/trusted-actions-scope.yml", f"{tmp}/allow.yml"),
+        ("/opt/forgejo-runner/trust-verdict.json", f"{tmp}/verdict.json"),
+        ("/tmp/ctl/cycle-op.marker", f"{tmp}/marker"),
+    ):
+        t = t.replace(oud, nieuw)
+    for oud, nieuw in wijzig.items():
+        assert oud in t, oud
+        t = t.replace(oud, nieuw)
+    return write_toml(tmp, t.encode())
+
 class TestMain(unittest.TestCase):
-    def test_check_mode(self):
+    def _check(self, **wijzig):
         with tempfile.TemporaryDirectory() as tmp:
-            # vervang de padverwijzingen door bestaande dummies zodat --check niet op IO struikelt
-            cfg_path = write_toml(tmp)
-            self.assertEqual(cr.main(["--config", cfg_path, "--check"]), 0)
+            cfg_path = _check_toml(tmp, **wijzig)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = cr.main(["--config", cfg_path, "--check"])
+            return rc, err.getvalue()
+    def test_check_mode(self):
+        self.assertEqual(self._check(), (0, ""))
     def test_missing_config(self):
         self.assertNotEqual(cr.main(["--config", "/nope.toml"]), 0)
+    def test_check_missing_file(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = cr.main(["--config", "/nope.toml", "--check"])
+        self.assertEqual(rc, 2)
+        self.assertIn("config-fout:", err.getvalue())
+    def test_check_missing_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _check_toml(tmp)
+            with open(p) as fh:
+                t = fh.read().replace('project = "forgejo-runner"', "")
+            with open(p, "w") as fh:
+                fh.write(t)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(cr.main(["--config", p, "--check"]), 2)
+        self.assertIn("dind.project", err.getvalue())
+    def test_check_nonexistent_paths_all_listed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = write_toml(tmp)  # VALID_TOML: /opt-paden bestaan hier niet
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(cr.main(["--config", p, "--check"]), 2)
+        for naam in ("compose_file", "allowed_images_file", "labels_file",
+                     "allowlist_file", "marker_path", "trust_verdict_path"):
+            self.assertIn(naam, err.getvalue())
+    def test_check_poll_zero(self):
+        rc, err = self._check(**{"poll_interval_seconds = 1": "poll_interval_seconds = 0"})
+        self.assertEqual(rc, 2)
+        self.assertIn("poll_interval", err)
+    def test_check_bad_level(self):
+        rc, err = self._check(**{'level = "INFO"': 'level = "LUID"'})
+        self.assertEqual(rc, 2)
+        self.assertIn("log.level", err)
+    def test_check_grace_at_unit_timeout(self):
+        rc, err = self._check(**{"child_stop_grace_seconds = 200": "child_stop_grace_seconds = 300"})
+        self.assertEqual(rc, 2)
+        self.assertIn("TimeoutStopSec", err)
+    def test_check_reports_multiple_problems(self):
+        rc, err = self._check(**{"poll_interval_seconds = 1": "poll_interval_seconds = -1",
+                                 'level = "INFO"': 'level = "X"'})
+        self.assertEqual(rc, 2)
+        self.assertIn("poll_interval", err)
+        self.assertIn("log.level", err)
+    def test_documented_command_via_subprocess(self):
+        scripts = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = subprocess.run(
+                ["python3", "-B", "scripts/cycle_runtime.py", "--config",
+                 os.path.join(tmp, "missing.toml"), "--check"],
+                cwd=scripts, capture_output=True, text=True, timeout=30)
+            self.assertEqual(cp.returncode, 2)
+            self.assertIn("config-fout:", cp.stderr)
+            ok = subprocess.run(
+                ["python3", "-B", "scripts/cycle_runtime.py", "--config",
+                 _check_toml(tmp), "--check"],
+                cwd=scripts, capture_output=True, text=True, timeout=30)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
 
 class TestLogging(unittest.TestCase):
     def test_alarm_events_are_logged(self):
