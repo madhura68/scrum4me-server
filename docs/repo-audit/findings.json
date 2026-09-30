@@ -40,7 +40,7 @@
     "title": "Pre-commit secret scan has a fail-open path and several false negatives",
     "severity": "MEDIUM",
     "confidence": "HIGH",
-    "observation": "secret-scan.sh (the only automated guard behind the 'no secrets in Git' hard-stop) misses: (a) renamed-and-edited files, because the staged list uses --diff-filter=ACM; (b) everything when bash resolves to 3.2, because mapfile is missing, the list stays empty and the script exits 0; (c) any line that also contains a UUID, 'sha256:' or 'token_url', which is dropped as a whole; (d) PKCS#8 'BEGIN PRIVATE KEY' blocks; (e) single-quoted values and key names without token/secret/password such as API_KEY; (f) file names such as .env.local, prod.env and *.token. It greps the working-tree file rather than the staged blob. The hook is installed per clone by hand; there is no server-side hook and no CI.",
+    "observation": "secret-scan.sh (the only automated guard behind the 'no secrets in Git' hard-stop) misses: (a) renamed-and-edited files, because the staged list uses --diff-filter=ACM; (b) everything when bash resolves to 3.2, because mapfile is missing, the list stays empty and the script exits 0; (c) any line that also contains a UUID, 'sha256:' or 'token_url', which is dropped as a whole; (d) PKCS#8 private-key blocks (header without an algorithm name); (e) single-quoted values and key names without token/secret/password such as API_KEY; (f) file names such as .env.local, prod.env and *.token. It greps the working-tree file rather than the staged blob. The hook is installed per clone by hand; there is no server-side hook and no CI.",
     "evidence": [
       {
         "file": "forgejo-runner/scripts/secret-scan.sh",

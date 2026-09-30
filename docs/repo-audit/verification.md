@@ -114,7 +114,7 @@ controller logic with fakes, not behaviour against Docker.
 | Same file passed explicitly | 70 (blocked) | control |
 | Staged mode under `/bin/bash` 3.2.57 | 0, with `mapfile: command not found` | AUDIT-002 |
 | JSON line with a UUID and a 40-character token value | 0 | AUDIT-002 |
-| `-----BEGIN PRIVATE KEY-----` (PKCS#8 header) | 0 | AUDIT-002 |
+| PKCS#8 private-key header (`BEGIN` + `PRIVATE KEY`, no algorithm name) | 0 | AUDIT-002 |
 | Single-quoted 40-character value after `token:` | 0 | AUDIT-002 |
 | `API_KEY=` with a 40-character value | 0 | AUDIT-002 |
 | Files named `prod.env`, `.env.local`, `x.token` staged | 0 | AUDIT-002 |

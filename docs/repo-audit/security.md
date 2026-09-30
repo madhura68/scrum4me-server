@@ -241,8 +241,8 @@ Things that are present and are not secrets, but are worth knowing:
   * Fail-open on bash < 4: the script has `set -uo pipefail` without `-e` and fills the file list
     with `mapfile`. Where `bash` resolves to 3.2 (stock macOS), `mapfile` is not a builtin, the array
     stays empty and line 13 exits 0 (`secret-scan.sh:7`, `:11-13`).
-  * Not matched by rule 2: `-----BEGIN PRIVATE KEY-----` (PKCS#8) and
-    `BEGIN ENCRYPTED PRIVATE KEY` (`:28`).
+  * Not matched by rule 2: the PKCS#8 header (`BEGIN` + `PRIVATE KEY` without an algorithm name) and
+    the encrypted-key header (`BEGIN` + `ENCRYPTED` + `PRIVATE KEY`) (`:28`).
   * Not matched by rule 3 (`:43`): single-quoted values, key names without
     `token|secret|password` (`API_KEY`, `DB_PASSWD`, `PGPASS`), `Authorization: Bearer …`, DSNs with
     inline credentials, values containing `.`, values shorter than 20 characters.
