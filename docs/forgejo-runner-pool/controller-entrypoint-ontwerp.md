@@ -1,6 +1,6 @@
 # Ontwerp — controller-entrypoint (dunne bring-up)
 
-Status: GO na 4 rondes (zie Review record); post-GO delta R15 (audit-opvolging, 30 september 2026) in review.
+Status: GO na 4 rondes (zie Review record); post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026.
 Datum: 2026-09-06.
 Reikwijdte: **stap D + de kern van stap E** uit `migratieontwerp.md` §8.
 Product: `scrum4me-server` (canonieke bundel); doelhost van deze slice: **max2**.
@@ -49,9 +49,10 @@ adapters komen later:
   slice. Het reeds wachtende child kan per host nog hoogstens één job aannemen, zonder
   tijdsgrens; JP aanvaardt dit (R15, `migratieontwerp.md` §7.7 "Aanvaard
   one-job-venster").
-- **fence-herstel zonder watchdog**: zonder assignment-nulbewijs wist een fence alleen
-  via de 60 s-watchdog, ook na één losse mislukte probe (alarm, ~2 min vertraging;
-  AUDIT-007, uitgesteld in R15).
+- **fence-herstel zonder watchdog na een losse fout**: zonder assignment-nulbewijs kan
+  een losse mislukte probe gevolgd door geldige probes niet rechtstreeks herstellen en
+  loopt via de 60 s-watchdog (alarm, ~2 min vertraging; AUDIT-007, uitgesteld in R15).
+  Een bevestigde foutklasse wist de fence ongewijzigd en commit die fouttoestand.
 
 ## 3. Uitgangspunten (gemeten)
 
@@ -265,7 +266,10 @@ crashbestendige uitvoeringsgrens:
 - **Operatiemarker (overleeft een crash):** vóór elke pull/scrub schrijft de schil
   een markerbestand op een **apart, persistent controlepad** (een eigen mount, niet
   het docker-datavolume, zodat de scrub het niet raakt) met operatienaam en
-  starttijd; ná afronding (succes óf fout) verwijdert hij de marker.
+  starttijd; ná een aantoonbaar geëindigde operatie (succes óf fout) verwijdert hij de
+  marker. Uitzondering (R15): na een onzeker einde — deadline, signaal of een
+  herstelcyclus — blijft de marker na een mislukte scrub staan en verdwijnt hij alleen
+  na groen scrubbewijs.
 - **Startup-uitsluiting (onderdeel van §6.1 stap 0):** is de marker bij start
   aanwezig, dan is een operatie onderbroken en is de DinD-toestand onbekend. De schil
   **herstart DinD** (`docker compose kill dind && docker compose up -d dind`) — dat
@@ -366,8 +370,9 @@ Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herste
 
 Herstel duurt ~60 s (watchdog) + ~2 probes. De runtime doet hier niets bijzonders.
 
-**R15:** dit watchdogpad blijft ook na één losse mislukte probe het enige; het geeft
-dan een alarm en circa twee minuten vertraging. Bekend en uitgesteld (AUDIT-007) tot
+**R15:** voor een losse mislukte probe gevolgd door geldige probes blijft dit
+watchdogpad het enige (een bevestigde foutklasse wist de fence rechtstreeks, zie
+hierboven); het geeft dan een alarm en circa twee minuten vertraging. Bekend en uitgesteld (AUDIT-007) tot
 het assignment-nulbewijs bestaat.
 (De eerdere "herstart bij gefencete impasse" is verwijderd: hij berustte op de
 onjuiste premisse dat een fence alleen met nulbewijs wist — regels 336–338 en
@@ -614,7 +619,7 @@ Verdict ronde 4: **GO**. De **spec-fase is afgerond** na 4 rondes (delta-variant
 één cross-model reviewer `mac:codex`, per JP-instructie). Implementatie, mounts en
 herstelproeven volgen in de plan-/bouwfase.
 
-### Delta R15 — audit-opvolging — in review — 30 september 2026
+### Delta R15 — audit-opvolging — GO (ronde 2) — 30 september 2026
 
 Spiegelt `migratieontwerp.md` §13 "Delta R15": aanvaard one-job-venster en
 uitgestelde fence-optimalisatie (§2, §7.5), heropenen na runnerfout met oplopende

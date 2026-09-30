@@ -1,7 +1,7 @@
 # Migratieontwerp — bestaande Forgejo Runner uitbreiden naar een tweemachinepool
 
 **Datum:** 31 augustus 2026  
-**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging, 30 september 2026) in review — zie §13  
+**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026 — zie §13  
 **Doelhosts:** `scrum4me-server` en `max2`  
 **Fase 1:** stabiele pool met Forgejo Runner 12.10.1  
 **Fase 2:** afzonderlijke rolling upgrade naar Forgejo Runner 13
@@ -259,7 +259,7 @@ De bevestigingsregel is voor de eerste drie takken identiek. De controller verwe
 
 Alleen een lokaal `JOB_ACCEPTED`/`RUNNING`-event met `event_seq < fence_seq` geldt beslissend als vóór-latch en mag gecontroleerd eindigen. Ieder niet vóór de fence lokaal waargenomen, onbekend of pas erna ontvangen jobevent wordt fail-closed als op/na-latch behandeld: child stoppen, job cancel/requeue of cancel+redispatch vanaf dezelfde commit, daarna scrub en nulbewijs. Logbuffering kan zo hoogstens een legitieme job conservatief laten herdispatchen, nooit een post-fencejob doorlaten. Forgejo-tijdlijn en remote wandklokken zijn uitsluitend corroboratief/audit en beslissen deze classificatie nooit.
 
-Vijf seconden na de eerste afwijking volgt een bevestigingsprobe. Alleen twee opeenvolgende uitkomsten van dezelfde klasse bevestigen de bijbehorende fouttoestand. Een andere foutklasse herstart de vijfsecondenbevestiging onder dezelfde fence. Een geldige 2xx-readiness wist de fence pas nadat een tweede geldige probe vijf seconden later, het eventueel uitgestelde assignment-nulbewijs én de volledige inhoudelijke trustgate groen zijn. In de dunne controllerslice bestaat het assignment-nulbewijs nog niet; een fence wist daar alleen via de zestigsecondenwatchdog hieronder, ook na één losse mislukte probe. Dat geeft een alarm en circa twee minuten extra vertraging; dit is bekend en uitgesteld tot het nulbewijs bestaat (R15, AUDIT-007).
+Vijf seconden na de eerste afwijking volgt een bevestigingsprobe. Alleen twee opeenvolgende uitkomsten van dezelfde klasse bevestigen de bijbehorende fouttoestand. Een andere foutklasse herstart de vijfsecondenbevestiging onder dezelfde fence. Een geldige 2xx-readiness wist de fence pas nadat een tweede geldige probe vijf seconden later, het eventueel uitgestelde assignment-nulbewijs én de volledige inhoudelijke trustgate groen zijn. In de dunne controllerslice bestaat het assignment-nulbewijs nog niet. Een losse mislukte probe gevolgd door geldige probes kan daar dus niet rechtstreeks herstellen en loopt via de zestigsecondenwatchdog hieronder; een bevestigde foutklasse wist de fence zoals hierboven en commit die fouttoestand. Dat geeft een alarm en circa twee minuten extra vertraging; dit is bekend en uitgesteld tot het nulbewijs bestaat (R15, AUDIT-007).
 
 De fence heeft vanaf de eerste afwijking een harde maximale leeftijd van zestig seconden. Is hij dan noch bevestigd noch veilig gewist, dan commit de controller buiten een geldig gearmd maintenance-startupvenster deterministisch naar de zwaarste sinds latch waargenomen klasse: lokale readiness-protocol-`QUARANTINED` > `CREDENTIAL_ERROR` > `SOURCE_WAIT`; dit alarmeert. Een onopgeloste fence kan dus nooit onder een oude `WAITING`-status blijven hangen.
 
@@ -758,7 +758,7 @@ Stap A en B uit §8 zijn uitgevoerd volgens `docs/forgejo-runner-pool/implementa
 
 De branch is daarmee door onafhankelijke review. ISS-9 blijft open tot de merge; de merge-beslissing ligt bij JP.
 
-### Delta R15 — audit-opvolging (AUDIT-003/-004/-005/-006/-007) — in review — 30 september 2026
+### Delta R15 — audit-opvolging (AUDIT-003/-004/-005/-006/-007) — GO — 30 september 2026
 
 **Aanleiding:** de repo-audit van 30 september 2026 (`docs/repo-audit/`, PR #83) reproduceerde met de testharness van de controller vijf verschillen tussen dit ontwerp, `controller-entrypoint-ontwerp.md` en de code: een wachtende runner blijft bij een rode gate online (AUDIT-003); scrub en pull hebben geen deadline (AUDIT-004); één mislukte pre-pull blokkeert de host permanent (AUDIT-005); quarantaine na een runnerfout heropent binnen een minuut en geeft een startlus (AUDIT-006); één mislukte probe geeft een deadline-alarm en anderhalve minuut vertraging omdat het nulbewijs nooit geleverd wordt (AUDIT-007).
 
@@ -778,6 +778,12 @@ De branch is daarmee door onafhankelijke review. ISS-9 blijft open tot de merge;
 - MINOR — het one-job-venster is een aantalsgrens, geen tijdsgrens. Fix: alinea "Aanvaard one-job-venster" herschreven.
 
 Scope: kleiner — de lokale nulbewijsregel vervalt; AUDIT-007 blijft een bekend, uitgesteld gedrag. Eerste bruikbare resultaat en praktijkproef ongewijzigd.
+
+**Ronde 2 — commit `a123665` — `mac:codex` — GO (0 BLOCKER, 0 MAJOR, 2 MINOR).** Request `1a1f0b3c-39a3-4cee-abae-3510ea882656`, reply `055d8ee6-299e-4127-9123-4506b08cb09e`. Alle vijf ronde-1-bevindingen bevestigd opgelost tegen de boom; de reviewer bevestigde ook dat de herstelroute met de bestaande `Reconcile.restart_dind()`, de marker en de scrubadapter uitvoerbaar is zonder nieuw subsysteem. Twee MINORs, **post-GO toegepast** als tekstuele verduidelijking van het gekozen contract, zonder herreview:
+- de zin "een fence wist alleen via de watchdog" gold te algemeen; §7.7 en het entrypoint-ontwerp §2/§7.5 onderscheiden nu de losse fout gevolgd door geldige probes (watchdogpad) van een bevestigde foutklasse (wist de fence en commit de fouttoestand, ongewijzigd);
+- de algemene markerregel in entrypoint §6.4 noemt nu de uitzondering voor een onzeker einde: de marker blijft na een mislukte herstelscrub staan en verdwijnt alleen na groen scrubbewijs.
+
+Verdict: **GO**. Dit GO betreft de ontwerpdelta; implementatie, de nieuwe scenario's en de handmatige max2-praktijkproef volgen, en uitrol blijft afzonderlijk geautoriseerd.
 
 ## 14. Acceptatie van dit ontwerp
 
