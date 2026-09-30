@@ -1,5 +1,5 @@
 # forgejo-runner/tests/test_cycle_runtime.py
-import contextlib, hashlib, io, os, subprocess, tempfile, unittest, urllib.error
+import contextlib, hashlib, http.client, io, os, subprocess, tempfile, unittest, urllib.error
 from _harness import cr, write_toml, VALID_TOML, RC, classify_probe, FakePopen, build_runtime, State
 import cycle_adapters as ca
 
@@ -385,6 +385,119 @@ class TestTrustgateLogging(unittest.TestCase):
                 "trustgate groen",
             ])
             self.assertTrue(ctrl.gates_groen)
+
+class TestAdapterHardening(unittest.TestCase):
+    def test_probe_incompleteread_is_transport_failure(self):
+        class R:
+            status = 200
+            def read(self): raise http.client.IncompleteRead(b"{")
+        p = ca.TransportProbe("https://x", 5.0, opener=lambda r, timeout: R()).probe()
+        self.assertIn("IncompleteRead", p["error"])
+        self.assertNotEqual(classify_probe(p), RC.READY)
+    def test_probe_oserror_during_read_is_transport_failure(self):
+        class R:
+            status = 200
+            def read(self): raise ConnectionResetError("reset")
+        p = ca.TransportProbe("https://x", 5.0, opener=lambda r, timeout: R()).probe()
+        self.assertIn("ConnectionResetError", p["error"])
+        self.assertNotEqual(classify_probe(p), RC.READY)
+    def test_verdict_reader_permissionerror_fail_closed(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            lp = os.path.join(tmp, "l"); ap = os.path.join(tmp, "a"); vp = os.path.join(tmp, "v")
+            for q in (lp, ap, vp):
+                with open(q, "w") as f: f.write("{}")
+            real = open
+            def deny(path, *a, **k):
+                if path == vp: raise PermissionError(13, "denied")
+                return real(path, *a, **k)
+            r = ca.TrustVerdictReader(vp, lp, ap)
+            with mock.patch("builtins.open", deny):
+                v, ls, as_ = r.read()
+            self.assertIsNone(v); self.assertIn("PermissionError", r.last_error)
+            self.assertFalse(cr.verdict_green(v, 1.0, cr.load_config(write_toml(tmp)), ls, as_)[0])
+    def test_dind_ensure_up_returns_rc_and_healthy_records_rc(self):
+        d = ca.DindHealth("/c", "p", run=lambda a, t: _cp(rc=3))
+        self.assertEqual(d.ensure_up(), 3)
+        self.assertFalse(d.healthy()); self.assertEqual(d.last_rc, 3)
+
+class TestRuntimeGuards(unittest.TestCase):
+    def _rt(self, tmp, **kw):
+        rt, ctrl, rec, clock = build_runtime(tmp, **kw)
+        rt._trust_green = type(rt)._trust_green.__get__(rt)   # echte guard i.p.v. harness-stub
+        return rt, ctrl, rec, clock
+    def test_probe_exception_logged_and_not_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def boom(): raise RuntimeError("kapot")
+            rt, ctrl, rec, clock = self._rt(tmp, probe_seq=boom)
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                rt.tick()
+            self.assertTrue(any("RuntimeError: kapot" in m for m in cm.output))
+            self.assertFalse(rt.readiness.confirmed)
+    def test_trust_read_exception_fail_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = self._rt(tmp)
+            def boom(): raise PermissionError("nee")
+            rt.a.trust.read = boom
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                rt.tick()
+            self.assertFalse(ctrl.gates_groen)
+            self.assertTrue(any("trustgate ROOD: trust-read faalde: PermissionError" in m for m in cm.output))
+    def test_trust_reader_detail_in_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = self._rt(tmp)
+            rt.a.trust.read = lambda: (None, "", "")
+            rt.a.trust.last_error = "verdict onleesbaar: PermissionError"
+            green, reden = rt._trust_green()
+            self.assertFalse(green); self.assertIn("PermissionError", reden)
+    def test_runner_start_exception_keeps_child_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            def boom(): raise OSError("docker weg")
+            rt.a.runner.start = boom
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                rt._start_runner()
+            self.assertIsNone(rt.child)
+            self.assertTrue(any("runner-start faalde: OSError: docker weg" in m for m in cm.output))
+    def test_baseexception_not_swallowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            def stop(): raise KeyboardInterrupt()
+            rt.a.probe.probe = stop
+            with self.assertRaises(KeyboardInterrupt): rt.tick()
+
+class TestGateTransitionLogging(unittest.TestCase):
+    def test_dind_transitions_once_with_rc_and_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            st = {"h": False}; rt.a.dind.last_rc = 1; rt.a.dind.healthy = lambda: st["h"]
+            with self.assertLogs(rt.log, level="INFO") as cm:
+                rt._readiness_and_gates(0); rt._readiness_and_gates(1)
+                st["h"] = True; rt._readiness_and_gates(2); rt._readiness_and_gates(3)
+                def boom(): raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+                rt.a.dind.healthy = boom; rt._readiness_and_gates(4)
+            msgs = [m.split(":", 2)[2] for m in cm.output if "dind" in m]
+            self.assertEqual(len(msgs), 3)
+            self.assertIn("ROOD: rc=1", msgs[0]); self.assertEqual(msgs[1], "dind gezond")
+            self.assertIn("TimeoutExpired", msgs[2])
+    def test_blocked_logged_with_reason_and_reminder_per_retry_interval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp, leftover=["abc"])
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                for _ in range(65):
+                    rt.tick(); clock.advance(1.0)
+            geb = [m for m in cm.output if "GEBLOKKEERD" in m]
+            rem = [m for m in cm.output if "nog steeds geblokkeerd" in m]
+            self.assertEqual(len(geb), 1); self.assertIn("achtergebleven runner", geb[0])
+            self.assertEqual(len(rem), 2)   # t=30 en t=60 bij retry_interval 30
+            self.assertIn("achtergebleven runner", rem[0])
+    def test_ensure_up_nonzero_rc_warns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            rt.a.dind.ensure_up = lambda: 17
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                rt.tick()
+            self.assertTrue(any("rc=17" in m for m in cm.output))
 
 if __name__ == "__main__":
     unittest.main()
