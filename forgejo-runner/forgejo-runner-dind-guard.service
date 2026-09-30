@@ -1,0 +1,20 @@
+[Unit]
+Description=Forgejo Runner DinD-guard: blokkeer hostverkeer naar de DinD-API op fr-dind0 (T-188)
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+# De regel hangt aan de interfacenaam en is geldig voordat de bridge bestaat;
+# Docker hoeft dus niet te draaien om hem te zetten.
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Expliciete interpreter, net als de andere units: de uitrol mag niet van een
+# executable-bit afhangen.
+ExecStart=/bin/bash /opt/forgejo-runner/scripts/dind-guard.sh apply
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

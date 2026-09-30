@@ -6,6 +6,7 @@ en maakt het oordeel rood. De module doet zelf geen netwerk-IO; de client wordt
 ingespoten, zodat de tests geen echte instance nodig hebben.
 """
 
+import re
 from dataclasses import dataclass, field
 
 RISKY_TRIGGERS = ("pull_request_target", "pull_request", "workflow_run")
@@ -107,6 +108,46 @@ def _decodeer(entry):
     raise Unreadable(f"{entry.get('path')}: onbekende encoding {codering!r}")
 
 
+def _zonder_commentaar(tekst):
+    """Haalt YAML-commentaar weg, zodat een labelnaam in commentaar niet als
+    gebruik telt. Commentaar begint met `#` aan het begin van een regel of na
+    witruimte."""
+    regels = []
+    for regel in tekst.splitlines():
+        regels.append(re.sub(r"(^|\s)#.*$", "", regel))
+    return "\n".join(regels)
+
+
+def _onleesbare_runs_on(tekst):
+    """True als een `runs-on:` niet uit letterlijke labels bestaat.
+
+    Letterlijk is: een gewone scalar of een lijst van gewone scalars. Alles met
+    `${{`, een anker/alias/tag, een block-scalar of een lege waarde zonder
+    lijstitems eronder is niet te herleiden en telt als onleesbaar."""
+    regels = tekst.splitlines()
+    for i, regel in enumerate(regels):
+        m = re.search(r"runs-on[\"']?\s*:(.*)$", regel)
+        if not m:
+            continue
+        waarde = m.group(1).strip()
+        if not waarde:
+            # Blokvorm: verzamel de volgende, dieper ingesprongen regels.
+            basis = len(regel) - len(regel.lstrip())
+            rest = []
+            for volgende in regels[i + 1:]:
+                if not volgende.strip():
+                    continue
+                if len(volgende) - len(volgende.lstrip()) <= basis:
+                    break
+                rest.append(volgende.strip())
+            if not rest:
+                return True
+            waarde = " ".join(rest)
+        if "${{" in waarde or waarde[0] in "*&!|>{":
+            return True
+    return False
+
+
 def scan_workflow(tekst, shared_labels):
     """Conservatieve detectie van risicovolle triggers en gedeeld-labelgebruik.
 
@@ -123,7 +164,14 @@ def scan_workflow(tekst, shared_labels):
             if trigger == "pull_request" and "pull_request_target" in gevonden:
                 continue
             gevonden.append(trigger)
-    gebruikt_label = any(label and label in tekst for label in shared_labels)
+    zonder_commentaar = _zonder_commentaar(tekst)
+    gebruikt_label = any(label and label in zonder_commentaar for label in shared_labels)
+    # Een runs-on die we niet letterlijk kunnen lezen (expressie, matrix,
+    # anker, blokvorm met expressie) kan tijdens het draaien op een gedeeld label
+    # uitkomen. Bij een risicovolle trigger telt dat conservatief als gebruik van
+    # het gedeelde label: hard tenzij JP het bevestigt.
+    if gevonden and _onleesbare_runs_on(zonder_commentaar):
+        gebruikt_label = True
     return gevonden, gebruikt_label
 
 
@@ -198,6 +246,26 @@ def _schrijvers(client, full_name, owner_login=None):
     return sorted(schrijvers)
 
 
+def _deploy_keys(client, full_name):
+    """Deploy keys van een repository, genormaliseerd op id/title/fingerprint/
+    read_only. Een sleutel met schrijfrecht kan buiten de allowlist-identiteiten
+    om code naar de repository pushen, dus een ontbrekend of verkeerd getypt
+    veld is onleesbaar en nooit "alleen-lezen"."""
+    sleutels = client.deploy_keys(full_name)
+    if sleutels is None:
+        raise Unreadable(f"{full_name}: deploy keys niet uitleesbaar")
+    _eis_lijst_van_dicts(sleutels, f"{full_name}: deploy keys")
+    uit = []
+    for sleutel in sleutels:
+        if not isinstance(sleutel.get("read_only"), bool):
+            raise Unreadable(f"{full_name}: deploy key {sleutel.get('id')} zonder boolean read_only")
+        if not isinstance(sleutel.get("fingerprint"), str) or not sleutel["fingerprint"]:
+            raise Unreadable(f"{full_name}: deploy key {sleutel.get('id')} zonder fingerprint")
+        uit.append({"id": sleutel.get("id"), "title": sleutel.get("title"),
+                    "fingerprint": sleutel["fingerprint"], "read_only": sleutel["read_only"]})
+    return uit
+
+
 def inventory(client, shared_labels=()):
     repositories = []
     unreadable = []
@@ -223,6 +291,7 @@ def inventory(client, shared_labels=()):
             "risky_triggers": [],
             "gebruikt_gedeeld_label": False,
             "writers": [],
+            "deploy_keys": [],
             "branch_protection": None,
             "unreadable": [],
         }
@@ -255,6 +324,11 @@ def inventory(client, shared_labels=()):
 
             try:
                 entry["writers"] = _schrijvers(client, full_name, entry["owner"])
+            except Unreadable as exc:
+                entry["unreadable"].append(str(exc))
+
+            try:
+                entry["deploy_keys"] = _deploy_keys(client, full_name)
             except Unreadable as exc:
                 entry["unreadable"].append(str(exc))
 
@@ -363,6 +437,32 @@ def classify(inv, allowlist):
                 verdict.soft.append(
                     f"{name}: trigger {trigger} aanwezig maar zonder gedeeld runnerlabel; "
                     f"binnen 24 uur beoordelen")
+
+        # Deploy keys met schrijfrecht: HARD tenzij de fingerprint per repo is
+        # bevestigd in deploy_keys_acknowledged. Zelfde fail-closed patroon als
+        # risky_triggers_acknowledged: alleen een lijst van niet-lege strings telt.
+        dk_raw = entry.get("deploy_keys_acknowledged")
+        if dk_raw in (None, [], ()):
+            dk_ack = set()
+        elif isinstance(dk_raw, list) and all(isinstance(f, str) and f for f in dk_raw):
+            dk_ack = set(dk_raw)
+        else:
+            dk_ack = set()
+            verdict.soft.append(
+                f"{name}: deploy_keys_acknowledged is ongeldig (verwacht een lijst van "
+                f"fingerprints); fail-closed genegeerd, schrijf-deploy-keys blijven hard")
+        for sleutel in repo.get("deploy_keys", []):
+            if sleutel["read_only"]:
+                continue
+            label = f"{sleutel.get('title')!r} (id {sleutel.get('id')}, {sleutel['fingerprint']})"
+            if sleutel["fingerprint"] in dk_ack:
+                verdict.accepted.append(
+                    f"{name}: deploy key {label} met schrijfrecht is expliciet bevestigd "
+                    f"(deploy_keys_acknowledged); restrisico aanvaard")
+            else:
+                verdict.hard.append(
+                    f"{name}: deploy key {label} heeft schrijfrecht en is niet bevestigd "
+                    f"in deploy_keys_acknowledged")
 
         if repo["has_actions"] and repo["workflow_source"] is None:
             verdict.soft.append(

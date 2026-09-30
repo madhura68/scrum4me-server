@@ -4,6 +4,9 @@ Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+# De controller draait nooit zonder de firewallguard op de DinD-API (T-188).
+Requires=forgejo-runner-dind-guard.service
+After=forgejo-runner-dind-guard.service
 
 [Service]
 Type=simple

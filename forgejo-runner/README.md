@@ -16,6 +16,7 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 | `runner-config.policy.yml` | gedeelde runnerpolicy; `render-config.sh` voegt de hostspecifieke UUID en `token_url` toe |
 | `trusted-actions-scope.yml` | trust-allowlist voor global scope (§7.7) |
 | `forgejo-runner-cycle.service` | systemd-unit die de Python-cyclecontroller draait |
+| `forgejo-runner-dind-guard.service` | oneshot die `scripts/dind-guard.sh apply` draait (iptables-REJECT op de DinD-API) |
 | `forgejo-runner-trust.service` + `.timer` | vernieuwen het trust-verdict vóór het verloopt (§7.7 "dagelijks") |
 | `scripts/` | preflight, render-config, resolve-digests, scrub-dind, bundle-hash, verify-stack, secret-scan, de cyclecontroller en de read-only inventarisatiescripts |
 | `tests/` | bats- en unittest-suite; draait niet mee op de hosts en telt niet mee in de bundelhash |
@@ -25,7 +26,16 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 1. `bash scripts/preflight.sh --facts … --caps … --images allowed-job-images.txt`
    moet exit 0 geven. Faalt hij, dan wordt er niets uitgerold. De gate wordt niet
    versoepeld om verder te kunnen (§7.8).
-2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host.
+2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host, als `root:root`
+   met de modi uit de repo (bestanden `0644`, scripts `0755`), en nooit als een
+   onbevoorrechte gebruiker: root-units voeren deze bestanden uit en
+   `verify-stack.sh` weigert (exit 64) een bundelmap of bundelbestand dat niet
+   van uid 0 is of groep/wereld-schrijfbaar is (AUDIT-033). Bijvoorbeeld vanuit
+   deze map: `sudo rsync -rlpt --chown=root:root --exclude tests/ --exclude
+   credentials/ --exclude state/ ./ /opt/forgejo-runner/` (`-p` behoudt de
+   repo-modi; `credentials/` en `state/` blijven hostlokaal). Een enkel
+   bestand: `sudo install -o root -g root -m 0644 <bestand> <doel>` (`-m 0755`
+   voor een script).
 3. Schrijf de commit-SHA naar `/opt/forgejo-runner/BUNDLE_COMMIT`.
 4. Render de hostconfig: `bash scripts/render-config.sh --uuid <host-uuid>
    --labels labels.txt --policy runner-config.policy.yml --out runner-config.yml`.
@@ -35,7 +45,26 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 6. `cp .env.example .env` en `docker compose up -d`: dat start uitsluitend DinD; de
    runner staat onder het profiel `cycle` en wordt alleen door de cyclecontroller
    gestart.
-7. `systemctl enable --now forgejo-runner-cycle.service`.
+7. Installeer de units en laad systemd opnieuw, exact zo (byte-gelijk aan de
+   bundelkopie; `verify-stack.sh` vergelijkt ze en faalt met exit 63 bij een
+   ontbrekende of afwijkende unit):
+   ```sh
+   for u in forgejo-runner-cycle.service forgejo-runner-dind-guard.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
+     sudo install -o root -g root -m 0644 /opt/forgejo-runner/$u /etc/systemd/system/
+   done
+   sudo systemctl daemon-reload
+   ```
+   Daarna `systemctl enable --now forgejo-runner-dind-guard.service` (de
+   firewallguard die hostverkeer naar de DinD-API op bridge `fr-dind0` weigert,
+   T-188) en dan `systemctl enable --now forgejo-runner-cycle.service`; die
+   laatste vereist de guard-unit.
+
+   Bestaande stack met de oude, automatisch benoemde bridge: de vaste naam
+   `fr-dind0` vraagt een nieuw netwerk. Stop `forgejo-runner-cycle.service`
+   (drain eerst), draai `docker compose down` (het volume
+   `forgejo-runner-dind-data` blijft bestaan) en `docker compose up -d`, en start
+   daarna de cycle-unit. `verify-stack.sh` faalt met exit 65 als de guardregel
+   ontbreekt of de DinD-API vanaf de host bereikbaar is.
 8. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven; de
    bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit.
 9. Leg de credential voor de trustscan neer als
@@ -70,6 +99,14 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
     dat er een `NEXT` staat, en met `systemctl start forgejo-runner-trust.service`
     dat een handmatige slag exit 0 geeft en `measured_at` in
     `trust-verdict.json` opschuift.
+
+### Hostlokale units (niet in de bundel)
+
+De units van de Forgejo-mirror (`scripts/forgejo-mirror/`) en van
+docker-rollback-retention (`scripts/docker-rollback-retention/`) horen niet bij
+de bundel: ze staan buiten `forgejo-runner/`, tellen niet mee in de bundelhash en
+worden niet door `verify-stack.sh` gecontroleerd. Ze worden per host beheerd met
+hun eigen installatiestappen.
 
 ## Terugdraaien
 

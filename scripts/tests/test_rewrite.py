@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -265,6 +266,92 @@ class RewriteTest(Base):
         self.assertEqual(self.read(f), ENV)
         self.assertEqual(self.backups(f), [])
         self.assertNoLeak(out, err)
+
+
+class ResidualGapsTest(Base):
+    """AUDIT-029: elke onderbrekingsplek in de batch rolt volledig terug; een tweede run wordt geweigerd."""
+
+    def _files(self, n=3):
+        return [self.write(f"{i}.env", ENV) for i in range(n)]
+
+    def _argv(self, files):
+        return ["rewrite", "--role", ROLE] + sum([["--file", f] for f in files], [])
+
+    def _assert_clean(self, files):
+        for f in files:
+            self.assertEqual(self.read(f), ENV)
+        self.assertEqual([p for p in os.listdir(self.dir) if p.startswith(".rec-")], [])
+
+    def test_interrupt_at_every_step_restores_everything(self):
+        real_replace, real_backup, real_fsync_dir = os.replace, rec._write_backup, rec._fsync_dir
+        for idx in range(3):
+            for step in ("backup-na", "replace-voor", "replace-na", "fsync-dir"):
+                with self.subTest(file=idx, step=step):
+                    files = self._files()
+                    target = files[idx]
+
+                    def replace(src, dst, _t=target, _s=step):
+                        if dst == _t and _s == "replace-voor":
+                            raise KeyboardInterrupt()
+                        real_replace(src, dst)
+                        if dst == _t and _s == "replace-na":
+                            raise KeyboardInterrupt()  # tussen vervangen en administratie
+
+                    def backup(path, *a, _t=target, _s=step):
+                        bak = real_backup(path, *a)
+                        if path == _t and _s == "backup-na":
+                            raise KeyboardInterrupt()
+                        return bak
+
+                    def fsync_dir(path, _t=target, _s=step):
+                        real_fsync_dir(path)
+                        if path == _t and _s == "fsync-dir":
+                            raise KeyboardInterrupt()
+
+                    with mock.patch.object(rec.os, "replace", side_effect=replace), \
+                            mock.patch.object(rec, "_write_backup", side_effect=backup), \
+                            mock.patch.object(rec, "_fsync_dir", side_effect=fsync_dir):
+                        with self.assertRaises(KeyboardInterrupt):
+                            run(self._argv(files), NEW)
+                    self._assert_clean(files)
+
+    def test_restore_leaves_externally_changed_unreplaced_file_alone(self):
+        f = self.write("w.env", ENV)
+        entries = [(f, os.stat(f).st_ino)]
+        with open(f, "a") as h:
+            h.write("EXTERNAL=1\n")
+        rec._restore(entries, "x", io.StringIO())
+        self.assertIn("EXTERNAL=1", self.read(f))
+
+    def test_second_run_is_refused_while_lock_is_held(self):
+        files = self._files(2)
+        child = subprocess.Popen(
+            [sys.executable, "-c",
+             "import fcntl,os,sys\nfd=os.open(sys.argv[1],os.O_RDONLY)\nfcntl.flock(fd,fcntl.LOCK_EX)\n"
+             "print('ready',flush=True)\nsys.stdin.readline()", self.dir],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "ready")
+            rc, out, err = run(self._argv(files), NEW)
+            self.assertNotEqual(rc, 0)
+            self.assertIn("andere rotatie-run actief", err)
+            self.assertEqual(self.backups(files[0]), [])
+            self._assert_clean(files)
+            rc, out, err = run(["rollback", "--stamp", "x", "--file", files[0]])
+            self.assertNotEqual(rc, 0)
+        finally:
+            child.stdin.write("\n")
+            child.stdin.close()
+            child.wait()
+            child.stdout.close()
+        rc, out, err = run(self._argv(files), NEW)
+        self.assertEqual(rc, 0, err)  # lock is weer vrij
+
+    def test_lock_released_after_failed_run(self):
+        files = self._files(1)
+        with mock.patch.object(rec.os, "replace", side_effect=OSError("x")):
+            self.assertEqual(run(self._argv(files), NEW)[0], 1)
+        self.assertEqual(run(self._argv(files), NEW)[0], 0)
 
 
 class RollbackTest(Base):

@@ -160,3 +160,16 @@ bad = sorted(k for k in dind if "cpu" in k.lower() and k not in ("cpu_quota", "c
 assert not bad, f"dind gebruikt nog een NanoCpus-vorm (cpus/nano_cpus): {bad}"
 '
 }
+
+@test "het runner-control-netwerk heeft de vaste bridgenaam fr-dind0 (dind-guard, T-188)" {
+  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+      DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c '
+import json, sys
+net = json.load(sys.stdin)["networks"]["runner-control"]
+naam = net["driver_opts"]["com.docker.network.bridge.name"]
+assert naam == "fr-dind0", naam
+assert len(naam) <= 15, "Linux-interfacenaam maximaal 15 tekens"
+'
+}

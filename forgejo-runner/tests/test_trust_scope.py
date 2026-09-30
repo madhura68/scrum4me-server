@@ -21,7 +21,8 @@ class FakeClient:
     """Levert vaste API-antwoorden; raakt geen netwerk."""
 
     def __init__(self, repos, contents=None, collaborators=None, permissions=None,
-                 teams=None, team_members=None, protections=None, unreadable=()):
+                 teams=None, team_members=None, protections=None, unreadable=(),
+                 deploy_keys=None):
         self._repos = repos
         self._contents = contents or {}
         self._collaborators = collaborators or {}
@@ -30,6 +31,7 @@ class FakeClient:
         self._team_members = team_members or {}
         self._protections = protections or {}
         self._unreadable = set(unreadable)
+        self._deploy_keys = deploy_keys or {}
 
     def repos(self):
         return self._repos
@@ -50,6 +52,9 @@ class FakeClient:
 
     def team_members(self, team_id):
         return self._team_members.get(team_id, [])
+
+    def deploy_keys(self, full_name):
+        return self._deploy_keys.get(full_name, [])
 
     def branch_protections(self, full_name):
         return self._protections.get(full_name, [])
@@ -365,6 +370,8 @@ class TestClientResponsvormen(unittest.TestCase):
 
         def vervanger(req, timeout=None):
             nummer = 2 if "page=2" in req.full_url else 1
+            if "page=3" in req.full_url:
+                return self.NepRespons([])
             return self.NepRespons(paginas[nummer])
 
         def doe(mod):
@@ -832,6 +839,196 @@ class TestAckViaLoader(unittest.TestCase):
         v = self._classify_actions_regel('actions_enabled: "true"')
         self.assertFalse(v.ok)
         self.assertTrue(any("actions_enabled" in h for h in v.hard))
+
+
+class TestPaginaVolledigheid(unittest.TestCase):
+    """Paginering moet volledig zijn of onleesbaar worden (AUDIT-012)."""
+
+    class Nep:
+        def __init__(self, payload, totaal=None):
+            import json as _json
+            self._payload = _json.dumps(payload).encode()
+            self.headers = {} if totaal is None else {"X-Total-Count": str(totaal)}
+
+        def read(self):
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _draai(self, items, paginagrootte, totaal_header):
+        """Fake-server met eigen paginagrootte (negeert limit=50)."""
+        import urllib.parse as up
+
+        def vervanger(req, timeout=None):
+            q = up.parse_qs(up.urlparse(req.full_url).query)
+            page = int(q["page"][0])
+            deel = items[(page - 1) * paginagrootte: page * paginagrootte]
+            return self.Nep(deel, totaal_header)
+
+        origineel = trust_scope_cli.urllib.request.urlopen
+        trust_scope_cli.urllib.request.urlopen = vervanger
+        try:
+            client = trust_scope_cli.ForgejoClient("https://voorbeeld.invalid", "x")
+            return client.collaborators("janpeter/app")
+        finally:
+            trust_scope_cli.urllib.request.urlopen = origineel
+
+    def test_serverpagina_van_30_kapt_niet_af(self):
+        items = [{"login": f"u{i}"} for i in range(75)]
+        self.assertEqual(len(self._draai(items, 30, 75)), 75)
+
+    def test_serverpagina_van_30_zonder_totaalheader_pagineert_tot_leeg(self):
+        items = [{"login": f"u{i}"} for i in range(75)]
+        self.assertEqual(len(self._draai(items, 30, None)), 75)
+
+    def test_totaal_dat_niet_klopt_is_onleesbaar(self):
+        items = [{"login": f"u{i}"} for i in range(60)]
+        with self.assertRaises(trust_scope.Unreadable):
+            self._draai(items, 30, 75)
+
+    def test_meer_items_dan_totaal_is_onleesbaar(self):
+        items = [{"login": f"u{i}"} for i in range(60)]
+        with self.assertRaises(trust_scope.Unreadable):
+            self._draai(items, 30, 50)
+
+    def test_ongeldig_totaal_is_onleesbaar(self):
+        def vervanger(req, timeout=None):
+            r = self.Nep([{"login": "a"}])
+            r.headers = {"X-Total-Count": "veel"}
+            return r
+        origineel = trust_scope_cli.urllib.request.urlopen
+        trust_scope_cli.urllib.request.urlopen = vervanger
+        try:
+            client = trust_scope_cli.ForgejoClient("https://voorbeeld.invalid", "x")
+            with self.assertRaises(trust_scope.Unreadable):
+                client.collaborators("janpeter/app")
+        finally:
+            trust_scope_cli.urllib.request.urlopen = origineel
+
+    def test_repos_pagineert_ook_bij_kleine_serverpagina(self):
+        import urllib.parse as up
+        repos = [dict(REPO_ACTIONS, full_name=f"janpeter/r{i}") for i in range(65)]
+
+        def vervanger(req, timeout=None):
+            page = int(up.parse_qs(up.urlparse(req.full_url).query)["page"][0])
+            return self.Nep({"data": repos[(page - 1) * 30: page * 30]}, 65)
+        origineel = trust_scope_cli.urllib.request.urlopen
+        trust_scope_cli.urllib.request.urlopen = vervanger
+        try:
+            client = trust_scope_cli.ForgejoClient("https://voorbeeld.invalid", "x")
+            self.assertEqual(len(client.repos()), 65)
+        finally:
+            trust_scope_cli.urllib.request.urlopen = origineel
+
+
+class TestOnleesbareRunsOn(unittest.TestCase):
+    RISKY = "on:\n  pull_request:\njobs:\n  a:\n"
+
+    def _gebruikt(self, runs_on, prefix=None):
+        _, g = trust_scope.scan_workflow((prefix or self.RISKY) + runs_on, GEDEELDE_LABELS)
+        return g
+
+    def test_expressie_met_risky_trigger_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: ${{ matrix.os }}\n"))
+
+    def test_expressie_in_blokvorm_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on:\n      - ${{ inputs.runner }}\n"))
+
+    def test_anker_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: *runner\n"))
+
+    def test_lege_runs_on_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on:\n    steps: []\n"))
+
+    def test_expressie_zonder_risky_trigger_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on: ${{ matrix.os }}\n",
+                                        prefix="on:\n  push:\njobs:\n  a:\n"))
+
+    def test_letterlijk_eigen_label_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on: eigen-runner\n"))
+
+    def test_letterlijke_lijst_eigen_labels_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on: [eigen-runner, andere]\n"))
+
+    def test_labelnaam_in_commentaar_telt_niet(self):
+        self.assertFalse(self._gebruikt("    runs-on: eigen-runner  # was ubuntu-latest\n"))
+
+    def test_labelnaam_in_echte_waarde_blijft_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: ubuntu-latest\n"))
+
+
+class TestDeployKeys(unittest.TestCase):
+    WIST = {"id": 7, "title": "ci", "fingerprint": "SHA256:aaa", "read_only": False}
+    LEES = {"id": 8, "title": "ro", "fingerprint": "SHA256:bbb", "read_only": True}
+
+    def _inv(self, keys):
+        client = FakeClient([REPO_ACTIONS], deploy_keys={"janpeter/app": keys})
+        return trust_scope.inventory(client, GEDEELDE_LABELS)
+
+    def _allowlist(self, **extra):
+        entry = dict(ALLOWLIST["repositories"][0], **extra)
+        return {"repositories": [entry], "identities": ALLOWLIST["identities"]}
+
+    def test_inventaris_bevat_deploy_keys(self):
+        inv = self._inv([self.WIST, self.LEES])
+        self.assertEqual([k["read_only"] for k in inv["repositories"][0]["deploy_keys"]],
+                         [False, True])
+
+    def test_schrijfsleutel_zonder_bevestiging_is_hard(self):
+        v = trust_scope.classify(self._inv([self.WIST]), self._allowlist())
+        self.assertFalse(v.ok)
+        self.assertTrue(any("SHA256:aaa" in h for h in v.hard))
+
+    def test_alleen_lezen_sleutel_is_groen(self):
+        v = trust_scope.classify(self._inv([self.LEES]), self._allowlist())
+        self.assertTrue(v.ok, v.hard)
+
+    def test_bevestigde_schrijfsleutel_is_accepted(self):
+        v = trust_scope.classify(self._inv([self.WIST]),
+                                 self._allowlist(deploy_keys_acknowledged=["SHA256:aaa"]))
+        self.assertTrue(v.ok, v.hard)
+        self.assertTrue(any("SHA256:aaa" in a for a in v.accepted))
+
+    def test_bevestiging_van_andere_fingerprint_helpt_niet(self):
+        v = trust_scope.classify(self._inv([self.WIST]),
+                                 self._allowlist(deploy_keys_acknowledged=["SHA256:zzz"]))
+        self.assertFalse(v.ok)
+
+    def test_ongeldige_vorm_is_fail_closed_met_zachte_melding(self):
+        v = trust_scope.classify(self._inv([self.WIST]),
+                                 self._allowlist(deploy_keys_acknowledged="SHA256:aaa"))
+        self.assertFalse(v.ok)
+        self.assertTrue(any("deploy_keys_acknowledged" in z for z in v.soft))
+
+    def test_lijst_met_niet_string_is_fail_closed(self):
+        v = trust_scope.classify(self._inv([self.WIST]),
+                                 self._allowlist(deploy_keys_acknowledged=[5]))
+        self.assertFalse(v.ok)
+
+    def test_onleesbare_sleutelendpoint_is_onleesbaar(self):
+        class Stuk(FakeClient):
+            def deploy_keys(self, full_name):
+                raise trust_scope.Unreadable("keys: HTTP 500")
+        inv = trust_scope.inventory(Stuk([REPO_ACTIONS]), GEDEELDE_LABELS)
+        v = trust_scope.classify(inv, self._allowlist())
+        self.assertTrue(v.unreadable)
+        self.assertFalse(v.ok)
+
+    def test_read_only_zonder_boolean_is_onleesbaar(self):
+        inv = self._inv([dict(self.WIST, read_only="false")])
+        self.assertTrue(inv["unreadable"])
+
+    def test_loader_leest_deploy_keys_acknowledged(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+            fh.write("version: 1\nrepositories:\n  - full_name: janpeter/app\n"
+                     "    deploy_keys_acknowledged: [SHA256:aaa, SHA256:bbb]\n")
+        doc = trust_scope_cli.load_allowlist(fh.name)
+        self.assertEqual(doc["repositories"][0]["deploy_keys_acknowledged"],
+                         ["SHA256:aaa", "SHA256:bbb"])
 
 
 if __name__ == "__main__":

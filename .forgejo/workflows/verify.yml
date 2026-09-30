@@ -1,0 +1,24 @@
+# Read-only CI (PBI-26, besluit JP 30 sep 2026): draait de verificatie van de repo
+# bij iedere push. Alleen de push-trigger, bewust: een PR-trigger op het gedeelde
+# runnerlabel maakt de trust-gate hard rood (§7.7). Geen secrets, geen deploystap;
+# de hardstop "niet deployen via Forgejo Actions" blijft gelden.
+name: verify
+
+on:
+  push:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gereedschap
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bats shellcheck jq >/dev/null
+          bats --version; shellcheck --version | head -2; python3 --version
+
+      - name: scripts/verify.sh
+        run: bash scripts/verify.sh

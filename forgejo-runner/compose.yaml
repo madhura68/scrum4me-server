@@ -64,6 +64,11 @@ networks:
   runner-control:
     driver: bridge
     internal: false           # DinD moet images kunnen pullen; geen hostpoorten
+    driver_opts:
+      # Vaste bridgenaam (<= 15 tekens): dind-guard.sh blokkeert hostverkeer naar
+      # 2375/2376 op deze interface (T-188). Wijzigen vereist het netwerk opnieuw
+      # te maken (README "Uitrollen").
+      com.docker.network.bridge.name: fr-dind0
 
 volumes:
   dind-data:

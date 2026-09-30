@@ -62,6 +62,13 @@ en print ze nooit.
 | `probe --role R --file F --expect ok\|reject` | logt in met de DSN uit F via een wegwerp-`postgres:17`-container | — |
 | `scan --role R [--consumer F…] [PAD…]` | vindt achtergebleven kopieën en deelt ze in als `huidig`, `placeholder/regex`, `ANDERS` of `LEK` (het huidige secret buiten de `--consumer`-bestanden); doorzoekt ook de consumers zelf; exitcode 1 bij `ANDERS`/`LEK` buiten back-ups of bij een ontbrekend pad (`MIST`) | het wachtwoord dat als `huidig` moet gelden |
 
+Sinds T-175 (AUDIT-029): `rewrite`, `rewrite-key` en `rollback` nemen per doelmap een exclusieve
+`flock`; een tweede run op dezelfde map stopt met exit 2 ("andere rotatie-run actief"). Een
+onderbreking op elk punt van de batch zet alle al vervangen bestanden terug. `probe` ruimt zijn
+tijdelijke DSN-bestand ook bij SIGTERM/SIGINT/SIGHUP op. `docker exec`/`docker run` hebben een
+time-out van 60 s; een time-out is een fout (bij `alter-role`: uitkomst onbekend, controleer met
+`probe`), nooit "afgewezen zoals verwacht".
+
 **Installeren of bijwerken op srv en max2.** Doe dit vanuit een checkout op de gewenste
 commit; de mac gebruikt het script direct uit de checkout.
 
