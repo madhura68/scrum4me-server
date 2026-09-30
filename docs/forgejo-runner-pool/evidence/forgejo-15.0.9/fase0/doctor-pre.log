@@ -1,0 +1,653 @@
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git version
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-10: git: /usr/bin/git version (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-10: git: /usr/bin/git version
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get diff.algorithm
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-11: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get diff.algorithm (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-11: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get diff.algorithm
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.logallrefupdates
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-12: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.logallrefupdates (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-12: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.logallrefupdates
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.reflogexpire
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-13: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.reflogexpire (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-13: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.reflogexpire
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.name
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-14: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.name (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-14: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.name
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.email
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-15: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.email (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-15: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get user.email
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.quotePath
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-16: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.quotePath (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-16: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.quotePath
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.advertisePushOptions
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-17: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.advertisePushOptions (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-17: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.advertisePushOptions
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.commitGraph
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-18: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.commitGraph (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-18: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get core.commitGraph
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.writeCommitGraph
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-19: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.writeCommitGraph (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-19: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gc.writeCommitGraph
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get fetch.writeCommitGraph
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-20: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get fetch.writeCommitGraph (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-20: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get fetch.writeCommitGraph
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.procReceiveRefs refs/for
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-21: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.procReceiveRefs refs/for (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-21: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.procReceiveRefs refs/for
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get safe.directory \*
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-22: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get safe.directory \* (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-22: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get safe.directory \*
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gpg.format
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-23: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gpg.format (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-23: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get gpg.format
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.hideRefs
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-24: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.hideRefs (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-24: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get receive.hideRefs
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowfilter
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-25: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowfilter (git)
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-25: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowfilter
+2026/09/30 15:11:01 ...dules/git/command.go:302:Run() [D] git.Command.Run: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowAnySHA1InWant
+2026/09/30 15:11:01 ...s/process/manager.go:204:Add() [T] Start 6abd0a65-26: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowAnySHA1InWant (git)
+
+[1] Garbage collect LFS
+2026/09/30 15:11:01 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-26: git: /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config --global --get uploadpack.allowAnySHA1InWant
+2026/09/30 15:11:01 ...es/repository/lfs.go:31:GarbageCollectLFSMetaObjects() [T] Doing: GarbageCollectLFSMetaObjects
+2026/09/30 15:11:01 ...es/repository/lfs.go:43:GarbageCollectLFSMetaObjects() [T] Finished: GarbageCollectLFSMetaObjects
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 0 (0 B) LFS file(s)
+OK
+
+[2] Check paths and basic configuration
+ - [I] Configuration File Path:    "/data/gitea/conf/app.ini"
+ - [I] Repository Root Path:       "/data/git/repositories"
+ - [I] Data Root Path:             "/data/gitea"
+ - [I] Custom File Root Path:      "/data/gitea"
+ - [I] Work directory:             "/data/gitea"
+ - [I] Log Root Path:              "/data/gitea/log"
+OK
+
+[3] Check if there are orphaned archives in storage
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [W] Found 259/259 (1.3 GiB/1.3 GiB) orphaned repo archive(s)
+OK
+
+[4] Check if there are orphaned attachments in storage
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 0 (0 B) attachment(s)
+OK
+
+[5] Check if there are orphaned avatars in storage
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 5 (17 KiB) avatar(s)
+ - [I] Found 0 (0 B) repo avatar(s)
+OK
+
+[6] Check if there are orphaned lfs files in storage
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 0 (0 B) LFS file(s)
+OK
+
+[7] Check if there are orphaned package blobs in storage
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 158 (12 MiB) package blob(s)
+OK
+
+[8] Check if there are orphaned storage files
+2026/09/30 15:11:01 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:01 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:01 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:01 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:01 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:01 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:01 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:01 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] Found 0 (0 B) attachment(s)
+ - [I] Found 0 (0 B) LFS file(s)
+ - [I] Found 5 (17 KiB) avatar(s)
+ - [I] Found 0 (0 B) repo avatar(s)
+ - [W] Found 259/259 (1.3 GiB/1.3 GiB) orphaned repo archive(s)
+ - [I] Found 158 (12 MiB) package blob(s)
+OK
+
+[9] Check Database Version
+ - [I] Expected database version: 305
+OK
+
+[10] Check consistency of database
+OK
+
+[11] Check if user with wrong type exist
+OK
+
+[12] Check if OpenSSH authorized_keys file is up-to-date
+ - [E] Key on line 2 of /data/git/.ssh/authorized_keys does not exist in database
+ - [E] Key on line 4 of /data/git/.ssh/authorized_keys does not exist in database
+ - [E] Key in database is not present in /data/git/.ssh/authorized_keys: command="/usr/local/bin/forgejo --config=/data/gitea/conf/app.ini serv key-1",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,restrict ssh-ed25519 <pubkey> janpeter@scrum4me-server
+ - [E] Key in database is not present in /data/git/.ssh/authorized_keys: command="/usr/local/bin/forgejo --config=/data/gitea/conf/app.ini serv key-2",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,restrict ssh-ed25519 <pubkey> ops-agent-digiplein-deploy
+ - [E] authorized_keys file "/data/git/.ssh/authorized_keys" contains validity errors.
+Regenerate it with:
+	"forgejo admin regenerate keys"
+or
+	"forgejo doctor check --run authorized-keys --fix"
+ERROR
+
+[13] Deleted all content related to orphaned repos
+OK
+
+[14] Check if SCRIPT_TYPE is available
+ - [I] ScriptType bash is on the current PATH at /bin/bash
+OK
+
+[15] Check if hook files are up-to-date and executable
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/jp-visser.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/imageinventory.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/media-organizer.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/private-mcp.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scraper.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/sitescraper.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/digiplein.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4us.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/video-editor.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/max2.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/when2watch.git/hooks/proc-receive is out of date
+ - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/pre-receive.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/update.d/gitea is out of date
+ - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/post-receive.d/gitea is out of date
+ - [W] old hook file /data/git/repositories/janpeter/agent-harness.git/hooks/proc-receive is out of date
+OK
+
+[16] Recalculate Stars number for all user
+ - [I] No check available for User Stars numbers (skipped)
+OK
+
+[17] Check old archives
+ - [I] 0 old archives in repository need to be deleted
+OK
+
+[18] Check that all git repositories have receive.advertisePushOptions set to true
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-2: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-2: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-3: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-3: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-4: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-4: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-5: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-5: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-6: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-6: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-7: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-7: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-8: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-8: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-9: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-9: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-10: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-10: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-11: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-11: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-12: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-12: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-13: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-13: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-14: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-14: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-15: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-15: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-16: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-16: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-17: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-17: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-18: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-18: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-19: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-19: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-20: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-20: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-21: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-21: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-22: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-22: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= config receive.advertisePushOptions
+ - [I] Checked 22 repositories, 0 need updates.
+OK
+
+[19] Check for incorrectly dumped repo_units (See #16961)
+ - [I] Found no broken repo_units
+OK
+
+[20] Check for incorrect can_create_org_repo for org owner teams
+ - [I] Found no team with incorrect can_create_org_repo
+OK
+
+[21] Check for push mirrors without a git remote configured
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_DooVJ8NLREL
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-23: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_DooVJ8NLREL (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-23: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_DooVJ8NLREL
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_dao0Q2wbo38
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-24: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_dao0Q2wbo38 (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-24: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_dao0Q2wbo38
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_UJr5_Z4wDgM
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-25: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_UJr5_Z4wDgM (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-25: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_UJr5_Z4wDgM
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_HN2-fhEikRY
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-26: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_HN2-fhEikRY (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-26: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_HN2-fhEikRY
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_zLDPndA84Tp
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-27: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_zLDPndA84Tp (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-27: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_zLDPndA84Tp
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_8lauigHRt2x
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-28: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_8lauigHRt2x (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-28: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_8lauigHRt2x
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_u320pwst7fe
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-29: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_u320pwst7fe (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-29: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_u320pwst7fe
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_LMZsTNB9v_L
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-30: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_LMZsTNB9v_L (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-30: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_LMZsTNB9v_L
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_isEWV2xZT-c
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-31: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_isEWV2xZT-c (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-31: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_isEWV2xZT-c
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_OdAgAt1QNUr
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-32: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_OdAgAt1QNUr (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-32: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_OdAgAt1QNUr
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_4S1C5cdRTM1
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-33: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_4S1C5cdRTM1 (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-33: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_4S1C5cdRTM1
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Z-EmIor14ks
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-34: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Z-EmIor14ks (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-34: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Z-EmIor14ks
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Rza12jVxrc_
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-35: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Rza12jVxrc_ (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-35: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_Rza12jVxrc_
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_xoVAIMD-zCX
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-36: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_xoVAIMD-zCX (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-36: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_xoVAIMD-zCX
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror__a6FS1SRqNm
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-37: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror__a6FS1SRqNm (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-37: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror__a6FS1SRqNm
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_2jvqkBCL82m
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-38: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_2jvqkBCL82m (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-38: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_2jvqkBCL82m
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_7nxCyECeX7Y
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-39: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_7nxCyECeX7Y (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-39: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_7nxCyECeX7Y
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_wjE02aRiTf8
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-40: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_wjE02aRiTf8 (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-40: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= remote get-url remote_mirror_wjE02aRiTf8
+ - [I] Found no push mirrors with missing git remotes
+OK
+
+[22] Synchronize repo HEADs
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-41: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-41: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-42: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-42: git(dir:/data/git/repositories/janpeter/scrum4me.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- master
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-43: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- master (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-43: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- master
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-44: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-44: git(dir:/data/git/repositories/janpeter/scrum4me-docker.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-45: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-45: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-46: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-46: git(dir:/data/git/repositories/janpeter/scrum4me-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-47: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-47: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-48: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-48: git(dir:/data/git/repositories/janpeter/ops-dashboard.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-49: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-49: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-50: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-50: git(dir:/data/git/repositories/janpeter/jp-visser.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-51: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-51: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-52: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-52: git(dir:/data/git/repositories/janpeter/inspannings-monitor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-53: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-53: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-54: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-54: git(dir:/data/git/repositories/janpeter/imageinventory.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-55: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-55: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-56: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-56: git(dir:/data/git/repositories/janpeter/media-organizer.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-57: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-57: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-58: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-58: git(dir:/data/git/repositories/janpeter/private-mcp.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-59: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-59: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-60: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-60: git(dir:/data/git/repositories/janpeter/scraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-61: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-61: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-62: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-62: git(dir:/data/git/repositories/janpeter/sitescraper.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-63: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-63: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-64: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-64: git(dir:/data/git/repositories/janpeter/scrum4me-shared.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-65: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-65: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-66: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-66: git(dir:/data/git/repositories/janpeter/scrum4me-workers.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-67: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-67: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-68: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-68: git(dir:/data/git/repositories/janpeter/s4m-queue.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-69: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-69: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-70: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-70: git(dir:/data/git/repositories/janpeter/digiplein.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-71: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-71: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-72: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-72: git(dir:/data/git/repositories/janpeter/scrum4me-copilot.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-73: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-73: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-74: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-74: git(dir:/data/git/repositories/janpeter/scrum4us.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-75: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-75: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-76: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-76: git(dir:/data/git/repositories/janpeter/video-editor.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-77: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-77: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-78: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-78: git(dir:/data/git/repositories/janpeter/max2.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-79: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-79: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-80: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-80: git(dir:/data/git/repositories/janpeter/scrum4me-server.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-81: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-81: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-82: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-82: git(dir:/data/git/repositories/janpeter/when2watch.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-83: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-83: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= rev-parse -- main
+2026/09/30 15:11:03 ...dules/git/command.go:304:Run() [D] git.Command.RunDir(/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+2026/09/30 15:11:03 ...s/process/manager.go:204:Add() [T] Start 6abd0a67-84: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD (git)
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a67-84: git(dir:/data/git/repositories/janpeter/agent-harness.git): /usr/bin/git -c protocol.version=2 -c credential.helper= -c filter.lfs.required= -c filter.lfs.smudge= -c filter.lfs.clean= symbolic-ref --short HEAD
+ - [I] All 22 repos have their HEADs in the correct state
+OK
+
+[23] Check git-daemon-export-ok files
+ - [I] Checked 22 repositories, 0 need updates.
+OK
+
+[24] Check commit-graphs
+ - [I] Checked 22 repositories, 1 without commit-graphs.
+OK
+
+[25] Check if users has an valid email address
+ - [I] All users have a valid e-mail.
+OK
+
+[26] Check if users have a valid username
+2026/09/30 15:11:03 ...g/config_provider.go:341:deprecatedSetting() [E] Deprecated config option `[service]` `EMAIL_DOMAIN_WHITELIST` present. Use `[service]` `EMAIL_DOMAIN_ALLOWLIST` instead. This fallback will be/has been removed in 1.21
+ - [I] All users have a valid username.
+OK
+
+[27] Disable the actions unit for all mirrors
+ - [I] Found no mirror with actions unit enabled
+OK
+2026/09/30 15:11:03 ...s/storage/storage.go:157:initAttachments() [I] Initialising Attachment storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/attachments
+2026/09/30 15:11:03 ...s/storage/storage.go:147:initAvatars() [I] Initialising Avatar storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/avatars
+2026/09/30 15:11:03 ...s/storage/storage.go:173:initRepoAvatars() [I] Initialising Repository Avatar storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-avatars
+2026/09/30 15:11:03 ...s/storage/storage.go:167:initLFS() [I] Initialising LFS storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/git/lfs
+2026/09/30 15:11:03 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+
+[28] Extract Nuget Nuspec Files to content store
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+2026/09/30 15:11:03 ...s/storage/storage.go:189:initPackages() [I] Initialising Packages storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/packages
+2026/09/30 15:11:03 ...s/storage/storage.go:200:initActions() [I] Initialising Actions storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_log
+2026/09/30 15:11:03 ...s/storage/storage.go:204:initActions() [I] Initialising ActionsArtifacts storage with type: local
+2026/09/30 15:11:03 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/actions_artifacts
+ - [I] No package versions with missing nuspec files found
+OK
+
+All done (checks: 28).
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-5: Logger: ssh
+2026/09/30 15:11:03 ...s/process/manager.go:248:remove() [T] Done 6abd0a65-9: Logger: xorm

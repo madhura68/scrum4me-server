@@ -1,0 +1,21 @@
+2026-07-07 16:55:41.746514107 +0200 git:git 600 /data/git/.ssh/authorized_keys
+2026-08-17 15:05:19.899117533 +0200 git:git 755 /data/git/repositories/janpeter/scrum4me-server.git/hooks/pre-receive.d/gitea
+2
+0
+/usr/local/bin/gitea hook --config=/data/gitea/conf/app.ini pre-receive
+--- git over SSH (read-only ls-remote, vanaf de host):
+ssh: connect to host git.jp-visser.nl port 2222: Connection refused
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+--- git over HTTPS anoniem/clone-pad:
+401
+22/tcp -> <tailscale-ip>:2222
+3000/tcp -> 127.0.0.1:3010
+Host key verification failed.
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+ls-remote exit: 128

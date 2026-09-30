@@ -1,0 +1,12 @@
+Forgejo vóór het venster : forgejo version 15.0.2+gitea-1.22.0 (release name 15.0.2), go1.26.3
+Forgejo na het venster   : forgejo version 15.0.9+gitea-1.22.0 (release name 15.0.9), go1.26.8
+Image vóór               : codeberg.org/forgejo/forgejo@sha256:db04c7114b656f896e206ba3873fe8d3a7adf2daa44907037f0274f4ba653fb9 (tag 15.0.2)
+Image na                 : codeberg.org/forgejo/forgejo@sha256:91a5310c86934339e16bd06b6078aada836e3d8935b2d70f6598108cbfaed5d1 (tag 15.0.9)
+Via poort 3010 en Caddy  : {"version":"15.0.9+gitea-1.22.0"}
+Runners                  : scrum4me-srv-runner (id 3) en max2-forgejo-runner-02 (id 5), beide v12.10.1, idle
+Host                     : Docker Engine 29.8.1, Docker Compose 5.5.1, bash 5.3.9, GNU sed 4.9, pg_restore 17.9
+
+app.ini [actions] na het venster:
+[actions]
+ENABLED = true
+→ nog steeds geen timeout-override; T_requeue = 600 s (evidence/stap-a/t-requeue.md, gemeten op 15.0.2) blijft geldig.

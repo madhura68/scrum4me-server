@@ -1,0 +1,19 @@
+===== 5.3 smoke (2026-09-30T13:39:39Z) =====
+add 201 9a86b31988059fb53da32795e7df0f06ed21b4cd
+dispatch 204 None
+15:39:40 {'id': 3727, 'index_in_repo': 89, 'run_number': None, 'status': 'waiting', 'conclusion': None, 'event': '', 'workflow_id': 'smoke-green.yml', 'title': '.forgejo/workflows/smoke-green.yml'}
+15:39:46 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:39:51 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:39:56 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:40:02 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:40:07 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:40:12 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'running', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+15:40:18 {'id': 3728, 'index_in_repo': 90, 'run_number': None, 'status': 'success', 'conclusion': None, 'event': 'push', 'workflow_id': 'ci.yml', 'title': 'chore(smoke): tijdelijke smoke-green workflow (Forgejo 15.0.9-venster)'}
+13:40:30 | 3728 90 ci.yml success push 2026-09-30T15:40:15+02:00 3727 89 smoke-green.yml success workflow_dispatch 2026-09-30T15:39:42+02:00 
+--- tasks (welke runner):
+{'id': 10101, 'name': 'Verify', 'workflow_id': 'ci.yml', 'status': 'success', 'event': 'push', 'run_number': 90, 'head_sha': '9a86b31988059fb53da32795e7df0f06ed21b4cd'}
+{'id': 10100, 'name': 'smoke', 'workflow_id': 'smoke-green.yml', 'status': 'success', 'event': 'workflow_dispatch', 'run_number': 89, 'head_sha': '9a86b31988059fb53da32795e7df0f06ed21b4cd'}
+{'id': 9418, 'name': 'Verify', 'workflow_id': 'ci.yml', 'status': 'success', 'event': 'push', 'run_number': 88, 'head_sha': '5f9afaa77cb2c364965c0658c0c9f3de9b8f3f33'}
+{'id': 9412, 'name': 'Verify', 'workflow_id': 'ci.yml', 'status': 'success', 'event': 'pull_request', 'run_number': 87, 'head_sha': '3b02ba08d888b714c710ec9e7f68168ca5e1f372'}
+delete 200
+bestaat na delete: 404

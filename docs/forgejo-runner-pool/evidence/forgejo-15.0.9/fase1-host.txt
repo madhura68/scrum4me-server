@@ -1,0 +1,25 @@
+
+===== 1.1 backupmap + R4-kopiepad (2026-09-30T13:14:36Z) =====
+mkdir-keten exit: 0
+root:root 700 /srv/backups/manual/forgejo-pre-15.0.9
+kopiepad exit: 0
+
+===== 1.2 warme kopie =====
+rsync exit: 0
+
+real	0m13.177s
+user	0m3.069s
+sys	0m7.955s
+2245444035	/srv/backups/manual/forgejo-pre-15.0.9/data
+
+===== 1.3 image ophalen =====
+codeberg.org/forgejo/forgejo:15.0.9
+pull exit: 0
+codeberg.org/forgejo/forgejo@sha256:91a5310c86934339e16bd06b6078aada836e3d8935b2d70f6598108cbfaed5d1
+
+===== extra: binaire namen in de 15.0.9-image (wegwerpcontainer, geen netwerk, buiten compose) =====
+lrwxrwxrwx    1 root     root             5 Sep 17 13:06 forgejo -> gitea
+-rwxr-xr-x    1 root     root           581 Sep 17 13:00 gitea
+forge ongemoeid: running codeberg.org/forgejo/forgejo:15.0.2 sinds 2026-09-26T07:28:15.345790088Z
+
+===== klaar 2026-09-30T13:15:29Z =====

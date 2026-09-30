@@ -1,0 +1,37 @@
+
+===== 2.4 configuratie-rollbackpunt (2026-09-30T13:25:47Z) =====
+GIT_CF=nee
+792f2102f4cdcbccad2256c4060f3f3e083981f1e9972b9c731c0f5d8eb285fd  /srv/backups/manual/forgejo-pre-15.0.9/app.ini.pre
+PRE_CF=52cbca210efd9534c45949721848e8e5457c32bcbd7a830e658f5de516bd4a6b
+PRE_SECRETS=d411bc138367… (sha256-vingerafdruk, ingekort)
+
+===== 2.5a trusted proxies (2026-09-30T13:25:47Z) =====
+sed exit: 0
+63:REVERSE_PROXY_TRUSTED_PROXIES = 127.0.0.0/8,::1/128,172.18.0.0/16
+
+===== 2.5b secretrotatie (2026-09-30T13:25:47Z) =====
+ROTATIE OK
+POST_SECRETS=8b9011943ace… (sha256-vingerafdruk, ingekort)
+app.ini eigenaar/mode: git:git 644 (verwacht git:git 644)
+
+===== 2.6 doctor + queues, dan stoppen (2026-09-30T13:25:48Z) =====
+doctor exit 0 → /home/janpeter/doctor-pre-venster.log
+VOORLOG VOLLEDIG
+Flushed
+flush-queues exit: 0
+scrum4me-forgejo
+Exited (0) Less than a second ago
+TSTOP=2026-09-30T13:25:52Z
+64cb7483f2662cb74b27d4b4a6e9ea62f4705be7235f10b4adb4f42af1ed1682 exited
+c526f9fb067ed46bd1e54dd9dee3ecfc985b15aadca110a14227faad734abc46 running
+
+===== 2.7 koud rollbackpunt (2026-09-30T13:25:52Z) =====
+bbfcb717d86e0259b6857a0f226a89aff5e933fa696d1a396e268b510de25adb  /srv/backups/manual/forgejo-pre-15.0.9/forgejo-pre-15.0.9.dump
+39721045
+KOUD ROLLBACKPUNT OK
+
+real	0m2.038s
+user	0m0.569s
+sys	0m1.033s
+
+===== Gate 2 host-deel klaar (2026-09-30T13:26:00Z) =====

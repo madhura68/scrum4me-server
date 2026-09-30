@@ -1,0 +1,125 @@
+== doctor-pre-venster.log: 28 checks, niet-OK-verdicts: V Check if OpenSSH authorized_keys file is up-to-date ERROR;
+I	Check if there are orphaned archives in storage	 - [W] Found 261/261 (1.3 GiB/1.3 GiB) orphaned repo archive(s)
+V	Check if there are orphaned archives in storage	OK
+V	Check if there are orphaned attachments in storage	OK
+V	Check if there are orphaned avatars in storage	OK
+V	Check if there are orphaned lfs files in storage	OK
+V	Check if there are orphaned package blobs in storage	OK
+I	Check if there are orphaned storage files	 - [W] Found 261/261 (1.3 GiB/1.3 GiB) orphaned repo archive(s)
+V	Check if there are orphaned storage files	OK
+V	Deleted all content related to orphaned repos	OK
+I-regels: 95
+== doctor-post.log: 28 checks, niet-OK-verdicts: 
+I	Check if there are orphaned archives in storage	 - [W] Found 32/32 (218 MiB/218 MiB) orphaned repo archive(s)
+V	Check if there are orphaned archives in storage	OK
+V	Check if there are orphaned attachments in storage	OK
+V	Check if there are orphaned avatars in storage	OK
+V	Check if there are orphaned lfs files in storage	OK
+V	Check if there are orphaned package blobs in storage	OK
+I	Check if there are orphaned storage files	 - [W] Found 32/32 (218 MiB/218 MiB) orphaned repo archive(s)
+V	Check if there are orphaned storage files	OK
+V	Deleted all content related to orphaned repos	OK
+I-regels: 2
+== verdwenen t.o.v. vóór (behalve orphaned):
+6,11c6
+< I	Check if OpenSSH authorized_keys file is up-to-date	 - [E] Key on line 2 of /data/git/.ssh/authorized_keys does not exist in database
+< I	Check if OpenSSH authorized_keys file is up-to-date	 - [E] Key on line 4 of /data/git/.ssh/authorized_keys does not exist in database
+< I	Check if OpenSSH authorized_keys file is up-to-date	 - [E] Key in database is not present in /data/git/.ssh/authorized_keys: command="/usr/local/bin/forgejo --config=/data/gitea/conf/app.ini serv key-1",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,restrict ssh-ed25519 <pubkey> janpeter@scrum4me-server
+< I	Check if OpenSSH authorized_keys file is up-to-date	 - [E] Key in database is not present in /data/git/.ssh/authorized_keys: command="/usr/local/bin/forgejo --config=/data/gitea/conf/app.ini serv key-2",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,restrict ssh-ed25519 <pubkey> ops-agent-digiplein-deploy
+< I	Check if OpenSSH authorized_keys file is up-to-date	 - [E] authorized_keys file "/data/git/.ssh/authorized_keys" contains validity errors.
+< V	Check if OpenSSH authorized_keys file is up-to-date	ERROR
+---
+> V	Check if OpenSSH authorized_keys file is up-to-date	OK
+13,100d7
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-docker.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-mcp.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/ops-dashboard.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/jp-visser.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/jp-visser.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/inspannings-monitor.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/imageinventory.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/imageinventory.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/media-organizer.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/media-organizer.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/private-mcp.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/private-mcp.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scraper.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scraper.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/sitescraper.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/sitescraper.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-shared.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-workers.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/s4m-queue.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/digiplein.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/digiplein.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-copilot.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4us.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4us.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/video-editor.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/video-editor.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/max2.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/max2.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/scrum4me-server.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/when2watch.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/when2watch.git/hooks/proc-receive is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/pre-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/update.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] new hook file /data/git/repositories/janpeter/agent-harness.git/hooks/post-receive.d/gitea is out of date
+< I	Check if hook files are up-to-date and executable	 - [W] old hook file /data/git/repositories/janpeter/agent-harness.git/hooks/proc-receive is out of date
+== archief-opruiming in de startlogs:
+2026/09/30 15:31:17 ...s/storage/storage.go:179:initRepoArchives() [I] Initialising Repository Archive storage with type: local
+2026/09/30 15:31:17 ...les/storage/local.go:33:NewLocalStorage() [I] Creating new Local Storage at /data/gitea/repo-archive
+repo-archive op schijf: 32 bestanden; in kopie van vóór de wissel: 32

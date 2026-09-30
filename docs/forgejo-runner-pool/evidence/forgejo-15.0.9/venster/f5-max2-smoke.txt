@@ -1,0 +1,7 @@
+Sep 30 15:36:00 max2 python3[2191581]: 2026-09-30 15:36:00,607 INFO cyclus: runner gestart
+Sep 30 15:36:01 max2 python3[2193172]: time="2026-09-30T13:36:01Z" level=info msg="runner: max2-forgejo-runner-02, with version: v12.10.1, with labels: [ubuntu-latest], ephemeral: false, declared succ
+Sep 30 15:39:41 max2 python3[2193172]: time="2026-09-30T13:39:41Z" level=info msg="task 10100 repo is janpeter/scrum4me-shared https://data.forgejo.org https://git.jp-visser.nl"
+Sep 30 15:39:43 max2 python3[2191581]: 2026-09-30 15:39:43,395 INFO cyclus: runner exit rc=0
+Sep 30 15:39:44 max2 python3[2191581]: 2026-09-30 15:39:44,398 INFO cyclus: scrub ok=True
+Sep 30 15:39:45 max2 python3[2191581]: 2026-09-30 15:39:45,401 INFO cyclus: runner gestart
+Sep 30 15:39:46 max2 python3[2200468]: time="2026-09-30T13:39:46Z" level=info msg="runner: max2-forgejo-runner-02, with version: v12.10.1, with labels: [ubuntu-latest], ephemeral: false, declared succ

@@ -1,0 +1,4 @@
+===== 3.3 routerlog (2026-09-30T13:29:44Z) =====
+2026/09/30 15:29:43 ...eb/routing/logger.go:102:func1() [I] router: completed GET /api/v1/version for 172.18.0.1:59492, 200 OK in 0.2ms @ misc/version.go:15(misc.Version)
+2026/09/30 15:29:44 ...eb/routing/logger.go:102:func1() [I] router: completed GET /api/v1/version for 217.103.235.127:0, 200 OK in 0.1ms @ misc/version.go:15(misc.Version)
+caddy-ip in de laatste regels: 1

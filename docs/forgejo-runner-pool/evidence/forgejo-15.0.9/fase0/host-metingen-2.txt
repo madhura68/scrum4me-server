@@ -1,0 +1,14 @@
+===== 0.11 subnet =====
+172.18.0.0/16 
+===== app.ini (geen secretwaarden) =====
+DB_TYPE = postgres
+HOST = scrum4me-postgres:5432
+NAME = forgejo
+USER = forgejo
+63:REVERSE_PROXY_TRUSTED_PROXIES = *
+secretregels: 2
+[actions]
+ENABLED = true
+
+[mailer]
+0
