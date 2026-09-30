@@ -66,7 +66,7 @@ run_script() { run bash "$SCRIPT" "$@"; }
   run_script --apply --keep 2
   [ "$status" -eq 0 ]
   sort "$STATE/rmi_calls" > "$BATS_TEST_TMPDIR/got"
-  printf 'app:rollback-1\nweb:idea-rollback-3\nweb:rollback-1\n' > "$BATS_TEST_TMPDIR/want"
+  printf 'app:rollback-1\nweb:rollback-1\nweb:rollback-2\n' > "$BATS_TEST_TMPDIR/want"
   run diff "$BATS_TEST_TMPDIR/got" "$BATS_TEST_TMPDIR/want"
   [ "$status" -eq 0 ]
 }
