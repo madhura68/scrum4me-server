@@ -43,7 +43,9 @@ koppeling met het databaserecord liep via de laatste acht tekens zonder die te t
 | Token | id 39 `trust-scan-max2-2026-10`, aangemaakt 2026-09-30 |
 | Scopes | `read:admin, read:repository` |
 
-## Open (T-150)
+## Afgerond (T-150), 2026-09-30 ± 22:40
 
-- `FREX_RUNNER` (id 26) intrekken door JP, ná minstens één groene timerslag met het nieuwe token.
-- Daarna `credentials/trust-scan.env.bak-frex-20260930` op max2 verwijderen: het bevat het oude token.
+- JP trok `FREX_RUNNER` (id 26) in; de `access_token`-tabel bevat alleen nog id 39.
+- Handmatige `systemctl start forgejo-runner-trust.service` na het intrekken: success, `ok: true`, `measured_at` 1790801019.
+- `credentials/trust-scan.env.bak-frex-20260930` op max2 verwijderd; in `credentials/` staan alleen `forgejo-token` en `trust-scan.env`.
+- `forgejo-runner/README.md` stap 9 noemt de scopes en toont geen token meer op de commandoregel; de rotatiekaart is bijgewerkt.
