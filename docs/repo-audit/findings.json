@@ -1,0 +1,1093 @@
+[
+  {
+    "id": "AUDIT-001",
+    "category": "security",
+    "title": "Every CI job controls a privileged Docker-in-Docker on the production host (documented, accepted risk)",
+    "severity": "HIGH",
+    "confidence": "HIGH",
+    "observation": "The runner policy hands every job and step container DOCKER_HOST=tcp://dind.internal:2375. The DinD container is privileged and its API is unauthenticated. A workflow can therefore ask DinD to start a privileged container. The job-level settings privileged:false and valid_volumes:[] restrict only the job container itself. The design accepts this explicitly for trusted workflows and names the trust gate as the control.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/runner-config.policy.yml",
+        "lines": "13-14,19-24"
+      },
+      {
+        "file": "forgejo-runner/compose.yaml",
+        "lines": "7-13"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "203-224,272-279"
+      },
+      {
+        "file": "forgejo-runner/trusted-actions-scope.yml",
+        "lines": "12-27"
+      }
+    ],
+    "impact": "Whoever can get a workflow to run on the shared label is effectively root on a host that also runs Forgejo and Postgres. This is a recorded risk acceptance by the owner, not a defect; it is listed because AUDIT-003, AUDIT-008, AUDIT-009, AUDIT-010, AUDIT-012 and AUDIT-013 each weaken the boundary that acceptance relies on.",
+    "recommendation": "Keep the acceptance text in the design in sync with the findings that weaken it; the design's own phase-2 intent (rootless or unprivileged DinD) remains the structural answer.",
+    "verification": "Design decision; read the cited design sections. Not tested against a live host.",
+    "sourceIds": [
+      "SEC-4"
+    ],
+    "leadVerified": "Policy and compose files read by the lead; acceptance text located in the design.",
+    "candidatePbi": false,
+    "status": "accepted-risk"
+  },
+  {
+    "id": "AUDIT-002",
+    "category": "security",
+    "title": "Pre-commit secret scan has a fail-open path and several false negatives",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "secret-scan.sh (the only automated guard behind the 'no secrets in Git' hard-stop) misses: (a) renamed-and-edited files, because the staged list uses --diff-filter=ACM; (b) everything when bash resolves to 3.2, because mapfile is missing, the list stays empty and the script exits 0; (c) any line that also contains a UUID, 'sha256:' or 'token_url', which is dropped as a whole; (d) PKCS#8 'BEGIN PRIVATE KEY' blocks; (e) single-quoted values and key names without token/secret/password such as API_KEY; (f) file names such as .env.local, prod.env and *.token. It greps the working-tree file rather than the staged blob. The hook is installed per clone by hand; there is no server-side hook and no CI.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/secret-scan.sh",
+        "lines": "7-13,17,21-25,28,43-44"
+      },
+      {
+        "file": "forgejo-runner/scripts/install-git-hooks.sh",
+        "lines": "28-33"
+      },
+      {
+        "file": "scripts/compose-git-pre-commit",
+        "lines": "20,75-76,93"
+      }
+    ],
+    "impact": "A secret can be committed past the hook in ordinary workflows (git mv plus edit; a JSON line carrying both uuid and token, which is the shape capture-forgejo-records.sh writes). History is clean today, so this is a weakened control, not a leak.",
+    "recommendation": "Scan staged blobs including renames, fail closed when the file list cannot be built, replace the whole-line exclusion by stripping the allowed tokens, widen key and file-name patterns, and align with the stricter rules already present in compose-git-pre-commit. Consider a server-side or scheduled scan.",
+    "verification": "Reproduced by the lead on 2026-09-30 with dummy values in a throw-away repository: rename plus token line gives exit 0 in staged mode and exit 70 when the same file is passed explicitly; /bin/bash 3.2 prints 'mapfile: command not found' and exits 0; synthetic files for cases (c), (d), (e) and (f) all exit 0.",
+    "sourceIds": [
+      "SEC-9",
+      "TEST-7",
+      "CQ-7"
+    ],
+    "leadVerified": "Reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-003",
+    "category": "security",
+    "title": "A waiting runner is not stopped when the trust gate turns red or a fence is set",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "Gate results only feed controller.gates_groen, which is consulted in _may_start before a new runner start. The only path that stops a running 'one-job --wait' child is request_stop, reached from SIGTERM/SIGINT. The state machine moves WAITING to DRAINING on a fence, but the runtime does not act on that state. The design says a WAITING runner is stopped gracefully.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "181-207,319-325"
+      },
+      {
+        "file": "forgejo-runner/scripts/forgejo_runner_cycle.py",
+        "lines": "292-304"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "115"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/controller-entrypoint-ontwerp.md",
+        "lines": "28-47,319-326"
+      }
+    ],
+    "impact": "After a hard trust deviation, an expired verdict or a changed allow-list, each host still accepts one more job on the privileged DinD. Rated MEDIUM rather than HIGH because the window is bounded to one job per host and the scan itself only runs every six hours, so detection latency already dominates.",
+    "recommendation": "Owner decision 2026-09-30: the one-job window is acceptable. Remaining work: record it in the design as part of the thin-slice limitation (a post-GO design change, so via delta review), so the design no longer states that a WAITING runner is stopped.",
+    "verification": "Reproduced by the lead with the repository's fake-adapter harness: runner started, trust gate forced red for 600 simulated seconds; gates_groen was False, the child was still running and had received no signal.",
+    "sourceIds": [
+      "ARCH-1",
+      "SEC-6"
+    ],
+    "leadVerified": "Reproduced (fakes, not a live host).",
+    "candidatePbi": true,
+    "status": "accepted-risk"
+  },
+  {
+    "id": "AUDIT-004",
+    "category": "reliability",
+    "title": "Scrub, pre-pull and runner operations have no deadline; a hung docker call stalls the pool silently",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "subprocess_timeout_seconds applies only to short subprocess.run calls. Pull, scrub and runner are started with Popen and only polled; the runtime has no per-operation deadline. scrub-dind.sh compares its 300 s budget once, after all work has finished. The unit is Type=simple without WatchdogSec. The design requires a scrub over five minutes to alert and quarantine.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_adapters.py",
+        "lines": "62-73,90-91,126-143"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "194-195,214-238"
+      },
+      {
+        "file": "forgejo-runner/scripts/scrub-dind.sh",
+        "lines": "84-86"
+      },
+      {
+        "file": "forgejo-runner/forgejo-runner-cycle.service",
+        "lines": "8-21"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "347"
+      }
+    ],
+    "impact": "A wedged DinD leaves the controller busy forever while the unit is active and DinD looks healthy: no runner, no alarm, no log line.",
+    "recommendation": "A monotonic deadline per operation that terminates it, raises an alarm and lands in a defined state; enforce the scrub budget while it runs, not afterwards.",
+    "verification": "Reproduced by the lead with the fake-adapter harness: a scrub whose poll never returns was still the active operation after 7200 simulated seconds, with zero runner starts and zero alarm events.",
+    "sourceIds": [
+      "ARCH-4",
+      "REL-1",
+      "CQ-5"
+    ],
+    "leadVerified": "Reproduced (fakes).",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-005",
+    "category": "reliability",
+    "title": "The controller's blocked state is a latch that never clears and is set by routine failures",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "_blocked is set on a failed pre-pull, on a leftover runner container at start-up and on any reconcile exception. No code path resets it. While blocked, no cycle step and no runner start happens, but the process stays alive, so Restart=on-failure never fires. The only trace is one warning line.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "147,197-199,232-238,253-255,299-317"
+      }
+    ],
+    "impact": "One transient registry error, or a controller crash that leaves a runner container behind, takes the host out of the pool until an operator restarts the unit or removes the container. Nothing alarms on it.",
+    "recommendation": "Give retryable causes a bounded retry with backoff, keep the latch only for states that need a human, and expose the reason in a way monitoring can see.",
+    "verification": "Reproduced by the lead with the fake-adapter harness: one pre-pull with rc=1 followed by an hour of healthy conditions gave blocked=True, one pull attempt in total and zero runner starts.",
+    "sourceIds": [
+      "ARCH-2"
+    ],
+    "leadVerified": "Reproduced (fakes).",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-006",
+    "category": "architecture",
+    "title": "QUARANTINED after a runner failure re-opens automatically, producing a start-fail loop",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "A non-zero runner exit leads to QUARANTINED after the scrub. The cold-start branch of the readiness handler moves QUARANTINED back to WAITING on the next confirmed READY with green gates, and a successful scrub restores clean_proven, so the runner starts again. The migration design says not to re-open after a runner failure; the controller-entrypoint design acknowledges the re-open and argues the scrub covers it. The two approved documents disagree.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/forgejo_runner_cycle.py",
+        "lines": "326-333,396-403"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "226-231"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "335,339,341"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/controller-entrypoint-ontwerp.md",
+        "lines": "298-309"
+      }
+    ],
+    "impact": "A configuration or credential error produces a continuous loop of registration attempts, scrubs and pre-pulls instead of a visible halt, and quarantine cannot be relied on as a stop.",
+    "recommendation": "Decide which document is authoritative: make runner-failure quarantine sticky until cleared, or amend the migration design through a delta review and add a backoff.",
+    "verification": "Reproduced by the lead with the fake-adapter harness: a runner that always exits 1 was started five times in 300 simulated seconds.",
+    "sourceIds": [
+      "ARCH-3"
+    ],
+    "leadVerified": "Reproduced (fakes).",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-007",
+    "category": "reliability",
+    "title": "A single failed readiness probe raises a spurious alarm and delays the runner, because fence recovery is not wired",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "Fence recovery requires controller.nulbewijs_ok, which production code never sets; maintenance and algemene_readiness_bevestigd are likewise only initialised. After one non-READY probe the fence therefore cannot be resolved by good probes and is committed by the 60 s deadline watchdog as an alarm. The unit tests that show recovery set the flags by hand. The deferral of the assignment proof is documented; this consequence is not.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/forgejo_runner_cycle.py",
+        "lines": "221-231,316-325,352-379"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "181-192,268-288"
+      },
+      {
+        "file": "forgejo-runner/tests/test_cycle_fence.py",
+        "lines": "142,150"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/controller-entrypoint-ontwerp.md",
+        "lines": "33-37"
+      }
+    ],
+    "impact": "Every transient blip (for example a Forgejo restart) produces a 'fence-deadline bereikt' alarm and roughly 90 s of extra delay before a runner is offered. Alarm noise lowers the value of the alarm channel.",
+    "recommendation": "Either wire the inputs or mark the paths as not operative and make the thin-slice recovery rule explicit in code and tests.",
+    "verification": "Reproduced by the lead with the fake-adapter harness: with all probes good the runner starts at t=30 s; with only the first probe failing it starts at t=120 s after one fence_set and one alarm event.",
+    "sourceIds": [
+      "REL-2",
+      "CQ-19"
+    ],
+    "leadVerified": "Reproduced (fakes).",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-008",
+    "category": "reliability",
+    "title": "scrub-dind.sh reports 'proven clean' when the DinD daemon does not answer",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "The script runs with 'set -eu' and no pipefail. Every proof is an is-the-output-empty test on a docker command, and the build-cache proof defaults an empty value to 0B. If the daemon does not answer, all outputs are empty, all five proofs print OK and the script exits 0 having measured nothing. The clean-up loops silently do nothing in the same situation.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/scrub-dind.sh",
+        "lines": "11,42-58,67-82"
+      },
+      {
+        "file": "forgejo-runner/tests/test_scrub_dind.bats",
+        "lines": "14-40"
+      }
+    ],
+    "impact": "Residue of a previous job could survive into the next one while the controller records clean_proven. Mitigated by 'compose exec' failing when the container is down and by the separate DinD health gate, so the window is 'container up, daemon not answering'.",
+    "recommendation": "Require a positive liveness signal from the daemon as part of the proof and treat empty-because-error as failure.",
+    "verification": "Confirmed by reading; not executed. Provable with a stub docker that exits 1 for every call.",
+    "sourceIds": [
+      "CQ-2"
+    ],
+    "leadVerified": "Logic read by the lead; not reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-009",
+    "category": "security",
+    "title": "The between-job scrub runs inside the long-lived DinD that the previous job controlled",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "The DinD container (restart: always) and its data volume persist across jobs. The scrub is executed inside that container with its own docker CLI. A job that uses the DinD API to start a privileged container can alter the DinD file system or image store, so the proof is produced by tooling the previous job could have changed.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/compose.yaml",
+        "lines": "7-18"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_adapters.py",
+        "lines": "120-143"
+      },
+      {
+        "file": "forgejo-runner/scripts/scrub-dind.sh",
+        "lines": "25,60-87"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "313"
+      }
+    ],
+    "impact": "Inferred: a hostile or compromised workflow in one repository could influence later jobs of other repositories on the same host. Inside the 'trusted workflows' premise of AUDIT-001, but the scrub is presented as proof of 'no state between jobs'.",
+    "recommendation": "Recreate the DinD container (and ideally the volume) per cycle, or state in the design that the scrub is hygiene and not a security boundary.",
+    "verification": "Not tested. A cycle test showing a fresh container ID per job, or updated design text, would settle it.",
+    "sourceIds": [
+      "SEC-7"
+    ],
+    "leadVerified": "Structure confirmed from compose and adapter code; consequence is inferred.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-010",
+    "category": "security",
+    "title": "DinD API moved from TLS with client certificates to plain TCP without a recorded decision",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "The bundle starts dockerd with --host=tcp://0.0.0.0:2375 --tls=false on a bridge with internal:false. The captured legacy stack used DOCKER_TLS_VERIFY=1 on port 2376. The word 'tls' does not occur in the migration design. verify-stack.sh only checks that nothing listens on 2375/2376 in the host network namespace.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/compose.yaml",
+        "lines": "10-13,63-66"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/evidence/stap-a/scrum4me-server/containers.json",
+        "lines": "21-23"
+      },
+      {
+        "file": "forgejo-runner/scripts/verify-stack.sh",
+        "lines": "28-32"
+      }
+    ],
+    "impact": "Inferred, not tested: any local process that can route to the bridge address can drive the API of a privileged container, which is a local privilege escalation path on the production host. No port is published; accounts already in the docker group gain nothing new.",
+    "recommendation": "Record the decision (why TLS went away, who may reach the bridge) and consider a host firewall rule or TLS for the runner side.",
+    "verification": "On a host, from an unprivileged account, request /_ping on the DinD bridge address; it should fail.",
+    "sourceIds": [
+      "SEC-3"
+    ],
+    "leadVerified": "Legacy TLS settings confirmed in evidence; absence of 'tls' in the design confirmed by grep. Reachability not tested.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-011",
+    "category": "security",
+    "title": "Mirror script places tokens in git URLs, in a persisted clone config and in process arguments",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "tags_fallback clones with https://user:token@host and pushes to GitHub the same way. A bare clone stores that URL as remote.origin.url, and the later 'git fetch origin' depends on the stored URL. Tokens also appear in argv through curl -H, jq --arg and curl --data. The README admits only the header case. The clone directory is not in the credential inventory of the rotation runbook.",
+    "evidence": [
+      {
+        "file": "scripts/forgejo-mirror/forgejo-mirror-lib.sh",
+        "lines": "39-46,59-75,98-114,277-282,381-405"
+      },
+      {
+        "file": "scripts/forgejo-mirror/README.md",
+        "lines": "30-31"
+      },
+      {
+        "file": "docs/runbooks/credential-rotation.md",
+        "lines": "30-33,578"
+      }
+    ],
+    "impact": "A write-scoped Forgejo token may sit in plain text under the mirror clone directory, unknown to the rotation procedure, and after a rotation the stored URL silently keeps the old token. Both tokens are readable from the process list during the nightly run. The clone path is only taken when tag verification fails; per the owner (2026-09-30) the clone directory exists and is empty, so no token is persisted today and that part is latent; the argv exposure applies to every nightly run.",
+    "recommendation": "Keep credentials out of URLs and argv (credential helper, header from a 0600 file, data from stdin) and add the clone directory to the rotation card.",
+    "verification": "On the host: check that remote.origin.url of any mirror clone has no userinfo (without printing it). Code path confirmed by reading.",
+    "sourceIds": [
+      "SEC-1",
+      "SEC-2",
+      "ARCH-7",
+      "CQ-12"
+    ],
+    "leadVerified": "Code read by the lead with token values masked. Host state not inspected.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-012",
+    "category": "security",
+    "title": "Trust scan can be green while an unapproved path exists (under-detection)",
+    "severity": "LOW",
+    "confidence": "MEDIUM",
+    "observation": "Observed in code: (1) only the default branch is scanned; (2) use of the shared label is a substring test on workflow text, so an expression-built runs-on downgrades a risky trigger from hard to soft; (3) writers are owner, collaborators and team members, not deploy keys or instance admins; (4) pagination stops when a page has fewer than 50 items and does not check a total count, and the teams endpoint is not paginated; (5) the measured set is whatever the token can see.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/trust_scope.py",
+        "lines": "39,126,133-198,352-365"
+      },
+      {
+        "file": "forgejo-runner/scripts/trust_scope_cli.py",
+        "lines": "56-112"
+      },
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "87"
+      }
+    ],
+    "impact": "The gate that carries the accepted risk of AUDIT-001 can under-report. Item 1 is documented. Items 2 and 3 need an already trusted writer or admin. Item 4 is latent: the instance's max_response_items is 50, equal to the scanner's page size, so pagination is complete today (22 repositories, all user-owned, so the unpaginated teams endpoint returns 405 and is not used). It would break silently if the instance setting were lowered. Item 5 does not apply today: the token belongs to a site administrator and sees all 22 repositories. Downgraded from MEDIUM to LOW after measurement.",
+    "recommendation": "Compare collected counts with the server-reported total, treat a risky trigger without a resolvable label as hard unless acknowledged, add deploy keys to the writer inventory, and document item 1 next to the existing acknowledgement text.",
+    "verification": "Measured by the lead on 2026-09-30, read-only: GET /api/v1/settings/api returns max_response_items 50 and default_paging_num 30; /repos/search reports X-Total-Count 22; /repos/{owner}/{repo}/teams returns 405 for a user-owned repository. Items 2 and 3 not measured.",
+    "sourceIds": [
+      "SEC-8",
+      "REL-8"
+    ],
+    "leadVerified": "Item 4 and 5 measured against the live instance.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-013",
+    "category": "security",
+    "title": "A repository-admin API token lives on the CI hosts, and documentation shows tokens inline on the command line",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "The trust scan needs an account with admin rights on every Actions-enabled repository; its token is stored on the runner host. Measured on max2: the token in credentials/trust-scan.env is the Forgejo access token named FREX_RUNNER of the site administrator account, with scopes read:activitypub, read:admin, write:misc, write:notification, write:organization, write:package, write:issue and write:repository. The scan only performs GET requests. The token's name does not identify the trust scan, which suggests it is shared with another purpose (not verified). The README does not ask for read-only scopes, and the README and an implementation plan show the 'VAR=value command' form that rule A.1 of the rotation runbook forbids.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "41-56"
+      },
+      {
+        "file": "forgejo-runner/forgejo-runner-trust.service",
+        "lines": "16-19"
+      },
+      {
+        "file": "docs/runbooks/credential-rotation.md",
+        "lines": "30-33"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/implementatieplan-forgejo-15.0.7.md",
+        "lines": "49,119-120"
+      }
+    ],
+    "impact": "A compromise of max2 (for example the container escape that AUDIT-001 accepts as possible) yields write access to every repository and organisation on the instance, including this repository with the allow-list and the bundle code that both hosts deploy. That turns a single-host compromise into a compromise of the forge. The inline examples put token values in shell history.",
+    "recommendation": "Issue a dedicated token for the trust scan with read scopes only (read:repository, read:admin, plus read:organization if teams are scanned), rotate the current one, and state the required scopes in the README; replace inline examples by a file or stdin form.",
+    "verification": "Measured by the lead on 2026-09-30, read-only: the token was matched to its database record by the last eight characters without displaying either, and its scopes were read from Forgejo's access_token table (name and scope columns only). GET probes with the token: /user 403 (missing read:user), /admin/users 200, /repos/search 200, collaborators and branch_protections 200.",
+    "sourceIds": [
+      "SEC-5",
+      "SEC-16"
+    ],
+    "leadVerified": "Measured.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-014",
+    "category": "testing",
+    "title": "No CI and no single verification entry point; the documented loop can hide failures",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "No workflow exists under .forgejo/ or .github/. Validation is three hand-run commands in forgejo-runner/README.md. The Python loop returns the status of the last file only. The shellcheck glob omits scripts/lib and everything under scripts/. scripts/tests has no documented command. No linter or type-checker configuration is tracked. CLAUDE.md states the repository has no code and no verify command.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "89-93"
+      },
+      {
+        "file": "CLAUDE.md",
+        "lines": "13"
+      },
+      {
+        "file": "docs/repo-audit/verification.md",
+        "lines": "1-87"
+      }
+    ],
+    "impact": "470 test cases exist but nothing forces them to run before a bundle commit is rolled out to two hosts; a wrapper around the documented loop can report success while an earlier file failed; the mirror scripts' three shellcheck warnings are invisible to the documented check.",
+    "recommendation": "One committed entry point that runs every suite and linter, aggregates exit codes and reports skips; then decide whether a read-only CI job may call it (the hard-stop forbids deploying through Actions, not checking).",
+    "verification": "Lead ran all suites on 2026-09-30 (see verification.md). The exit-status behaviour of a for-loop is shell semantics.",
+    "sourceIds": [
+      "TEST-3",
+      "DEP-4"
+    ],
+    "leadVerified": "Absence of CI and the documented commands confirmed; suites executed by the lead.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-015",
+    "category": "testing",
+    "title": "Target-platform tests skip silently: compose-inpak has zero executed tests off Linux",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "All 14 compose-inpak tests are skipped without GNU tar, the two Postgres integration tests need an opt-in variable, one ACL test needs Linux, and the only test that runs the real runner image needs timeout(1). The suites still print OK and exit 0.",
+    "evidence": [
+      {
+        "file": "scripts/tests/test_compose_inpak.py",
+        "lines": "35"
+      },
+      {
+        "file": "scripts/tests/test_integration_pg.py",
+        "lines": "27"
+      },
+      {
+        "file": "forgejo-runner/tests/test_compose_runner_exec.bats",
+        "lines": "15-20"
+      }
+    ],
+    "impact": "On the workstation where development happens, a green run proves nothing about the delete-after-verify logic of compose-inpak, the end-to-end rotation or the runner image contract. With no CI, nothing guarantees a Linux run.",
+    "recommendation": "Make skips visible in the summary of the single entry point and define where the Linux-only tests must run before a change is rolled out.",
+    "verification": "Observed by the lead: 17 of 95 scripts/tests cases and 1 of 137 bats cases skipped on macOS.",
+    "sourceIds": [
+      "TEST-1",
+      "TEST-9"
+    ],
+    "leadVerified": "Observed in execution.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-016",
+    "category": "testing",
+    "title": "The mirror and rollback-retention scripts have no tests",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "554 lines of mirror code and 62 lines of retention code are referenced by no test file and have no fakes. Both were merged on 2026-09-30 (pull requests 77 and 78). The retention script has no caller, unit or README in the repository.",
+    "evidence": [
+      {
+        "file": "scripts/forgejo-mirror/forgejo-mirror-lib.sh",
+        "lines": "1-425"
+      },
+      {
+        "file": "scripts/forgejo-mirror/forgejo-mirror-sync.sh",
+        "lines": "1-129"
+      },
+      {
+        "file": "scripts/docker-rollback-retention/docker-rollback-retention.sh",
+        "lines": "1-62"
+      }
+    ],
+    "impact": "The mirror force-pushes tags and rewrites push-mirror configuration; the retention script removes image tags. Neither has a regression net, and AUDIT-017 and AUDIT-018 list defects that tests of this kind would expose.",
+    "recommendation": "Bats tests with fake curl, docker, jq and flock following the pattern already used for the bundle scripts.",
+    "verification": "grep for the script names under both test directories returns nothing.",
+    "sourceIds": [
+      "TEST-2"
+    ],
+    "leadVerified": "Confirmed by the coverage matrix and grep.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-017",
+    "category": "code-quality",
+    "title": "Mirror script logic defects: fatal state write, non-200 treated as 'no workflows', unpaginated tag compare, fragile token lookup",
+    "severity": "LOW",
+    "confidence": "MEDIUM",
+    "observation": "(a) update_state is called as a plain statement under 'set -euo pipefail'; a jq or mv failure aborts the run after the first repository, and nothing reads state.json. (b) has_workflows treats every status other than 200 as 'no workflows'. (c) verify_tags compares only the first page of each tags endpoint, and a mismatch triggers a forced tag push. (d) gh_token_for_repo maps only '-' to '_', so a repository name with a dot produces an invalid variable name and an empty token.",
+    "evidence": [
+      {
+        "file": "scripts/forgejo-mirror/forgejo-mirror-sync.sh",
+        "lines": "20,70-76,94-101"
+      },
+      {
+        "file": "scripts/forgejo-mirror/forgejo-mirror-lib.sh",
+        "lines": "89-93,168-172,363-364,404-405,411-425"
+      }
+    ],
+    "impact": "A corrupt or unwritable state file stops mirroring of all remaining repositories every night; an API hiccup mirrors a repository the default token cannot push. Items (c) and (d) are latent today: measured on 2026-09-30, the largest tag count of the 22 repositories is 10 (below one page of 30) and no repository name contains a character outside [A-Za-z0-9_-]. Downgraded from MEDIUM to LOW after measurement.",
+    "recommendation": "Make state persistence non-fatal or remove it, treat only 404 as 'absent', paginate both tag lists, and sanitise or reject repository names for the token lookup.",
+    "verification": "Item (a) read by the lead (set -e at line 20, call at line 101 inside a then-branch). Items (c) and (d) measured against the live instance (tag counts and repository names). Item (b) not reproduced.",
+    "sourceIds": [
+      "REL-4",
+      "CQ-8",
+      "CQ-9",
+      "CQ-10",
+      "CQ-11"
+    ],
+    "leadVerified": "Item (a) read; others not independently reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-018",
+    "category": "reliability",
+    "title": "Rollback-retention safety guard can be silently empty and the run can abort mid-apply",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "The in-use set and the row list are filled from process substitutions whose failure does not reach the parent shell. A failing size lookup inside the loop aborts the script under pipefail before the summary. The tag filter matches any tag containing 'rollback'; ordering relies on the textual CreatedAt value.",
+    "evidence": [
+      {
+        "file": "scripts/docker-rollback-retention/docker-rollback-retention.sh",
+        "lines": "17,31-41,45-62"
+      }
+    ],
+    "impact": "If enumeration of containers fails, the promise 'never touches an image a container uses' rests only on 'docker rmi' without -f refusing. A failed image listing prints a normal summary with zero rows.",
+    "recommendation": "Capture enumeration output first and fail on error, handle a vanished image per row, match the tag pattern exactly.",
+    "verification": "Read by the lead. Provable with a fake docker that fails on inspect.",
+    "sourceIds": [
+      "REL-6",
+      "CQ-13"
+    ],
+    "leadVerified": "Code read.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-019",
+    "category": "code-quality",
+    "title": "The documented controller configuration check is a silent no-op",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "controller.toml.example and the step-D bring-up runbook tell the operator to run 'cycle_runtime.py --config controller.toml --check'. cycle_runtime.py has no main guard, so the command imports the module and exits 0 whatever the arguments. The real entry point, forgejo_runner_cycle.py, does validate, but only key presence: it does not check that configured paths exist, numeric ranges or the log level.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/controller.toml.example",
+        "lines": "7"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "52-71,395-418"
+      },
+      {
+        "file": "forgejo-runner/scripts/forgejo_runner_cycle.py",
+        "lines": "420-422"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/evidence/stap-d/bring-up-runbook.md",
+        "lines": "155-158"
+      }
+    ],
+    "impact": "A broken or missing controller.toml passes the documented rollout check; the error surfaces only when the unit starts.",
+    "recommendation": "Point the documentation at the real entry point and let the check verify the configured files, paths and value ranges.",
+    "verification": "Reproduced by the lead: the documented command against a non-existent config exits 0 with no output; the real entry point prints a config error and exits 2.",
+    "sourceIds": [
+      "CQ-1",
+      "CQ-22"
+    ],
+    "leadVerified": "Reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-020",
+    "category": "reliability",
+    "title": "Controller loop has no guard against unexpected exceptions; a crash with a live runner leads to the blocked latch",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "tick and run have no top-level exception handling. The transport probe does not catch http.client exceptions raised while reading the body, the verdict reader catches only FileNotFoundError and ValueError, and starting the runner can raise OSError. An escape ends the process; systemd restarts it after 10 s; if a runner container survived, start-up reconciliation sets the blocked latch of AUDIT-005.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_adapters.py",
+        "lines": "24-59,90-91,217-231"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "181-186,263-288,299-307"
+      }
+    ],
+    "impact": "A Forgejo restart or upgrade at the wrong moment can turn into a host that stays out of the pool until an operator intervenes. The trigger probability was not measured.",
+    "recommendation": "Classify unexpected exceptions in probe and gates as a fail-closed fault with a log line instead of letting them end the process.",
+    "verification": "Unit test with an opener whose read raises http.client.IncompleteRead. Not reproduced by the lead.",
+    "sourceIds": [
+      "CQ-3"
+    ],
+    "leadVerified": "Exception handling read; not reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-021",
+    "category": "code-quality",
+    "title": "A red DinD-health gate leaves no trace in the journal",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "The readiness step logs only when the health check raises. A non-zero 'docker info' returns False without a log line, and ensure_up ignores the return code of 'docker compose up -d dind'. The trust gate received transition logging precisely because a silent gate caused two undiagnosed outages, as its own comment says; the health gate and the blocked latch did not get the same treatment.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "168-179,187-192"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_adapters.py",
+        "lines": "77-86"
+      }
+    ],
+    "impact": "The host offers no runner and the journal says nothing, the same failure shape that max2 ISS-8 recorded for the trust gate.",
+    "recommendation": "Log every gate transition and return code the way the trust gate does.",
+    "verification": "Read by the lead. A harness run with an unhealthy DinD and a capturing log handler would show zero records.",
+    "sourceIds": [
+      "CQ-4"
+    ],
+    "leadVerified": "Code read.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-022",
+    "category": "documentation",
+    "title": "Agent instructions and README describe a repository without code; unit and README comments contradict the implementation",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "CLAUDE.md and AGENTS.md say the repository contains no code, that forgejo-runner/ does not exist yet, that the implementation plan does not exist and that no verify commands exist; README.md says the same about forgejo-runner/. None of the three mentions scripts/. The tree holds 66 bundle files, four implementation plans and six host-ops tools. The cycle unit comment claims a restart never bypasses a fence or quarantine, but that state is memory-only. forgejo-runner/README.md step 10 says the gate does not log its reason; the code has logged it since commit 2dced4a. The same files state Forgejo 15.0.2; the owner confirmed on 2026-09-30 that 15.0.9 runs.",
+    "evidence": [
+      {
+        "file": "CLAUDE.md",
+        "lines": "3,11,13,35-41"
+      },
+      {
+        "file": "AGENTS.md",
+        "lines": "3,11"
+      },
+      {
+        "file": "README.md",
+        "lines": "8-12"
+      },
+      {
+        "file": "forgejo-runner/forgejo-runner-cycle.service",
+        "lines": "12-15"
+      },
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "57-60"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "168-179"
+      }
+    ],
+    "impact": "Agents and people start from wrong ground truth: an agent told there is no code and no verify command has no reason to run the 470 tests. The repository's own hard-stop rule says not to claim anything about the tree that was not measured.",
+    "recommendation": "Bring the three top-level files in line with the tree, add the host-ops scripts and the verification commands, and correct the two stale comments.",
+    "verification": "Confirmed by the lead with git ls-files and by reading the cited lines.",
+    "sourceIds": [
+      "ARCH-5",
+      "ARCH-6",
+      "TEST-3"
+    ],
+    "leadVerified": "Confirmed.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-023",
+    "category": "architecture",
+    "title": "The drift and isolation gate covers less than the byte-identity claim: fail-open without ss, units and rendered config outside the check",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "verify-stack.sh compares BUNDLE_COMMIT and the bundle hash and checks host listeners with ss. If ss is missing the pipeline is false and the script prints 'isolatie: OK'. The installed systemd unit files and the rendered runner-config.yml are not compared with the bundle. The rollout steps enable the units but never say how they reach the systemd directory. The mirror service and timer, the retention scheduler and the hosts/ overlay named in the top-level documents are absent from the repository.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/verify-stack.sh",
+        "lines": "19-34"
+      },
+      {
+        "file": "forgejo-runner/scripts/bundle-hash.sh",
+        "lines": "31-40"
+      },
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "23-63"
+      },
+      {
+        "file": "scripts/forgejo-mirror/README.md",
+        "lines": "3-4"
+      }
+    ],
+    "impact": "A stale or divergent installed unit is invisible to the gate, and part of what runs on the host (mirror unit, retention schedule) is not under version control.",
+    "recommendation": "Fail closed when a gate tool is missing, add unit and rendered-config equality to the verification, and track or document the remaining host units.",
+    "verification": "verify-stack.sh line 30 read by the lead; the test suite only uses a fake ss.",
+    "sourceIds": [
+      "REL-5",
+      "ARCH-8",
+      "CQ-24"
+    ],
+    "leadVerified": "Code read.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-024",
+    "category": "dependencies",
+    "title": "Digest-pinned runner, DinD and job images are frozen with no refresh process",
+    "severity": "MEDIUM",
+    "confidence": "MEDIUM",
+    "observation": "The bundle pins Runner v12.10.1 (image from May 2026), a DinD image built 2026-05-08 and a community job image resolved 2026-09-02. The repository notes that the floating tags had already moved by 2 September and that the back-port status of a security fix cited for Runner 13.0.0 was not checked. Digest resolution is a manual script; there is no scheduled comparison, scanner or SBOM. The freeze itself is intentional for phase 1.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/.env.example",
+        "lines": "3-10"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/evidence/stap-a/resolved-digests.tsv",
+        "lines": "1-3"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/forgejo-upgrade-onderzoek-2026-09.md",
+        "lines": "63"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/migratieontwerp.md",
+        "lines": "468"
+      }
+    ],
+    "impact": "Fixes released after May 2026 are absent from the only privileged component and from the component that fetches and executes repository code. Exposure was not verified against an advisory database.",
+    "recommendation": "Settle the open back-port question, and add a dated, periodic comparison of the three pins with their tags (both hosts from one commit).",
+    "verification": "Staleness is stated in the repository's own files. No registry or advisory source was consulted.",
+    "sourceIds": [
+      "DEP-1",
+      "DEP-2",
+      "DEP-3",
+      "DEP-4"
+    ],
+    "leadVerified": "Pins and notes read; exposure unverified.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-025",
+    "category": "testing",
+    "title": "Runtime wiring between controller and adapters is unproven: trust gate stubbed, main loop never executed, some fixtures pre-fill the result",
+    "severity": "MEDIUM",
+    "confidence": "HIGH",
+    "observation": "The state machine itself is well tested with a fake clock and no mocks. The runtime harness, however, replaces the trust evaluation with a lambda and fixes the probe result per runtime, Runtime.run (signal wiring, stop deadline) is never executed, and adapters are tested for argv only. The scrub fake is stateless, the redaction fixture carries the secret in both places the redactor looks, one test asserts the order of a constant list that only tests call, and one test ends in a dead assignment instead of an assertion.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/tests/_harness.py",
+        "lines": "69-98"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "342-358"
+      },
+      {
+        "file": "forgejo-runner/tests/test_scrub_dind.bats",
+        "lines": "14-40"
+      },
+      {
+        "file": "forgejo-runner/tests/test_capture_current.bats",
+        "lines": "12-14"
+      },
+      {
+        "file": "scripts/tests/test_alter_probe.py",
+        "lines": "125-130"
+      }
+    ],
+    "impact": "AUDIT-003 to AUDIT-007 were all reproducible in minutes with the existing harness, which shows the scenarios are expressible but absent. The 238 green controller tests give less assurance about production behaviour than the count suggests.",
+    "recommendation": "Scenario tests through Runtime.tick with a scriptable probe and trust reader, one bounded test of Runtime.run, a stateful scrub fake and an inline-only secret fixture.",
+    "verification": "Harness read by the lead; the five reproductions used it after replacing the fixed probe and trust lambda.",
+    "sourceIds": [
+      "TEST-4",
+      "TEST-5",
+      "TEST-8"
+    ],
+    "leadVerified": "Confirmed.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-026",
+    "category": "code-quality",
+    "title": "Compiled bytecode is tracked and the root ignore file has no rule for it",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "Seven CPython 3.14 .pyc files under scripts/__pycache__ and scripts/tests/__pycache__ are tracked since commit ab393a7. forgejo-runner/.gitignore ignores bytecode; the root .gitignore does not. The files embed a local absolute path and contain only test constants.",
+    "evidence": [
+      {
+        "file": ".gitignore",
+        "lines": "1-12"
+      },
+      {
+        "file": "forgejo-runner/.gitignore",
+        "lines": "1-2"
+      },
+      {
+        "file": "scripts/__pycache__/rotate-env-credentialcpython-314.pyc",
+        "lines": "n/a (binary)"
+      }
+    ],
+    "impact": "Every local test run dirties the working tree unless bytecode writing is disabled; binary artefacts cannot be reviewed. No secret is involved.",
+    "recommendation": "Untrack the files and add the ignore rule at repository level.",
+    "verification": "git ls-files '*.pyc' lists seven files (lead).",
+    "sourceIds": [
+      "CQ-20",
+      "SEC-17",
+      "DEP-7"
+    ],
+    "leadVerified": "Confirmed.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-027",
+    "category": "maintainability",
+    "title": "Rules and file formats are implemented several times, including two differently behaving pick-heaviest-workflow files",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "pick_heaviest_workflow.py (library, tested) and pick-heaviest-workflow.py (CLI, untested) interpret a bare duration as seconds and nanoseconds respectively. The headroom rule exists in compute_caps.py and preflight.sh; the allowed-images format is parsed in three places and labels.txt in two; two 'two-observation confirmation' classes exist; secret-shape detection exists in three places with different rules; a ten-line parser is duplicated inside measure-workload.sh; the Forgejo base URL default appears in seven places.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/pick_heaviest_workflow.py",
+        "lines": "11-17"
+      },
+      {
+        "file": "forgejo-runner/scripts/pick-heaviest-workflow.py",
+        "lines": "33,46,50-61,98"
+      },
+      {
+        "file": "forgejo-runner/scripts/compute_caps.py",
+        "lines": "57-68"
+      },
+      {
+        "file": "forgejo-runner/scripts/preflight.sh",
+        "lines": "39-53,60"
+      },
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "77-87,112-126"
+      },
+      {
+        "file": "forgejo-runner/scripts/measure-workload.sh",
+        "lines": "38-61"
+      }
+    ],
+    "impact": "A fix in one copy does not reach the others; AUDIT-002 is partly a consequence (three secret detectors, the strictest one not used for this repository).",
+    "recommendation": "One owner per rule or format; archive step-A one-off tools that no longer have a caller.",
+    "verification": "Cited lines read by the specialist; file pair confirmed by the lead.",
+    "sourceIds": [
+      "CQ-16",
+      "CQ-17",
+      "CQ-18"
+    ],
+    "leadVerified": "File pair confirmed; remaining items accepted from the specialist.",
+    "candidatePbi": false
+  },
+  {
+    "id": "AUDIT-028",
+    "category": "maintainability",
+    "title": "Designed-but-unwired controller code and caller-less step-A tools ship in the bundle",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "MaintenanceRecord, the start-up exception, assignment_nulbewijs, the job_accepted handler and Controller.cycle_stappen are reachable only from tests; the design documents this as a deliberate deferral. measure-workload.sh, spike-ephemeral.sh, compute_caps.py, pick-heaviest-workflow.py and verify-trust-scope.sh have no runtime caller. All of it is part of the bundle hash and is copied to both hosts.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/forgejo_runner_cycle.py",
+        "lines": "149-183,195-208,234-250,340-350,381-388"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/controller-entrypoint-ontwerp.md",
+        "lines": "28-47"
+      }
+    ],
+    "impact": "Readers and tests get an impression of protections (drain with assignment proof, maintenance window, RUNNING state) that production never exercises; see AUDIT-003 and AUDIT-007 for the consequences.",
+    "recommendation": "Mark the deferred paths in code and tests, and separate one-off inventory tools from the deployed bundle.",
+    "verification": "git grep of each symbol outside tests/ (specialist).",
+    "sourceIds": [
+      "CQ-19",
+      "REL-2"
+    ],
+    "leadVerified": "Deferral text read; symbol search accepted from the specialist.",
+    "candidatePbi": false
+  },
+  {
+    "id": "AUDIT-029",
+    "category": "security",
+    "title": "rotate-env-credential: residual exposure and atomicity gaps",
+    "severity": "LOW",
+    "confidence": "MEDIUM",
+    "observation": "The headline claim (secret never in argv, logs or output) holds in code. Residuals: the probe writes a 0600 temp file that is removed in a finally block but not on SIGTERM or SIGHUP; a password is URL-unquoted before being written as an env-file line; a signal between the atomic replace and the bookkeeping of the restore list leaves one file rewritten but not listed; there is no lock against concurrent runs; alter-role and probe subprocesses have no timeout; backup files hold every secret of the env file until the runbook's clean-up phase.",
+    "evidence": [
+      {
+        "file": "scripts/rotate-env-credential",
+        "lines": "63,109-119,149-156,205-212,240-261,385-395,416-432"
+      },
+      {
+        "file": "docs/runbooks/credential-rotation.md",
+        "lines": "125-132,196-198"
+      }
+    ],
+    "impact": "Rare and recoverable from the backup files; the runbook orders file rewrites before ALTER ROLE, so a rewrite failure never leaves the database changed.",
+    "recommendation": "Reuse the signal-to-exception wrapper around the probe, reject control characters after unquoting, register the file before replacing it, add timeouts.",
+    "verification": "Unit test sending SIGTERM during probe and asserting no temp file remains. Not reproduced by the lead.",
+    "sourceIds": [
+      "SEC-13",
+      "REL-7"
+    ],
+    "leadVerified": "Accepted from two specialists who reached it independently; not reproduced.",
+    "candidatePbi": true
+  },
+  {
+    "id": "AUDIT-030",
+    "category": "security",
+    "title": "Evidence capture: narrow redaction, raw API output, runner UUIDs committed against the repository rule, failures recorded as data",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "redact_inspect.py redacts four container fields and a fixed key-name list, so a DSN-style variable or a secret that appears only inside a shell string would pass. capture-forgejo-records.sh stores the unfiltered runner list. Runner UUIDs are present in step-A evidence although CLAUDE.md and the bundle comments exclude UUIDs from Git. measure-workload.sh replaces a failed docker stats by a zero sample, capture-clock-skew.sh cannot reach its 'unknown' branch when curl fails, and spike-ephemeral.sh can leave a runner record behind. The evidence currently in the repository was checked and is correctly redacted.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/lib/redact_inspect.py",
+        "lines": "26-31,40,91-102"
+      },
+      {
+        "file": "forgejo-runner/scripts/capture-forgejo-records.sh",
+        "lines": "29-36"
+      },
+      {
+        "file": "docs/forgejo-runner-pool/evidence/stap-a/scrum4me-server/runner-registration.json",
+        "lines": "10"
+      },
+      {
+        "file": "forgejo-runner/scripts/measure-workload.sh",
+        "lines": "29"
+      },
+      {
+        "file": "forgejo-runner/scripts/capture-clock-skew.sh",
+        "lines": "34-40"
+      },
+      {
+        "file": "forgejo-runner/scripts/spike-ephemeral.sh",
+        "lines": "43-49,68-73"
+      }
+    ],
+    "impact": "The tools are safe for the two containers they were written for; re-using them on a production container could commit a secret that AUDIT-002's scanner would also miss. Zero samples would silently lower computed resource caps.",
+    "recommendation": "Broaden redaction or restrict the tools to their original targets, decide whether UUIDs are secret and align rule and evidence, and fail instead of substituting values.",
+    "verification": "Test with an environment entry carrying a URL credential. Evidence files scanned by the specialist; not re-scanned by the lead.",
+    "sourceIds": [
+      "SEC-11",
+      "SEC-12",
+      "TEST-5",
+      "CQ-6",
+      "CQ-14",
+      "CQ-15"
+    ],
+    "leadVerified": "Accepted from specialists.",
+    "candidatePbi": false
+  },
+  {
+    "id": "AUDIT-031",
+    "category": "security",
+    "title": "Minor hardening gaps: systemd sandboxing, preflight executing file content, unrestricted job egress",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "Both services run as root; the trust service may write all of /opt/forgejo-runner although it only replaces the verdict file. preflight.sh sources the caps file and interpolates values from evidence files into a python -c expression. The runner bridge is not internal and nothing limits what job containers reach through DinD's NAT.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/forgejo-runner-cycle.service",
+        "lines": "19-21"
+      },
+      {
+        "file": "forgejo-runner/forgejo-runner-trust.service",
+        "lines": "34-40"
+      },
+      {
+        "file": "forgejo-runner/scripts/preflight.sh",
+        "lines": "24,39-41"
+      },
+      {
+        "file": "forgejo-runner/compose.yaml",
+        "lines": "63-66"
+      }
+    ],
+    "impact": "Defence-in-depth only: the controller needs the Docker socket, which is root-equivalent; preflight inputs are operator-produced; egress is subsumed by AUDIT-001 for a hostile job.",
+    "recommendation": "Narrow the writable path of the trust unit, pass numbers as arguments in preflight, and record the intended egress policy.",
+    "verification": "systemd-analyze security on a host; a bats case with a crafted caps value.",
+    "sourceIds": [
+      "SEC-14",
+      "SEC-15",
+      "SEC-18"
+    ],
+    "leadVerified": "Unit files and compose read; not reproduced.",
+    "candidatePbi": false
+  },
+  {
+    "id": "AUDIT-032",
+    "category": "maintainability",
+    "title": "Undeclared tool-chain and platform assumptions",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "The code needs Python 3.11 or newer (tomllib), bash 4 or newer (mapfile, associative arrays), GNU coreutils and util-linux tools, GNU tar, jq, curl, Docker Compose v2 and systemd. None of this is declared or asserted. The Python version of scrum4me-server is listed as an open point in the controller-entrypoint design. Several scripts lack the executable bit their siblings have.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/scripts/cycle_runtime.py",
+        "lines": "12"
+      },
+      {
+        "file": "forgejo-runner/scripts/secret-scan.sh",
+        "lines": "11"
+      },
+      {
+        "file": "scripts/compose-inpak",
+        "lines": "61-67,179"
+      },
+      {
+        "file": "forgejo-runner/scripts/capture-host-facts.sh",
+        "lines": "27-29"
+      }
+    ],
+    "impact": "Behaviour differs between the workstation and the hosts; two of the differences matter (AUDIT-002 fail-open on bash 3.2, AUDIT-015 silent skips).",
+    "recommendation": "List minimum versions next to the verification commands and let gate scripts assert the tools they depend on.",
+    "verification": "Observed by the lead: macOS /bin/bash is 3.2.57 and tar is bsdtar.",
+    "sourceIds": [
+      "DEP-5",
+      "CQ-21",
+      "CQ-24"
+    ],
+    "leadVerified": "Confirmed on the workstation.",
+    "candidatePbi": false
+  },
+  {
+    "id": "AUDIT-033",
+    "category": "security",
+    "title": "On max2 the bundle directory, including the scripts root executes, is owned and writable by a non-root account",
+    "severity": "LOW",
+    "confidence": "HIGH",
+    "observation": "Measured on max2: /opt/forgejo-runner and scripts/ are janpeter:janpeter 755, and every bundle file (compose.yaml, runner-config.yml, the unit files, trusted-actions-scope.yml, scripts) is owned by janpeter. The cycle and trust services run as root and execute these scripts. trust-verdict.json and controller.toml are root:root 644, but they sit in a directory janpeter can write, so janpeter can replace them without sudo. credentials/ is root:root 700. On scrum4me-server /opt/forgejo-runner does not exist: the bundle is not deployed there yet; the legacy runner and DinD containers run from the mutable tags runner:12 and docker:dind.",
+    "evidence": [
+      {
+        "file": "forgejo-runner/forgejo-runner-cycle.service",
+        "lines": "11"
+      },
+      {
+        "file": "forgejo-runner/forgejo-runner-trust.service",
+        "lines": "34-40"
+      },
+      {
+        "file": "forgejo-runner/README.md",
+        "lines": "23-40"
+      }
+    ],
+    "impact": "Any process running as janpeter on max2 can change code that root runs or forge a green trust verdict without invoking sudo, so the change leaves no sudo trace. No privilege boundary is crossed today, because janpeter already has passwordless sudo and docker-group membership; the architecture's assumption that only root can write the verdict does not hold.",
+    "recommendation": "Make root the owner of the deployed bundle and its directory (deploy with install -o root), or record that the deploy account is root-equivalent by design; include ownership in verify-stack.sh.",
+    "verification": "Measured by the lead on 2026-09-30, read-only: stat and find over /opt/forgejo-runner on both hosts via SSH; id and group membership of janpeter; docker ps on scrum4me-server.",
+    "sourceIds": [
+      "lead"
+    ],
+    "leadVerified": "Measured.",
+    "candidatePbi": false
+  }
+]
