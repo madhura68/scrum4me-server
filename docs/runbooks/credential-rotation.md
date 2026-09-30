@@ -577,7 +577,7 @@ Voor eigen tokens van janpeter kan het ook in de UI: Instellingen → Toepassing
 | 21 janpeter `ISSUE_TOKEN2` | all | srv `repos/Scrum4Me/.env` | `systemctl restart scrum4me-web` |
 | 2 janpeter `Sync-forgejo-github` | write:organization, write:repository, read:user | srv `/etc/forgejo-mirror/forgejo.env`; gebruikt door `forgejo-mirror-sync.sh` voor de API (curl-config via stdin) en door de tags-fallback (`GIT_ASKPASS`, alleen in de omgeving van het git-proces). Niet opgeslagen in de bare clones onder `/srv/scrum4me/repos/mirrors/` (map leeg op 2026-09-30; oudere clones krijgen bij de volgende fallback `remote set-url` zonder userinfo) | geen: `forgejo-mirror-sync.service` leest per run |
 | 29 mcp-release `ops-agent-deploy-tag` | write:repository | srv `/etc/ops-agent/forgejo-tag.token` (`--whole-file`) | geen: gelezen per deploy |
-| 26 janpeter `FREX_RUNNER` | read: activitypub, admin; write: misc, notification, organization, package, issue, repository | max2 `/opt/forgejo-runner/credentials/trust-scan.env` | geen: `forgejo-runner-trust.service` leest per run |
+| 39 janpeter `trust-scan-max2-2026-10` (vervangt 26 `FREX_RUNNER`, ingetrokken 2026-09-30) | read: admin, repository | max2 `/opt/forgejo-runner/credentials/trust-scan.env` | geen: `forgejo-runner-trust.service` leest per run; na vervangen één handmatige `systemctl start forgejo-runner-trust.service` |
 | 24 janpeter `s4m-queue-2026-08-29` | write: activitypub, admin, misc, notification, organization, package, issue, repository; read:user | mac `~/.zshenv` | nieuwe shell of sessie |
 
 **Overige PAT's en hun consumers** (gemeten 2026-09-27: in-process gezocht op `token_last_eight`

@@ -44,15 +44,23 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    API-token van een account met admin-recht op iedere Actions-enabled
    repository: de scan leest `/repos/search`, `contents`, `collaborators`,
    `teams` en `branch_protections`, en die laatste vereist admin op de repo.
+   Geef het token **alleen leesrechten**: `read:repository` en `read:admin`
+   (gemeten 2026-09-30: voldoende voor een volledige scan van alle
+   repositories; `teams` geeft op repo's van een gebruiker 405 en heeft dan
+   geen scope nodig). Een token met schrijfrechten maakt van een compromis van
+   de runnerhost een compromis van de forge (audit AUDIT-013).
    Het is een **ander** token dan `credentials/forgejo-token` (dat is de
-   runnerregistratie) en komt nooit uit deze repo. Controleer de invulling
-   read-only vóór je de timer aanzet, door de scan-CLI los naar een wegwerpmap
-   te draaien — niet de wrapper, want die invalideert bij falen het actieve
-   verdict:
+   runnerregistratie) en komt nooit uit deze repo. Zet het neer zonder dat de
+   waarde in je shellhistory of in argv komt, bijvoorbeeld:
    ```sh
-   FORGEJO_TOKEN=<waarde> FORGEJO_URL=https://git.jp-visser.nl \
-     python3 scripts/trust_scope_cli.py --allowlist trusted-actions-scope.yml \
-     --labels labels.txt --out "$(mktemp -d)"   # exit 0 = groen
+   ssh -t max2 'read -rs -p "Token: " T; echo; printf "FORGEJO_TOKEN=%s\n" "$T" | sudo sh -c "umask 077; cat > /opt/forgejo-runner/credentials/trust-scan.env"; unset T'
+   ```
+   Controleer de invulling read-only vóór je de timer aanzet, door de scan-CLI
+   los naar een wegwerpmap te draaien — niet de wrapper, want die invalideert
+   bij falen het actieve verdict. Het token komt uit het bestand, niet uit de
+   commandoregel:
+   ```sh
+   sudo sh -c 'cd /opt/forgejo-runner && set -a && . credentials/trust-scan.env && set +a && FORGEJO_URL=https://git.jp-visser.nl python3 -B scripts/trust_scope_cli.py --allowlist trusted-actions-scope.yml --labels labels.txt --out "$(mktemp -d)"'   # exit 0 = groen
    ```
 10. `systemctl enable --now forgejo-runner-trust.timer`. Zonder deze timer
     verloopt het verdict na `trust.verdict_max_age_seconds` (24 uur) en stopt de
