@@ -1,6 +1,6 @@
 # Ontwerp — controller-entrypoint (dunne bring-up)
 
-Status: concept voor review (delta-review met `mac:codex`).
+Status: GO na 4 rondes (zie Review record); post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026.
 Datum: 2026-09-06.
 Reikwijdte: **stap D + de kern van stap E** uit `migratieontwerp.md` §8.
 Product: `scrum4me-server` (canonieke bundel); doelhost van deze slice: **max2**.
@@ -45,6 +45,14 @@ adapters komen later:
 - **terminale-Forgejo-jobstatus-correlatie** per job (vergt API-toegang); de
   slice beslist op de **procesexitcode** (§7.9 exitcodecontract).
 - **`job_accepted`-detectie** via runnerlog-parsing (zie §7.3).
+- **stoppen van een wachtend child** bij een rode gate of een fence: niet in deze
+  slice. Het reeds wachtende child kan per host nog hoogstens één job aannemen, zonder
+  tijdsgrens; JP aanvaardt dit (R15, `migratieontwerp.md` §7.7 "Aanvaard
+  one-job-venster").
+- **fence-herstel zonder watchdog na een losse fout**: zonder assignment-nulbewijs kan
+  een losse mislukte probe gevolgd door geldige probes niet rechtstreeks herstellen en
+  loopt via de 60 s-watchdog (alarm, ~2 min vertraging; AUDIT-007, uitgesteld in R15).
+  Een bevestigde foutklasse wist de fence ongewijzigd en commit die fouttoestand.
 
 ## 3. Uitgangspunten (gemeten)
 
@@ -67,7 +75,7 @@ zodat ze in tests vervangbaar zijn en het hart onaangeraakt blijft.
 
 | Bestand | Rol | Nieuw? |
 |---|---|---|
-| `scripts/forgejo_runner_cycle.py` | Puur beslis-hart. Krijgt onderaan enkel: `if __name__ == "__main__": from cycle_runtime import main; raise SystemExit(main())`. `SystemExit` is builtin en `main()` leest zelf `sys.argv` ⇒ **geen** extra import in het hart. Verder ongewijzigd. | bestaand + 2 regels |
+| `scripts/forgejo_runner_cycle.py` | Puur beslis-hart. Krijgt onderaan enkel: `if __name__ == "__main__": from cycle_runtime import main; raise SystemExit(main())`. `SystemExit` is builtin en `main()` leest zelf `sys.argv` ⇒ **geen** extra import in het hart. Verder ongewijzigd, behalve de heropen-wachttijd na een runnerfout (R15, §7.3). | bestaand + 2 regels (R15: wachttijd) |
 | `scripts/cycle_runtime.py` | `main(argv=None)` (default `sys.argv[1:]`): config laden, adapters bedraden, de serialiseerde poll-loop, de twee runtime-preconditions (§5.2), signal-handling, logging. | nieuw |
 | `scripts/cycle_adapters.py` | De neveneffect-adapters achter interfaces: `TransportProbe`, `DindHealth`, `TrustVerdict`, `RunnerLifecycle`, `Scrub`, `Reconcile`, `Clock`. | nieuw |
 
@@ -258,7 +266,10 @@ crashbestendige uitvoeringsgrens:
 - **Operatiemarker (overleeft een crash):** vóór elke pull/scrub schrijft de schil
   een markerbestand op een **apart, persistent controlepad** (een eigen mount, niet
   het docker-datavolume, zodat de scrub het niet raakt) met operatienaam en
-  starttijd; ná afronding (succes óf fout) verwijdert hij de marker.
+  starttijd; ná een aantoonbaar geëindigde operatie (succes óf fout) verwijdert hij de
+  marker. Uitzondering (R15): na een onzeker einde — deadline, signaal of een
+  herstelcyclus — blijft de marker na een mislukte scrub staan en verdwijnt hij alleen
+  na groen scrubbewijs.
 - **Startup-uitsluiting (onderdeel van §6.1 stap 0):** is de marker bij start
   aanwezig, dan is een operatie onderbroken en is de DinD-toestand onbekend. De schil
   **herstart DinD** (`docker compose kill dind && docker compose up -d dind`) — dat
@@ -304,8 +315,10 @@ pollt niet-blokkerend; bij exit: `submit("child_exit",{code})` → `SCRUBBING` �
 
 - `ok` én exit `0` → `WAITING`; groene én rode workflow leveren beide exit `0`; de
   terminale Forgejo-status wordt buiten de controller waargenomen (stap-E-bewijs).
-- exit ≠ 0 of scrub-fout → `QUARANTINED`. Het hart kan `QUARANTINED` bij een latere
-  bevestigde READY + gates heropenen (regel 330–333), **maar** een start vereist
+- exit ≠ 0 of scrub-fout → `QUARANTINED`. Het hart heropent `QUARANTINED` pas na de
+  oplopende wachttijd uit `migratieontwerp.md` §7.9 (1, 2, 4 … max. 30 min, alarm per
+  fout, teller terug op nul na een geslaagde cyclus; R15), en dan bij een
+  bevestigde READY + gates via de koude-startpad, **maar** een start vereist
   `clean_proven` (§5.2/§6.1 stap 8), dat na een scrub-fout `False` is en alleen door
   een nieuwe geslaagde scrub hersteld wordt — readiness-herstel omzeilt de scrub dus
   niet (B2).
@@ -325,7 +338,23 @@ het `RUNNING`/`volgende_state`-spoor.
   toestand blijft `SOURCE_WAIT`/geblokkeerd. **Bewuste beperking:** geen
   `QUARANTINED`-label bij een trust-hardfout (het hart kent die overgang niet en
   wordt niet gewijzigd); dat label is follow-up.
-- **pre-pull/image-fout of scrub-fout**: geen start; alarm; `clean_proven` blijft
+- **pre-pull-fout** (R15): geen start; de runtime probeert de pull opnieuw met een
+  wachttijd die vanaf 30 s verdubbelt tot max. 15 min en logt per poging de reden;
+  geen permanente blokkade. Alleen een achtergebleven runnercontainer of een
+  mislukte opstartreconciliatie blokkeert tot een mens ingrijpt, met een logregel
+  per retry-interval. Iedere gatewissel (trust, DinD-health, blokkade) geeft één
+  journalregel.
+- **deadline per operatie** (R15): scrub 300 s, pull 900 s (configureerbaar in
+  `controller.toml`). Overschrijding → SIGTERM naar de lokale client, na 10 s
+  SIGKILL, marker bewaard, alarm; scrub-overschrijding → `QUARANTINED`,
+  pull-overschrijding telt als pre-pullfout.
+- **herstel na een onzeker operatie-einde** (R15): een afgekapte of door een signaal
+  beëindigde operatie kan in DinD doorlopen (§6.4); een lokale exit bewijst niets.
+  Vóór iedere volgende muterende operatie — na de geldende wachttijd, binnen dezelfde
+  runtime, niet tijdens stop of drain — opnieuw de opstartreconciliatie: DinD-herstart,
+  volledige scrub, marker pas na geslaagd scrubbewijs weg. Geen procesherstart, zodat
+  de backoffteller blijft staan.
+- **scrub-fout**: geen start; alarm; `clean_proven` blijft
   `False` tot een geslaagde scrub.
 
 ### 7.5 Fence-herstel gebeurt in het hart (geen herstart-tak)
@@ -340,6 +369,11 @@ Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herste
   (regel ~330–333) weer `WAITING`.
 
 Herstel duurt ~60 s (watchdog) + ~2 probes. De runtime doet hier niets bijzonders.
+
+**R15:** voor een losse mislukte probe gevolgd door geldige probes blijft dit
+watchdogpad het enige (een bevestigde foutklasse wist de fence rechtstreeks, zie
+hierboven); het geeft dan een alarm en circa twee minuten vertraging. Bekend en uitgesteld (AUDIT-007) tot
+het assignment-nulbewijs bestaat.
 (De eerdere "herstart bij gefencete impasse" is verwijderd: hij berustte op de
 onjuiste premisse dat een fence alleen met nulbewijs wist — regels 336–338 en
 377–379 wissen hem óók.) De enige herstart is systemd's `Restart=on-failure` bij
@@ -437,7 +471,14 @@ dunne slice is een alarm log-only (geen queue/Forgejo-sink).
   4. `clean_proven`-levenscyclus: ingetrokken bij childstart en scrub-fout; alleen
      door geslaagde scrub+bewijs gezet;
   5. start-stappen in de volgorde van `cycle_stappen()`;
-  6. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 → `QUARANTINED`;
+  6. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 → `QUARANTINED`, alarm, en
+     heropenen pas na de wachttijd 1, 2, 4 … max. 30 min (R15; scenario C);
+  6a. deadline op scrub/pull → client beëindigd, alarm, marker bewaard; vóór de
+     volgende operatie DinD-herstart + volledige scrub, ook als de lokale client al
+     weg is terwijl de gesimuleerde DinD-operatie nog loopt (R15; scenario E en een
+     nieuw scenario);
+  6b. één pre-pullfout → retry met backoff, geen blokkade (R15; scenario D);
+  6c. wachtend child + rode gate → child loopt door (aanvaard venster; scenario B);
   7. transport-fout → `SOURCE_WAIT`; fence-blip → watchdog → `SOURCE_WAIT` →
      `WAITING`, **zonder** herstart (§7.5);
   8. **startup-reconciliatie** (B3): achtergebleven beheerde runnercontainer →
@@ -577,3 +618,11 @@ nodig):
 Verdict ronde 4: **GO**. De **spec-fase is afgerond** na 4 rondes (delta-variant,
 één cross-model reviewer `mac:codex`, per JP-instructie). Implementatie, mounts en
 herstelproeven volgen in de plan-/bouwfase.
+
+### Delta R15 — audit-opvolging — GO (ronde 2) — 30 september 2026
+
+Spiegelt `migratieontwerp.md` §13 "Delta R15": aanvaard one-job-venster en
+uitgestelde fence-optimalisatie (§2, §7.5), heropenen na runnerfout met oplopende
+wachttijd (§4, §7.3), pre-pullretry, deadlines per operatie, herstel na een onzeker
+operatie-einde en gatelogging (§7.4), proeven (§11). Aanleiding, besluiten en
+reviewrondes staan daar. Delta-variant, één cross-model reviewer `mac:codex`.

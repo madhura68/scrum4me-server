@@ -56,8 +56,9 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    ```
 10. `systemctl enable --now forgejo-runner-trust.timer`. Zonder deze timer
     verloopt het verdict na `trust.verdict_max_age_seconds` (24 uur) en stopt de
-    controller met het starten van runners — **stil**, want de gate logt zijn
-    reden niet. Controleer met `systemctl list-timers forgejo-runner-trust.timer`
+    controller met het starten van runners. De journal van
+    `forgejo-runner-cycle.service` meldt dat één keer, bij de wissel naar rood
+    (`trustgate ROOD: <reden>`), daarna niet opnieuw. Controleer met `systemctl list-timers forgejo-runner-trust.timer`
     dat er een `NEXT` staat, en met `systemctl start forgejo-runner-trust.service`
     dat een handmatige slag exit 0 geeft en `measured_at` in
     `trust-verdict.json` opschuift.
@@ -86,6 +87,17 @@ blijven via stderr in het servicejournal zichtbaar en moeten binnen 24 uur worde
 beoordeeld. Hard/onleesbaar, onverwachte exits en ongeldige of tegenstrijdige JSON
 invalideren oud groen. De scanner onderzoekt de defaultbranch, niet de geselecteerde
 featurecommit. Merge en hostuitrol vereisen afzonderlijk akkoord.
+
+Het vaste ingangspunt voor de hele repo is `scripts/verify.sh` (vanaf de repo-root):
+het draait alle bats-, Python- en shellcheck-suites, meldt overgeslagen tests met
+naam en reden, en geeft exit ≠ 0 zodra één onderdeel faalt. Integratietests zijn
+opt-in (`VERIFY_INTEGRATION=1` voor `test_compose_runner_exec.bats`).
+
+```bash
+bash scripts/verify.sh            # alles; --only bats|py|shellcheck beperkt dit
+```
+
+Los, vanuit deze map, hetzelfde als handwerk:
 
 ```bash
 bats tests/*.bats

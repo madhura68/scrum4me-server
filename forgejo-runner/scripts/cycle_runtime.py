@@ -8,7 +8,6 @@ import logging
 import math
 import re
 import signal
-import subprocess
 import tomllib
 from collections import namedtuple
 from dataclasses import dataclass
@@ -40,6 +39,8 @@ class Config:
     poll_interval: float
     retry_interval: float
     log_level: str
+    scrub_deadline: float = 300.0
+    pull_deadline: float = 900.0
 
 
 def _req(d, section, key):
@@ -68,7 +69,53 @@ def load_config(path):
         poll_interval=float(_req(d, "cadence", "poll_interval_seconds")),
         retry_interval=float(_req(d, "cadence", "retry_interval_seconds")),
         log_level=str(d.get("log", {}).get("level", "INFO")),
+        scrub_deadline=float(d["runner"].get("scrub_deadline_seconds", 300)),
+        pull_deadline=float(d["runner"].get("pull_deadline_seconds", 900)),
     )
+
+
+# TimeoutStopSec van forgejo-runner-cycle.service: systemd SIGKILLt de controller na
+# deze tijd, dus de stopgrace van de runner-child moet er strikt onder blijven.
+UNIT_TIMEOUT_STOP_SEC = 300
+KILL_GRACE_SECONDS = 10.0  # SIGTERM → SIGKILL bij een overschreden operatiedeadline
+PULL_RETRY_START = 30.0  # pre-pull-retry: 30 s, verdubbelend, max. 15 min (R15)
+PULL_RETRY_MAX = 900.0
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def validate_config(cfg):
+    """Semantische controle voor --check; geeft ALLE problemen terug (lege lijst = ok).
+    Bewust niet in load_config: die draait ook bij echte start, waar de
+    trust-verdict-map en bestanden door timers/installatie ontstaan."""
+    problems = []
+    for naam in ("compose_file", "allowed_images_file", "labels_file", "allowlist_file"):
+        pad = getattr(cfg, naam)
+        if not os.path.isfile(pad):
+            problems.append(f"{naam} is geen bestaand bestand: {pad}")
+    for naam in ("marker_path", "trust_verdict_path"):
+        map_ = os.path.dirname(getattr(cfg, naam))
+        if not os.path.isdir(map_):
+            problems.append(f"map van {naam} bestaat niet: {map_}")
+    for naam in (
+        "poll_interval",
+        "retry_interval",
+        "probe_timeout",
+        "subprocess_timeout",
+        "child_stop_grace",
+        "scrub_deadline",
+        "pull_deadline",
+    ):
+        waarde = getattr(cfg, naam)
+        if not (math.isfinite(waarde) and waarde > 0):
+            problems.append(f"{naam} moet een eindig getal > 0 zijn: {waarde}")
+    if math.isfinite(cfg.child_stop_grace) and cfg.child_stop_grace >= UNIT_TIMEOUT_STOP_SEC:
+        problems.append(
+            f"child_stop_grace ({cfg.child_stop_grace}) moet < {UNIT_TIMEOUT_STOP_SEC} "
+            "(TimeoutStopSec van de unit)"
+        )
+    if cfg.log_level not in _LOG_LEVELS:
+        problems.append(f"log.level {cfg.log_level!r} niet in {', '.join(_LOG_LEVELS)}")
+    return problems
 
 
 _DIGEST_RE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
@@ -145,8 +192,20 @@ class Runtime:
         self._pull_queue = []
         self._loaded = False
         self._blocked = False
+        self._blocked_reason = None
+        self._blocked_logged = None  # mono-tijd van de laatste blokkade-logregel
+        self._dind_last = None  # laatst gelogde (gezond, detail) van de DinD-gate
         self._stop = False
         self._reconciled = False
+        self._needs_recovery = False  # onzeker operatie-einde: eerst DinD-herstart + scrub (R15)
+        self._recovering = False  # de lopende scrub is een herstelscrub
+        self._not_before = 0.0  # pacing na deadline-overschrijding / mislukte herstelscrub
+        self._op_start = 0.0
+        self._term_at = None
+        self._overrun = False
+        self._pull_fails = 0
+        self._pull_retry_at = 0.0
+        self._pull_fail_reason = None
         self._last_probe = None
         self._stop_deadline = None
         self._ev_cursor = 0
@@ -162,8 +221,53 @@ class Runtime:
             self._loaded = True
 
     def _trust_green(self):
-        verdict, ls, as_ = self.a.trust.read()
-        return verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
+        try:
+            verdict, ls, as_ = self.a.trust.read()
+        except Exception as exc:  # fail-closed: een onverwachte leesfout mag de tick niet slopen
+            return False, f"trust-read faalde: {type(exc).__name__}: {exc}"
+        green, reden = verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
+        detail = getattr(self.a.trust, "last_error", None)
+        if not green and detail:
+            reden = f"{reden} ({detail})"
+        return green, reden
+
+    def _safe_probe(self):
+        try:
+            return self.a.probe.probe()
+        except Exception as exc:
+            self.log.warning("probe faalde onverwacht: %s: %s → transportfout", type(exc).__name__, exc)
+            return {"kind": "general", "error": f"{type(exc).__name__}: {exc}", "status": None, "schema_ok": False}
+
+    def _dind_healthy(self):
+        try:
+            healthy = bool(self.a.dind.healthy())
+            detail = "" if healthy else f"rc={getattr(self.a.dind, 'last_rc', None)}"
+        except Exception as exc:
+            healthy = False
+            detail = f"{type(exc).__name__}: {exc}"
+        state = (healthy, detail)
+        if state != self._dind_last:
+            eerste = self._dind_last is None
+            self._dind_last = state
+            if healthy:
+                if not eerste:  # een gezonde start is geen nieuws, herstel wel
+                    self.log.info("dind gezond")
+            else:
+                self.log.warning("dind health-check ROOD: %s → geen nieuwe runners", detail)
+        return healthy
+
+    def _block(self, reden, now=None):
+        # Eén plek waar de blokkade aan gaat, zodat de reden nooit stil verdwijnt.
+        if not self._blocked:
+            self.log.warning("controller GEBLOKKEERD: %s", reden)
+            self._blocked_logged = self.clock()[0] if now is None else now
+        self._blocked = True
+        self._blocked_reason = reden
+
+    def _remind_blocked(self, now):
+        if self._blocked and (now - self._blocked_logged) >= self.cfg.retry_interval:
+            self._blocked_logged = now
+            self.log.warning("controller nog steeds geblokkeerd: %s", self._blocked_reason)
 
     def _log_trust_transition(self, green, reden):
         # Een rode trustgate was stil: de reden werd weggegooid terwijl unit en DinD
@@ -179,16 +283,12 @@ class Runtime:
             self.log.warning("trustgate ROOD: %s → geen nieuwe runners", reden)
 
     def _readiness_and_gates(self, now):
-        klasse = classify_probe(self.a.probe.probe())
+        klasse = classify_probe(self._safe_probe())
         self.readiness.observe(klasse, now)
         self.controller.on_event(self.loop.submit("readiness", {"klasse": klasse}))
         green, reden = self._trust_green()
         self._log_trust_transition(green, reden)
-        try:
-            healthy = self.a.dind.healthy()
-        except (subprocess.SubprocessError, OSError) as exc:
-            self.log.warning("dind health-check faalde: %r → ongezond", exc)
-            healthy = False
+        healthy = self._dind_healthy()
         self.controller.gates_groen = bool(green) and healthy
 
     def _busy(self):
@@ -204,12 +304,37 @@ class Runtime:
             and self.readiness.confirmed
             and self.clean_proven
             and not self._pull_queue
+            and not self._needs_recovery
         )
 
     def _begin_op(self, kind, digest=None):
         self.a.reconcile.write_marker(kind)
         p = self.a.pull.start(digest) if kind == "pull" else self.a.scrub.start()
         self.op = (kind, p)
+        self._op_start = self.clock()[0]
+        self._term_at = None
+        self._overrun = False
+
+    def _check_deadline(self, kind, p):
+        """Overschreden operatie: SIGTERM, na KILL_GRACE_SECONDS SIGKILL. Een
+        SIGKILL-ontvanger die niet sterft blokkeert de controller niet: het
+        lokale einde geldt dan als gedood (rc<0). Marker blijft staan."""
+        now = self.clock()[0]
+        limiet = self.cfg.scrub_deadline if kind == "scrub" else self.cfg.pull_deadline
+        if self._term_at is None:
+            if (now - self._op_start) < limiet:
+                return None
+            self._overrun = True
+            self._term_at = now
+            self.loop.submit("alarm", {"reden": f"{kind}-deadline overschreden",
+                                       "operatie": kind, "deadline": limiet})
+            p.send_signal(signal.SIGTERM)
+            return None
+        if (now - self._term_at) < KILL_GRACE_SECONDS:
+            return None
+        p.send_signal(signal.SIGKILL)
+        rc = p.poll()
+        return -int(signal.SIGKILL) if rc is None else rc
 
     def _advance_op(self):
         if self.op is None:
@@ -217,25 +342,51 @@ class Runtime:
         kind, p = self.op
         rc = self.a.pull.poll(p) if kind == "pull" else self.a.scrub.poll(p)
         if rc is None:
-            return
+            rc = self._check_deadline(kind, p)
+            if rc is None:
+                return
         self.op = None
-        if (
-            rc is not None and rc >= 0
-        ):  # normaal geëindigd → DinD-side klaar → marker weg;
-            self.a.reconcile.clear_marker()  # rc<0 (door signaal gedood) → onzeker einde → marker bewaren (M1/M4)
+        now = self.clock()[0]
+        overrun, self._overrun = self._overrun, False
+        # Deadline of signaal = onzeker einde: DinD kan doorlopen terwijl de lokale
+        # client weg is (§6.4), dus poll() bewijst niets en de marker blijft.
+        uncertain = rc < 0 or overrun
+        recovering, self._recovering = self._recovering, False
+        if recovering and kind == "scrub":
+            if rc == 0 and not overrun:  # alleen groen scrubbewijs wist de marker
+                self.a.reconcile.clear_marker()
+                self._needs_recovery = False
+            else:
+                self._not_before = now + self.cfg.retry_interval
+        elif not uncertain:
+            self.a.reconcile.clear_marker()
+        if uncertain:
+            self._needs_recovery = True
+            if overrun:
+                self._not_before = now + self.cfg.retry_interval
         if kind == "scrub":
-            self.controller.on_event(self.loop.submit("scrub_done", {"ok": rc == 0}))
-            self.clean_proven = rc == 0
-            self.log.info("cyclus: scrub ok=%s", rc == 0)
-            if rc != 0:
+            ok = rc == 0 and not overrun
+            self.controller.on_event(self.loop.submit("scrub_done", {"ok": ok}))
+            self.clean_proven = ok
+            self.log.info("cyclus: scrub ok=%s", ok)
+            if not ok:
                 self.log.warning("scrub faalde rc=%s", rc)
         else:  # pull
-            if rc == 0:
+            if rc == 0 and not overrun:
+                self._pull_fails = 0
                 if self._pull_queue:
                     self._pull_queue.pop(0)
             else:
-                self._blocked = True
-                self.log.warning("pre-pull faalde rc=%s → geblokkeerd", rc)
+                self._pull_failed(f"rc={rc}" + (" (deadline)" if overrun else ""), now)
+
+    def _pull_failed(self, reden, now):
+        # Geen permanente blokkade (R15): opnieuw proberen met 30 s, 60 s, … max. 15 min.
+        self._pull_fails += 1
+        wacht = min(PULL_RETRY_START * 2 ** (self._pull_fails - 1), PULL_RETRY_MAX)
+        self._pull_retry_at = now + wacht
+        self._pull_fail_reason = reden
+        self.log.warning("pre-pull faalde (%s), poging %d → opnieuw over %.0f s; geen runnerstart",
+                         reden, self._pull_fails, wacht)
 
     def _advance_child(self):
         if self.child is None:
@@ -253,16 +404,45 @@ class Runtime:
     def _drive_cycle(self):
         if self._blocked or self._stop or self._busy() or self.child is not None:
             return
+        now = self.clock()[0]
+        # Backoff na een runnerfout en pacing na een deadline gelden voor élke
+        # muterende operatie, dus ook voor herstel en pre-pull.
+        if self.controller.wachttijd_loopt(now) or now < self._not_before:
+            return
+        if self._needs_recovery:
+            self._start_recovery()
+            return
         if not self.clean_proven:
             self._begin_op("scrub")
             return
-        if self._pull_queue:
+        if self._pull_queue and now >= self._pull_retry_at:
+            if self._pull_fails:
+                self.log.info("pre-pull opnieuw (poging %d) na eerdere fout: %s",
+                              self._pull_fails + 1, self._pull_fail_reason)
             self._begin_op("pull", self._pull_queue[0])
             return
 
+    def _start_recovery(self):
+        # Zelfde reconciliatie als bij opstart, binnen dezelfde runtime zodat de
+        # backoffteller blijft staan (R15). De marker gaat pas na groen scrubbewijs weg.
+        self.log.warning("herstel na onzeker operatie-einde — DinD-herstart + volledige scrub")
+        try:
+            self.a.reconcile.restart_dind()
+        except Exception as exc:
+            self._block(f"herstel-DinD-herstart faalde: {exc!r}")
+            return
+        self.clean_proven = False
+        self._recovering = True
+        self._begin_op("scrub")
+
     def _start_runner(self):
         self.clean_proven = False
-        self.child = self.a.runner.start()
+        try:
+            self.child = self.a.runner.start()
+        except Exception as exc:  # fail-closed: geen child, volgende tick probeert opnieuw
+            self.child = None
+            self.log.warning("runner-start faalde: %s: %s → geen runner", type(exc).__name__, exc)
+            return
         self.log.info("cyclus: runner gestart")
 
     def tick(self):
@@ -274,10 +454,13 @@ class Runtime:
         ):
             self._last_probe = now
             try:
-                self.a.dind.ensure_up()
-            except (subprocess.SubprocessError, OSError) as exc:
+                rc = self.a.dind.ensure_up()
+                if isinstance(rc, int) and rc != 0:
+                    self.log.warning("dind ensure_up (compose up -d dind) gaf rc=%s", rc)
+            except Exception as exc:
                 self.log.warning("dind ensure_up faalde: %r", exc)
             self._readiness_and_gates(now)
+        self._remind_blocked(now)
         self.controller.tick(now, wall)
         self._reconcile_once()  # Taak 10
         self._advance_op()
@@ -302,19 +485,14 @@ class Runtime:
         self._reconciled = True
         try:
             if self.a.reconcile.leftover_runners():
-                self._blocked = True
-                self.log.warning("startup: achtergebleven runner — fail-closed")
+                self._block("startup: achtergebleven runner — fail-closed")
                 return
             if self.a.reconcile.marker_present():
-                self.log.warning(
-                    "startup: onderbroken operatie — DinD-herstart + volledige scrub"
-                )
-                self.a.reconcile.restart_dind()
-                self.clean_proven = False
-                self._begin_op("scrub")
+                self.log.warning("startup: onderbroken operatie")
+                self._needs_recovery = True
+                self._start_recovery()
         except Exception as exc:  # ReconcileError e.d. → fail-closed
-            self._blocked = True
-            self.log.warning("startup-reconciliatie faalde: %r → geblokkeerd", exc)
+            self._block(f"startup-reconciliatie faalde: {exc!r}")
 
     def request_stop(self):
         self._stop = True
@@ -404,6 +582,13 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         print(f"config-fout: {exc}", file=sys.stderr)
         return 2
+    if args.check:
+        # Vóór _build_adapters: --check raakt geen docker, netwerk of loop.
+        problems = validate_config(cfg)
+        if problems:
+            print("config-fout: " + "; ".join(problems), file=sys.stderr)
+            return 2
+        return 0
     logging.basicConfig(
         level=getattr(logging, cfg.log_level, logging.INFO),
         format="%(asctime)s %(levelname)s %(message)s",
@@ -413,6 +598,11 @@ def main(argv=None):
     rt = Runtime(
         cfg, controller, controller.loop, adapters, clock, logging.getLogger("cycle")
     )
-    if args.check:
-        return 0
     return rt.run()
+
+
+if __name__ == "__main__":
+    # Het gedocumenteerde `python3 scripts/cycle_runtime.py --config … --check`.
+    # Geen circulaire import: forgejo_runner_cycle importeert cycle_runtime alleen
+    # binnen zijn eigen __main__-blok.
+    raise SystemExit(main())

@@ -5,7 +5,8 @@
 # staat hier niet in. controller.toml is hostspecifiek en géén onderdeel van
 # de byte-identieke bundel-hash: niet meekopiëren tussen hosts, wel per host
 # invullen. Start `cycle_runtime.py --config controller.toml --check` om de
-# invulling te valideren zonder de loop te starten.
+# invulling te valideren zonder de loop te starten: controleert bestanden, mappen,
+# getallen > 0, child_stop_grace < 300 (TimeoutStopSec) en log.level; exit 2 bij fout.
 
 [forgejo]
 base_url = "https://git.jp-visser.nl"     # transport-probe target (/api/v1/version)
@@ -19,6 +20,8 @@ marker_path  = "/opt/forgejo-runner/state/cycle-op.marker"  # §6.4: apart, pers
 [runner]
 allowed_images_file = "/opt/forgejo-runner/allowed-job-images.txt"
 child_stop_grace_seconds = 200            # ~= runner shutdown_timeout 3m + marge, < systemd TimeoutStopSec 300
+scrub_deadline_seconds = 300              # R15: daarna SIGTERM, na 10 s SIGKILL, alarm, marker blijft; optioneel
+pull_deadline_seconds = 900               # R15: overschrijding telt als pre-pullfout (retry 30 s .. 15 min); optioneel
 
 [trust]
 verdict_path = "/opt/forgejo-runner/trust-verdict.json"          # deploy-wrapper-artefact (§6.3, publish-trust-verdict.sh)

@@ -156,7 +156,9 @@ python3 scripts/cycle_runtime.py --config controller.toml --check
 echo "exit=$?"
 ```
 
-Verwacht `exit=0` en geen traceback. Een ontbrekende sleutel geeft een nette
+Verwacht `exit=0` en geen traceback. `--check` controleert ook dat de
+bestanden en mappen bestaan en dat de getallen/`log.level` binnen bereik liggen,
+en meldt alle problemen in één regel. Een ontbrekende sleutel geeft een nette
 `config-fout: controller.toml mist <sectie>.<sleutel>` op stderr met exit `2` —
 dat is dan een echte omissie in `controller.toml`, geen bug in dit bundel.
 

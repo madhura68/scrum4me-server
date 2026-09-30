@@ -17,6 +17,8 @@ from enum import Enum
 CONFIRM_SECONDS = 5.0
 FENCE_MAX_AGE_SECONDS = 60.0
 RETRY_INTERVAL_SECONDS = 30.0
+# Heropen-wachttijd na een runnerfout (R15, §7.9): 1, 2, 4 … max. 30 minuten.
+BACKOFF_MAX_MINUTEN = 30
 
 
 class ReadinessClass(str, Enum):
@@ -230,6 +232,21 @@ class Controller:
         self.algemene_readiness_bevestigd = False
         self.drain_gevraagd = False
         self._laatste_exitcode = None
+        self._na_runner = False  # volgende scrub_done sluit een runnercyclus af
+        self.opeenvolgende_fouten = 0  # alleen in geheugen (R15): een herstart reset hem
+        self.quarantaine_tot = None  # monotoon; QUARANTINED heropent pas daarna
+
+    def wachttijd_loopt(self, now):
+        return self.quarantaine_tot is not None and now < self.quarantaine_tot
+
+    def _runnerfout(self, now, reden):
+        self.opeenvolgende_fouten += 1
+        minuten = min(2 ** (self.opeenvolgende_fouten - 1), BACKOFF_MAX_MINUTEN)
+        self.quarantaine_tot = now + minuten * 60.0
+        self.loop.submit("alarm", {"reden": reden,
+                                   "opeenvolgende_fouten": self.opeenvolgende_fouten,
+                                   "wacht_minuten": minuten})
+        self.state = State.QUARANTINED
 
     @staticmethod
     def cycle_stappen():
@@ -318,7 +335,8 @@ class Controller:
             if self.fence is not None:
                 # Herstel na een afwijking. §7.7 eist hier naast twee geldige
                 # probes ook het assignment-nulbewijs en groene gates.
-                if self.nulbewijs_ok and self.gates_groen:
+                if (self.nulbewijs_ok and self.gates_groen
+                        and not self.wachttijd_loopt(event.mono)):
                     self.fence = None
                     self.volgende_state = None
                     self.state = State.WAITING
@@ -327,9 +345,11 @@ class Controller:
             # bestaat. §7.7 spreekt daarom van het "eventueel uitgestelde"
             # nulbewijs; zonder deze tak komt een verse host nooit uit
             # SOURCE_WAIT.
-            if self.gates_groen and self.state in (State.SOURCE_WAIT,
-                                                   State.CREDENTIAL_ERROR,
-                                                   State.QUARANTINED):
+            # Na een runnerfout heropent QUARANTINED pas na de backoff (R15).
+            if (self.gates_groen and not self.wachttijd_loopt(event.mono)
+                    and self.state in (State.SOURCE_WAIT,
+                                       State.CREDENTIAL_ERROR,
+                                       State.QUARANTINED)):
                 self.state = State.WAITING
             return
 
@@ -389,16 +409,28 @@ class Controller:
 
     def _on_child_exit(self, event):
         self._laatste_exitcode = event.payload.get("code")
+        self._na_runner = True
         # Na iedere exit wordt geschrobd, ook na een fout: containment eerst.
         self.state = State.SCRUBBING
 
     def _on_scrub_done(self, event):
+        na_runner, self._na_runner = self._na_runner, False
         if not event.payload.get("ok"):
             self.state = State.QUARANTINED
+            if na_runner:
+                self._runnerfout(event.mono, "scrub faalde na runnercyclus")
             return
-        if self._laatste_exitcode not in (0, None):
-            # Non-zero bij --wait duidt op config-, initialisatie-, poller- of
-            # runtimefalen; heropenen mag dan niet (§7.9).
+        if na_runner:
+            if self._laatste_exitcode not in (0, None):
+                # Non-zero bij --wait duidt op config-, initialisatie-, poller- of
+                # runtimefalen; heropenen mag dan niet (§7.9), alleen na backoff.
+                self._runnerfout(event.mono,
+                                 f"runner exit {self._laatste_exitcode}")
+                return
+            self.opeenvolgende_fouten = 0  # schone cyclus: teller terug op nul
+            self.quarantaine_tot = None
+        if self.wachttijd_loopt(event.mono):
+            # Een losse (herstel)scrub mag de backoff niet omzeilen.
             self.state = State.QUARANTINED
             return
         if self.volgende_state is not None:
