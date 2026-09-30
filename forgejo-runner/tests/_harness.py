@@ -66,12 +66,18 @@ class Recorder:
         self.starts.append(kind); p = FakePopen([kind], rc=self.auto[kind])
         self.pops[kind] = p; return p
 
+# Probe-dicts zoals build_runtime ze voor klasse READY / niet-READY gebruikt.
+OK_PROBE = {"kind":"general","error":None,"status":200,"schema_ok":True}
+BAD_PROBE = {"kind":"general","error":"x","status":None,"schema_ok":False}
+
 def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
-                  leftover=None, marker=False, digests=("img@sha256:"+"a"*64,)):
+                  leftover=None, marker=False, digests=("img@sha256:"+"a"*64,),
+                  probe_seq=None, trust_fn=None):
+    """probe_seq: optionele callable () -> probe-dict per probe-aanroep (wint van
+    klasse). trust_fn: optionele callable () -> (groen, reden) (wint van verdict_ok)."""
     clock = FakeClock(); rec = Recorder()
-    pd = ({"kind":"general","error":None,"status":200,"schema_ok":True} if klasse=="READY"
-          else {"kind":"general","error":"x","status":None,"schema_ok":False})
-    probe = type("P", (), {"probe": staticmethod(lambda: pd)})()
+    pd = OK_PROBE if klasse=="READY" else BAD_PROBE
+    probe = type("P", (), {"probe": staticmethod(probe_seq or (lambda: pd))})()
     dind = type("D", (), {"ensure_up": staticmethod(lambda: None), "healthy": staticmethod(lambda: healthy)})()
     runner = type("R", (), {"start": lambda s: rec._mk("runner"),
                             "request_stop": lambda s, p: p.send_signal(signal.SIGTERM),
@@ -94,5 +100,13 @@ def build_runtime(tmp, klasse="READY", healthy=True, verdict_ok=True,
     loop = EventLoop(clock); controller = Controller(loop)
     import logging as _lg
     rt = cr.Runtime(cfg, controller, loop, ad, clock, _lg.getLogger("t"))
-    rt._trust_green = lambda: (verdict_ok, "test")     # verdict-binding buiten scope in loop-tests
+    rt._trust_green = trust_fn or (lambda: (verdict_ok, "test"))   # verdict-binding buiten scope in loop-tests
     return rt, controller, rec, clock
+
+def run_for(rt, clock, seconds, step=1.0, on_tick=None):
+    """Draai rt.tick() en laat de klok met `step` oplopen tot `seconds` verstreken zijn.
+    on_tick(t) wordt vóór elke tick aangeroepen met de verstreken tijd (fake seconden)."""
+    t0 = clock()[0]
+    while clock()[0] - t0 < seconds:
+        if on_tick: on_tick(clock()[0] - t0)
+        rt.tick(); clock.advance(step)
