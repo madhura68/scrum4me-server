@@ -81,6 +81,7 @@ KILL_GRACE_SECONDS = 10.0  # SIGTERM → SIGKILL bij een overschreden operatiede
 PULL_RETRY_START = 30.0  # pre-pull-retry: 30 s, verdubbelend, max. 15 min (R15)
 PULL_RETRY_MAX = 900.0
 _LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+PROTECT_HOME_PATHS = ("/root", "/home", "/run/user")  # ProtectHome=true in de unit
 
 
 def validate_config(cfg):
@@ -90,8 +91,14 @@ def validate_config(cfg):
     problems = []
     for naam in ("compose_file", "allowed_images_file", "labels_file", "allowlist_file"):
         pad = getattr(cfg, naam)
+        # ISS-47: forgejo-runner-cycle.service has ProtectHome=true, so these trees are
+        # invisible to the service even when --check (run by an operator) can see them.
+        if any(pad == p or pad.startswith(p + "/") for p in PROTECT_HOME_PATHS):
+            problems.append(f"{naam} staat onder een pad dat ProtectHome=true voor de service verbergt: {pad}")
         if not os.path.isfile(pad):
             problems.append(f"{naam} is geen bestaand bestand: {pad}")
+        elif not os.access(pad, os.R_OK):
+            problems.append(f"{naam} is niet leesbaar voor deze gebruiker: {pad}")
     for naam in ("marker_path", "trust_verdict_path"):
         map_ = os.path.dirname(getattr(cfg, naam))
         if not os.path.isdir(map_):
@@ -210,6 +217,8 @@ class Runtime:
         self._stop_deadline = None
         self._ev_cursor = 0
         self._trust_last = None  # laatst gelogde (groen, reden) van de trustgate
+        self._digests_err = None  # reden zolang allowed_images_file onleesbaar is (ISS-47)
+        self._digests_logged = None
 
     def _load_digests(self):
         if not self._loaded:
@@ -219,6 +228,29 @@ class Runtime:
                 self._digests
             )  # óók de EERSTE cyclus pre-pullt (M2)
             self._loaded = True
+
+    def _digests_ready(self, now):
+        # ISS-47: an unreadable allowed_images_file (missing, no permission, or hidden by
+        # ProtectHome=true) threw out of tick() and put the unit in a crashloop. Fail closed
+        # like the other gates: no runner, one warning plus a reminder per retry_interval,
+        # and recovery as soon as the file is readable. Deliberately not _block(): that is
+        # sticky, and this condition must clear without a restart.
+        try:
+            self._load_digests()
+        except Exception as exc:
+            reden = f"{type(exc).__name__}: {self.cfg.allowed_images_file}: {exc}"
+            if self._digests_err is None:
+                self.log.warning("allowed_images_file onleesbaar (%s) → geen runners tot het bestand leesbaar is", reden)
+                self._digests_logged = now
+            elif (now - self._digests_logged) >= self.cfg.retry_interval:
+                self.log.warning("allowed_images_file nog steeds onleesbaar (%s)", reden)
+                self._digests_logged = now
+            self._digests_err = reden
+            return False
+        if self._digests_err is not None:
+            self.log.info("allowed_images_file weer leesbaar: %s", self.cfg.allowed_images_file)
+            self._digests_err = None
+        return True
 
     def _trust_green(self):
         try:
@@ -446,8 +478,9 @@ class Runtime:
         self.log.info("cyclus: runner gestart")
 
     def tick(self):
-        self._load_digests()
         now, wall = self.clock()
+        if not self._digests_ready(now):
+            return
         if (
             self._last_probe is None
             or (now - self._last_probe) >= self.cfg.retry_interval
