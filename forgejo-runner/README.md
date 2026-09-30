@@ -25,7 +25,16 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 1. `bash scripts/preflight.sh --facts … --caps … --images allowed-job-images.txt`
    moet exit 0 geven. Faalt hij, dan wordt er niets uitgerold. De gate wordt niet
    versoepeld om verder te kunnen (§7.8).
-2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host.
+2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host, als `root:root`
+   met de modi uit de repo (bestanden `0644`, scripts `0755`), en nooit als een
+   onbevoorrechte gebruiker: root-units voeren deze bestanden uit en
+   `verify-stack.sh` weigert (exit 64) een bundelmap of bundelbestand dat niet
+   van uid 0 is of groep/wereld-schrijfbaar is (AUDIT-033). Bijvoorbeeld vanuit
+   deze map: `sudo rsync -rlpt --chown=root:root --exclude tests/ --exclude
+   credentials/ --exclude state/ ./ /opt/forgejo-runner/` (`-p` behoudt de
+   repo-modi; `credentials/` en `state/` blijven hostlokaal). Een enkel
+   bestand: `sudo install -o root -g root -m 0644 <bestand> <doel>` (`-m 0755`
+   voor een script).
 3. Schrijf de commit-SHA naar `/opt/forgejo-runner/BUNDLE_COMMIT`.
 4. Render de hostconfig: `bash scripts/render-config.sh --uuid <host-uuid>
    --labels labels.txt --policy runner-config.policy.yml --out runner-config.yml`.
@@ -35,7 +44,16 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 6. `cp .env.example .env` en `docker compose up -d`: dat start uitsluitend DinD; de
    runner staat onder het profiel `cycle` en wordt alleen door de cyclecontroller
    gestart.
-7. `systemctl enable --now forgejo-runner-cycle.service`.
+7. Installeer de units en laad systemd opnieuw, exact zo (byte-gelijk aan de
+   bundelkopie; `verify-stack.sh` vergelijkt ze en faalt met exit 63 bij een
+   ontbrekende of afwijkende unit):
+   ```sh
+   for u in forgejo-runner-cycle.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
+     sudo install -o root -g root -m 0644 /opt/forgejo-runner/$u /etc/systemd/system/
+   done
+   sudo systemctl daemon-reload
+   ```
+   Daarna `systemctl enable --now forgejo-runner-cycle.service`.
 8. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven; de
    bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit.
 9. Leg de credential voor de trustscan neer als
@@ -70,6 +88,14 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
     dat er een `NEXT` staat, en met `systemctl start forgejo-runner-trust.service`
     dat een handmatige slag exit 0 geeft en `measured_at` in
     `trust-verdict.json` opschuift.
+
+### Hostlokale units (niet in de bundel)
+
+De units van de Forgejo-mirror (`scripts/forgejo-mirror/`) en van
+docker-rollback-retention (`scripts/docker-rollback-retention/`) horen niet bij
+de bundel: ze staan buiten `forgejo-runner/`, tellen niet mee in de bundelhash en
+worden niet door `verify-stack.sh` gecontroleerd. Ze worden per host beheerd met
+hun eigen installatiestappen.
 
 ## Terugdraaien
 
