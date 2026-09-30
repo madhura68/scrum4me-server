@@ -24,7 +24,11 @@ setup() {
 #!/usr/bin/env bash
 STATE="$STATE"
 echo "\$*" >> "\$STATE/calls"
+[ -e "\$STATE/fail-all" ] && exit 1
+[ -e "\$STATE/fail-df" ] && case "\$*" in *"system df"*) exit 1 ;; esac
+[ -e "\$STATE/fail-ps" ] && case "\$*" in *"ps -aq"*) exit 1 ;; esac
 case "\$*" in
+  *"version"*)         echo 29.0.0 ;;
   *"ps -aq"*)          cat "\$STATE/containers" ;;
   *"volume ls -q"*)    cat "\$STATE/volumes" ;;
   *"network ls"*)      cat "\$STATE/networks" ;;
@@ -150,4 +154,48 @@ scrub() { bash "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW" "$@"; 
 @test "een ontbrekende allowlist is een gebruiksfout, geen stille scrub" {
   run bash "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$BATS_TEST_TMPDIR/bestaat-niet"
   [ "$status" -eq 2 ]
+}
+
+@test "een dode daemon (ieder docker-commando faalt) is nooit bewezen schoon" {
+  touch "$STATE/fail-all"
+  run scrub
+  [ "$status" -eq 52 ]
+  [[ "$output" == *"daemon: FAIL"* ]]
+  [[ "$output" != *"containers: OK"* ]]
+}
+
+@test "alleen system df faalt: buildcache FAIL en exit 50" {
+  touch "$STATE/fail-df"
+  run scrub
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"buildcache: FAIL"* ]]
+  [[ "$output" == *"containers: OK"* ]]
+}
+
+@test "alleen ps faalt: containers FAIL, nooit OK" {
+  touch "$STATE/fail-ps"
+  run scrub
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"containers: FAIL"* ]]
+}
+
+@test "een lege system df-uitvoer is buildcache FAIL" {
+  : > "$STATE/buildcache"
+  echo "" > "$STATE/buildcache"
+  run scrub
+  [ "$status" -eq 50 ]
+  [[ "$output" == *"buildcache: FAIL"* ]]
+}
+
+@test "onder sh (dash/busybox-semantiek) faalt een dode daemon ook met 52" {
+  touch "$STATE/fail-all"
+  run sh "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW"
+  [ "$status" -eq 52 ]
+  [[ "$output" == *"FAIL"* ]]
+}
+
+@test "onder sh is een schone dind exit 0" {
+  run sh "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"daemon: OK"* ]]
 }
