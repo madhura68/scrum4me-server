@@ -1,6 +1,8 @@
 # Plan — opvolging repo-audit 2026-09-30
 
-Status: **concept, wacht op akkoord van JP.** Er wordt niets gematerialiseerd of uitgevoerd vóór akkoord.
+Status: **concept; besluiten van JP verwerkt (30 sep), akkoord op het plan als geheel nog open.** Er wordt
+niets gematerialiseerd of uitgevoerd vóór akkoord. Dit plan gaat niet door een review-loop (besluit JP);
+de ontwerpdelta van increment 2 wel (verplicht).
 Bron: `docs/repo-audit/` (PR #83), met name `findings.json` (33 bevindingen) en
 `pbi-candidates.md` (18 kandidaten).
 
@@ -39,7 +41,7 @@ Volgorde op risicoreductie per moeite. Increment 3 is onafhankelijk en kan paral
 
 | PBI | Wat | Waar | Bewijs |
 |---|---|---|---|
-| PBI-09 | Eigen token voor de trust-scan met alleen `read:repository`, `read:admin` (en `read:organization` als die voor teams nodig blijkt). Eerst uitzoeken wat `FREX_RUNNER` nog meer gebruikt; daarna roteren. README noemt de scopes; inline-tokenvoorbeelden vervangen. | host max2 (credentialbestand), Forgejo-UI (**JP maakt het token aan**), `forgejo-runner/README.md`, `implementatieplan-forgejo-15.0.7.md` | `systemctl start forgejo-runner-trust.service` geeft exit 0 en een nieuwe `measured_at`; schrijf-probe 403; `access_token`-scope gemeten zoals in de audit |
+| PBI-09 | Eigen token voor de trust-scan met alleen `read:repository`, `read:admin` (en `read:organization` als die voor teams nodig blijkt). `FREX_RUNNER` is op 30 sep alleen in `trust-scan.env` op max2 gevonden (zoektocht over `/etc`, `/opt`, `/srv`, `/home`, `/root` op beide hosts en de Mac-configuratie); JP kent de naam niet. Vervangen, verdict groen houden, daarna intrekken. README noemt de scopes; inline-tokenvoorbeelden vervangen. | host max2 (credentialbestand), Forgejo-UI (**JP maakt het token aan**), `forgejo-runner/README.md`, `implementatieplan-forgejo-15.0.7.md` | `systemctl start forgejo-runner-trust.service` geeft exit 0 en een nieuwe `measured_at`; schrijf-probe 403; `access_token`-scope gemeten zoals in de audit |
 | PBI-01 | `secret-scan.sh`: staged blobs incl. renames, fail-closed zonder bash 4, geen hele-regel-uitzondering, bredere sleutel- en bestandsnamen, gelijk met `compose-git-pre-commit` | `forgejo-runner/scripts/secret-scan.sh`, `tests/test_secret_scan.bats` | nieuwe bats-cases; de reproducties uit de audit geven 70 |
 | PBI-13 | Documented `--check` werkt echt en controleert paden en bereiken | `cycle_runtime.py` (main-guard of doc-correctie), `controller.toml.example`, bring-up-runbook | ontbrekend configbestand geeft exit 2 via het gedocumenteerde commando |
 | PBI-10 | Eén verify-entrypoint (alle suites + shellcheck op alle scripts), exitcodes geaggregeerd, skips bij naam | nieuw `scripts/verify.sh` (of vergelijkbaar), vermeld in `CLAUDE.md`/`AGENTS.md` | opzettelijk falende test in een niet-laatste file geeft exit ≠ 0; skiplijst op mac vs. op een host |
@@ -54,7 +56,7 @@ Vereist **één delta-review met GO** op `migratieontwerp.md` en `controller-ent
 volgens de hardstopregel voor post-GO-wijzigingen. De delta bevat:
 
 - **AUDIT-003:** het geaccepteerde one-job window (PBI-03).
-- **AUDIT-006:** quarantaine na runnerfout blijft staan, of heropent met backoff. Hierover moet JP beslissen (PBI-04).
+- **AUDIT-006:** quarantaine na runnerfout heropent met exponentiële backoff (1, 2, 4 … max. 30 min) en een alarm per fout — **besluit JP 30 sep, optie B** (PBI-04).
 - **AUDIT-007:** fence-herstel zonder assignment-nulbewijs in de thin slice (PBI-04).
 - **AUDIT-005:** retry met backoff voor pre-pullfouten; de latch alleen voor mensenwerk. Het ontwerp zegt nu "blijft QUARANTINED" (PBI-02).
 
@@ -104,7 +106,18 @@ Voorstel voor de hiërarchie in Scrum4Me op product `scrum4me-server`:
 Eén PBI per auditkandidaat, één story per PBI, taken per laag. Na materialisatie geldt de hardstop:
 uitvoering vereist een aparte opdracht.
 
-## Open punten voor JP
+## Besluiten JP (30 sep)
+
+1. `FREX_RUNNER`: onbekend; vervangen in increment 1.
+2. Quarantaine na runnerfout: optie B, backoff.
+3. Read-only CI: ja, ná increment 1 — aangemaakt als **PBI-26** in Scrum4Me (backlog, zonder sprint).
+   Aandachtspunt bij uitvoering: een workflow in deze repo verandert de trust-inventaris
+   (`trusted-actions-scope.yml:141`, nu `workflow_source: null`). Een `pull_request`-trigger op het
+   gedeelde label is een risky trigger en maakt de gate hard rood tenzij bevestigd; gebruik alleen
+   `push`, of voeg de bevestiging bewust toe.
+4. Reviewvorm: plan zonder review-loop; delta van increment 2 met review-loop.
+
+## Oorspronkelijke open punten
 
 1. **FREX_RUNNER:** weet je waarvoor dit token nog meer gebruikt wordt? Anders zoek ik dat eerst uit
    (read-only: grep over hosts en repo's naar de tokennaam en `token_last_eight`-matches in env-bestanden).
