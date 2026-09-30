@@ -1,7 +1,7 @@
 # Migratieontwerp — bestaande Forgejo Runner uitbreiden naar een tweemachinepool
 
 **Datum:** 31 augustus 2026  
-**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026 — zie §13  
+**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026; post-GO delta R16 (audit-opvolging increment 4) in review sinds 30 september 2026 — zie §13  
 **Doelhosts:** `scrum4me-server` en `max2`  
 **Fase 1:** stabiele pool met Forgejo Runner 12.10.1  
 **Fase 2:** afzonderlijke rolling upgrade naar Forgejo Runner 13
@@ -60,6 +60,8 @@ De volgende onderdelen komen uit één gedeelde, versiebeheerde bundel en moeten
 | Resourceprofiel | dezelfde uit gemeten piekgebruik afgeleide caps op beide hosts |
 | Verificatie | dezelfde health-, isolatie-, verdelings- en failoverchecks |
 
+**Vergelijkingsritme van de pins (R16, AUDIT-024).** De fase-1-freeze blijft: de pins veranderen niet zonder besluit van JP. Wel worden de drie pins maandelijks, en direct na een Forgejo-securityrelease (server of runner), een Docker Engine-release met security-fixes of een nieuwe 12.x-runnerrelease, vergeleken met hun upstream-tags. De uitkomst gaat gedateerd onder `evidence/`, met per bevinding of een fix voor ons geldt. Die vergelijking is informatie voor een afweging door JP, geen automatische upgrade. Eerste meting: `image-pins-onderzoek-2026-09-30.md` — de Runner 13.0.0-fix voor `refs/replace/*` (runner-PR #1635) is niet teruggezet naar 12.x, en de gepinde DinD (Docker 29.4.3) mist Engine-CVE-fixes uit 29.5.1 tot en met 29.8.2.
+
 De huidige live images worden vóór het maken van de bundel via `docker image inspect` en `RepoDigests` vastgelegd. Iedere kandidaatpin moet daarna vanaf de registry slagen voor `docker manifest inspect <image>@<digest>`. Alleen een lokale image-ID of een tag zoals `runner:12` is niet voldoende reproduceerbaar.
 
 ## 5. Wat per host uniek is
@@ -90,11 +92,13 @@ forgejo-runner/
 ├── trusted-actions-scope.yml    expliciete trust-allowlist voor global scope
 ├── allowed-job-images.txt       registry-gevalideerde digests die scrub mag behouden
 ├── forgejo-runner-cycle.service hostcontroller; één job, scrub, opnieuw aanbieden
+├── forgejo-runner-dind-guard.service  sluit de DinD-API af voor de host-netns (R16, §7.5)
 ├── scripts/
 │   ├── capture-current.sh       read-only inventarisatie van de live installatie
 │   ├── render-config.sh         maakt hostconfig uit basisconfig + policy + UUID
 │   ├── preflight.sh             stopt vóór mutaties als de host niet past
-│   ├── verify-stack.sh          health, poorten, config, labels en isolatie
+│   ├── verify-stack.sh          health, poorten, config, labels, units, eigenaar en isolatie
+│   ├── dind-guard.sh            zet en controleert de OUTPUT-regel van de guard
 │   ├── verify-trust-scope.sh    controleert repos, schrijvers en PR/fork-policy
 │   ├── forgejo_runner_cycle.py  lifecycle incl. drain, scrub en quarantaine
 │   └── scrub-dind.sh            fenced cleanup terwijl geen runnerproces bestaat
@@ -138,6 +142,7 @@ Bindend, met per regel de stap die het bewijst:
 
 - iedere host houdt de uitgerolde bundelcommit-SHA vast in `/opt/forgejo-runner/BUNDLE_COMMIT`; `verify-stack.sh` faalt als die ontbreekt, niet in de canonieke repo bestaat of afwijkt van de andere host (stap D en G);
 - `verify-stack.sh` berekent daarnaast een canonieke hash over de uitgerolde bundelbestanden en vergelijkt die met de hash van die commit; dit is de mechanische invulling van "byte-identiek" waarnaar §9 verwijst; stap B levert het script, stap D en G bewijzen de vergelijking;
+- `verify-stack.sh` controleert bovendien (R16, AUDIT-023/-033): dat de geïnstalleerde units in `/etc/systemd/system` byte-gelijk zijn aan de bundelkopie; dat de bundelmap en ieder gehasht bundelbestand eigendom van root is en niet groeps- of wereldschrijfbaar; dat `ss` aanwezig is (zonder `ss` is isolatie niet te controleren en faalt de gate); en dat de DinD-guard uit §7.5 actief is en werkt. Units die niet uit de bundel komen (de Forgejo→GitHub-mirror en de Docker-rollbackretentie) zijn host-lokaal en vallen buiten deze gate; de bundel-README noemt ze zo. Uitrol gebeurt met `install -o root -g root`, omdat root-units de bundelscripts uitvoeren en een schrijfbare bundel voor een onbevoorrechte gebruiker een pad naar root zou zijn;
 - beide waarden staan in de monitoring van §10;
 - secrets komen niet in Git. Vandaag bestaat alleen de eenmalige scan van stap B, en negeren de `.gitignore`-bestanden van beide repo's `credentials/`, `forgejo-token`, `*.token`, `*.key`, `*.pem`, `.env` en `.env.*`, met `.env.example` expliciet toegestaan. Een doorlopende scan is er nog niet: stap B levert `scripts/secret-scan.sh` plus `scripts/install-git-hooks.sh` in de canonieke repo, installeert die als pre-commit hook in beide werkbomen en bewijst met een wegwerptestbestand dat een commit met een tokenpatroon daadwerkelijk wordt geblokkeerd. Pas na dat bewijs mag dit ontwerp beweren dat de scan draait. Het actieve token leeft op de host in `/opt/forgejo-runner/credentials/` en bevindt zich dus nooit binnen een repo-werkboom;
 - deployment gebeurt handmatig of via SSH vanaf `mac`, nooit via een Forgejo Actions-workflow. Jobcontainers draaien in DinD zonder host-Docker-socket en zonder hostpadvolumes (§7.6) en kunnen de hoststack fysiek niet wijzigen. Een deployworkflow op deze runners is per ontwerp onmogelijk en mag niet worden gebouwd;
@@ -198,7 +203,17 @@ Iedere runner gebruikt uitsluitend de DinD op dezelfde host. Er is:
 - geen publicatie van 2375 of 2376 op de host;
 - geen gedeeld DinD-volume tussen de hosts;
 - geen gedeelde DinD tussen de twee runners;
-- een expliciet intern Docker-endpoint dat zowel de healthcheck als alle verificaties gebruiken.
+- een expliciet intern Docker-endpoint dat zowel de healthcheck als alle verificaties gebruiken;
+- geen bereik van de DinD-API vanuit de host-netwerknamespace (R16, hieronder).
+
+**Transportbesluit (R16, besluit JP 30 september 2026, ISS-49).** De DinD-API luistert op `tcp://0.0.0.0:2375` zonder TLS binnen het private bridgenetwerk `runner-control`. De legacy-installatie gebruikte TLS met clientcertificaten; dat is voor de pool niet overgenomen, omdat ook iedere job- en stepcontainer het endpoint via `dind.internal` gebruikt en dan certificaten zou moeten krijgen — een job heeft de DinD-API bij ontwerp in handen (§7.6), dus TLS beschermt niets tegen jobs. Het wel bestaande pad is de host zelf: op 30 september 2026 gemeten op `max2` kon iedere lokale gebruiker, ook `nobody`, het bridge-adres op 2375 bereiken en daarmee een privileged container starten, dus root worden (`evidence/audit-opvolging/2026-09-30-dind-bereikbaarheid.md`). De afwezigheid van een gepubliceerde poort bewijst dat niet: een bridge-adres is vanuit de host-netns altijd routeerbaar. Daarom geldt:
+
+- het netwerk `runner-control` krijgt een vaste Linux-bridgenaam `fr-dind0`;
+- een oneshot-unit uit de bundel, `forgejo-runner-dind-guard.service`, zet in de filtertabel `OUTPUT -o fr-dind0 -p tcp --dport 2375/2376 -j REJECT`. Dat raakt alleen verkeer dat op de host zelf ontstaat, ook van root; verkeer tussen runner en DinD blijft binnen de bridge. Niets op de host heeft dit pad nodig: de healthcheck draait in de container en de controller gebruikt `docker compose exec`;
+- `forgejo-runner-cycle.service` vereist de guard-unit;
+- `verify-stack.sh` bewijst per host dat de regel bestaat en dat een TCP-connect vanaf de host naar het DinD-adres op 2375 faalt.
+
+Een lokale beheerder met root kan de regel verwijderen; dat is geen nieuw risico, want root beheert de host-Docker al. De maatregel sluit uitsluitend het pad van niet-root-accounts en services naar de privileged DinD.
 
 De endpointmatrix is bindend:
 
@@ -228,7 +243,7 @@ De outer Compose-service krijgt exact deze grenzen:
 - `privileged: true` alleen op DinD; runner en jobpolicy blijven niet-privileged;
 - geen host-Docker-socket, host-PID-, host-IPC- of host-netwerkmode;
 - geen hostpadvolumes, behalve expliciet goedgekeurde lokale runnerconfig/credentials voor de runnercontainer;
-- geen gepubliceerde DinD-poort;
+- geen gepubliceerde DinD-poort en geen bereik vanuit de host-netns (guard, §7.5);
 - alleen runner en DinD delen het private controlenetwerk;
 - CPU-, geheugen- en PID-limieten op runner en DinD;
 - read-only mount van het tokenbestand alleen in de runnercontainer;
@@ -246,7 +261,10 @@ De trustscope-gate inventariseert vóór deployment:
 - branch-protection- en reviewregels voor de default branch;
 - de effectieve workflowbron per repository: `.forgejo/workflows/*.{yml,yaml}` als die map bestaat en anders Forgejo's fallback `.github/workflows/*.{yml,yaml}`;
 - alle effectieve workflows met `pull_request`, `pull_request_target`, `workflow_run` of een gedeeld runnerlabel; de gate behandelt het verwijderen van `.forgejo/workflows` als een relevante wijziging omdat daarmee de `.github/workflows`-fallback actief kan worden;
-- fork- en PR-beleid dat onbetrouwbare code kan laten uitvoeren.
+- fork- en PR-beleid dat onbetrouwbare code kan laten uitvoeren;
+- deploy keys met schrijfrecht (R16, AUDIT-012). Een schrijf-deploy-key kan buiten iedere goedgekeurde identiteit om een workflow pushen. Zo'n sleutel is een harde afwijking, tenzij JP hem per repository bij fingerprint bevestigt in `deploy_keys_acknowledged`; dan is hij `accepted`. De vorm is fail-closed zoals bij `risky_triggers_acknowledged`. Op 30 september 2026 had alleen `DigiPlein` er één (`ops-agent-digiplein-deploy`); JP heeft die bevestigd.
+
+Twee inventarisregels maken de gate fail-closed waar hij eerder stil groen kon zijn (R16, AUDIT-012). Iedere gepagineerde lijst wordt opgehaald tot een lege pagina of het door `X-Total-Count` gemelde totaal; een afwijking van dat totaal is onleesbaar. Een kleinere serverpaginagrootte kapt dus niets meer af (gemeten maximum vandaag: 50). En een workflow met een risicovolle trigger waarvan een `runs-on` geen letterlijk label is (een expressie, anker, tag of lege waarde) telt als gebruiker van het gedeelde label, want hij kan er tijdens het draaien op uitkomen. Een labelnaam in YAML-commentaar telt niet meer als gebruik.
 
 De gate bepaalt de effectieve workflowbron mechanisch en faalt gesloten als het bestaan, de inhoud of de fallback niet ondubbelzinnig uitleesbaar is. De readinesslaag onderscheidt eerst bronbeschikbaarheid, authenticatie/protocol en inhoudelijke trust. Iedere uitkomst valt verplicht in precies één van vier takken; er bestaat geen default-fallback:
 
@@ -349,6 +367,8 @@ Een geplande pause, rollback, reboot of service-stop gaat eerst naar `DRAINING` 
 Wordt toch een toegewezen job zonder lokaal proces gevonden, dan blijft de host gepauzeerd en `QUARANTINED`. Stap A legt de effectieve Forgejo Actions assignment-/requeue-timeout vast als `T_requeue`. De operator wacht maximaal `min(T_requeue + 30 seconden, 10 minuten)`. Kan `T_requeue` niet betrouwbaar worden vastgesteld, dan is de wachttak niet toegestaan. Is de job na de grens niet aantoonbaar gerequeued/terminaal, dan annuleert de operator de run en dispatcht dezelfde workflow vanaf dezelfde commit opnieuw volgens de vastgelegde migratiepolicy. Pas na een vastgelegd nulbewijs en scrub is de host veilig gepauzeerd of herstartbaar.
 
 Een digest-gepinde canonieke jobimage is onveranderlijke uitvoerbasis en geen jobstate. Als scrub of bewijs faalt, blijft de host `QUARANTINED`; hij neemt geen job aan. Faalt een pre-pull, dan neemt de host evenmin een job aan, maar probeert hij de pull zelf opnieuw met een wachttijd die vanaf dertig seconden verdubbelt tot maximaal vijftien minuten, en logt hij bij iedere poging de reden (R15). Alleen een bij het opstarten achtergebleven runnercontainer of een mislukte opstartreconciliatie houdt de host vast tot een mens ingrijpt; ook dan logt de controller de reden iedere retry-interval. Reguliere scrub duurt maximaal vijf minuten. Een overschrijding is een alert, quarantaint die host en reset de stabiliteitsperiode; de controller beëindigt de lokale client dan zelf (SIGTERM, na tien seconden SIGKILL) en bewaart de operatiemarker. Een pre-pull heeft een eigen deadline van vijftien minuten; overschrijding telt als pre-pullfout. **Herstel na een onzeker operatie-einde (R15).** Een afgekapte of door een signaal beëindigde operatie heeft een onzeker einde: de opdracht in DinD kan het verdwijnen van de lokale client overleven (`controller-entrypoint-ontwerp.md` §6.4). Een lokale procesexit heft die onzekerheid nooit op. Vóór iedere volgende muterende operatie doorloopt de controller daarom, binnen dezelfde runtime en na de geldende wachttijd, opnieuw de opstartreconciliatie: DinD-herstart, die iedere lopende opdracht in DinD beëindigt, daarna een volledige scrub; pas na een geslaagd scrubbewijs wist hij de marker. Tijdens een stop of drain voert hij die reconciliatie niet uit; de bewaarde marker dwingt haar af bij de volgende start. Twee hosts kunnen na twee gelijktijdig voltooide jobs kort tegelijk scrubben; gedurende maximaal vijf minuten kan dan geen runner online zijn. Reeds gestarte jobs falen hierdoor niet en nieuwe jobs blijven in Forgejo in de wachtrij. Dit begrensde onderhoudsvenster is verwacht poolgedrag, geen onverwachte uitval.
+
+**Wat de scrub garandeert (R16, AUDIT-009).** De scrub is hygiëne tussen vertrouwde jobs, geen securitygrens tegen een vijandige job. Hij verwijdert aantoonbaar achtergebleven containers, volumes, netwerken, images en buildcache, zodat een volgende job niet per ongeluk op state van een vorige leunt. Tegen een vijandige job garandeert hij niets: die job bestuurt tijdens zijn run een privileged DinD, kan de schrijfbare laag van de DinD-container of de daemon zelf wijzigen, en de scrub en zijn bewijs draaien daarna in diezelfde container en zijn dus te vervalsen. Een DinD-herstart vervangt de containerlaag niet. De bescherming tegen onbetrouwbare code is uitsluitend de trustgate (§7.7) plus het aanvaarde restrisico van §7.6. Periodiek hercreëren van de DinD-container is overwogen en niet gekozen: het beschermt niet tegen een escape naar de host, en die is het eigenlijke risico.
 
 De controller logt runner-ID, cyclusnummer, begin/eindtijd, toestand en geanonimiseerde tellingen, nooit namen of metadata die secrets kunnen bevatten. De eerste scrub van het bestaande `scrum4me-server`-volume is een expliciet onderhoudsvenster en mag langer duren wegens de huidige circa 121 GB inner-DinD-data; hij gebeurt pas als `max2` bewezen jobs kan overnemen en telt niet als een reguliere stabiliteitscyclus. Daarna krijgt de nieuwe stack een schoon, benoemd volume en pre-pullt de controller alleen de toegestane digest-images; de 121 GB ongecontroleerde state wordt niet naar het nieuwe actieve volume gekopieerd. Alle daaropvolgende scrubs vallen onder de vijfminutengrens.
 
@@ -784,6 +804,18 @@ Scope: kleiner — de lokale nulbewijsregel vervalt; AUDIT-007 blijft een bekend
 - de algemene markerregel in entrypoint §6.4 noemt nu de uitzondering voor een onzeker einde: de marker blijft na een mislukte herstelscrub staan en verdwijnt alleen na groen scrubbewijs.
 
 Verdict: **GO**. Dit GO betreft de ontwerpdelta; implementatie, de nieuwe scenario's en de handmatige max2-praktijkproef volgen, en uitrol blijft afzonderlijk geautoriseerd.
+
+### Delta R16 — audit-opvolging increment 4 (AUDIT-009/-010/-012/-023/-024/-033) — in review — 30 september 2026
+
+**Aanleiding:** de backlog-PBI's 40–45 en 26 uit de audit-opvolging (opdracht JP 30 september 2026). De meting voor PBI-40 vond een nieuw, hoog risico: de ongeauthenticeerde privileged DinD-API was op `max2` voor iedere lokale gebruiker bereikbaar (ISS-49).
+
+**Besluiten JP (30 september 2026):** host-firewallguard in plaats van TLS; de schrijf-deploy-key van `DigiPlein` bevestigd; Actions op `scrum4me-server` aan voor een push-only verify-workflow.
+
+**Wijzigingen:** §4 (vergelijkingsritme van de pins), §6 (bundelboom), §6.1 (driftgate: units, eigenaar, `ss`, guard; host-lokale units; uitrol met `install -o root`), §7.5 (transportbesluit en guard), §7.6 (grens), §7.7 (deploy keys, paginatotaal, onleesbare `runs-on`), §7.9 (wat de scrub garandeert).
+
+**Wat niet verandert:** het aanvaarde risico van privileged DinD (§7.6), de endpointmatrix, de vierwegclassificatie en de trustbinding, de caps, de fase-1-freeze van de pins.
+
+**Review:** delta-variant, één cross-model reviewer `mac:codex`.
 
 ## 14. Acceptatie van dit ontwerp
 
