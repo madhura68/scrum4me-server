@@ -1,7 +1,7 @@
 # Plan — opvolging repo-audit 2026-09-30
 
-Status: **concept; besluiten van JP verwerkt (30 sep), akkoord op het plan als geheel nog open.** Er wordt
-niets gematerialiseerd of uitgevoerd vóór akkoord. Dit plan gaat niet door een review-loop (besluit JP);
+Status: **akkoord JP 30 sep; gematerialiseerd 30 sep** (zie "Materialisatie — resultaat"). Uitvoering
+vereist een afzonderlijke opdracht van JP. Dit plan gaat niet door een review-loop (besluit JP);
 de ontwerpdelta van increment 2 wel (verplicht).
 Bron: `docs/repo-audit/` (PR #83), met name `findings.json` (33 bevindingen) en
 `pbi-candidates.md` (18 kandidaten).
@@ -127,3 +127,19 @@ uitvoering vereist een aparte opdracht.
    via Actions, niet controleren. CI zou wel draaien op dezelfde runnerpool die het test.
 4. **Reviewvorm:** moet dit plan zelf door een review-loop, of alleen de delta van increment 2
    (verplicht)?
+
+## Materialisatie — resultaat (30 sep)
+
+| Sprint | Inhoud |
+|---|---|
+| **S-2026-09-30-3** (increment 1+2) | PBI-27 K-09 token · PBI-28 K-01 secret-scan · PBI-29 K-10 verify · PBI-30 K-13 --check · PBI-31 K-14 docs/hygiëne · PBI-32 K-03 ontwerpdelta · PBI-33 K-17 scenariotests · PBI-34 K-02 geen stille stilstand · PBI-35 K-04 quarantaine/fence · PBI-36 K-05 scrub-liveness — stories ST-041…ST-050, taken T-148…T-166 |
+| **S-2026-09-30-4** (increment 3) | PBI-37 K-11 tests mirror/retention · PBI-38 K-07 mirror-tokens · PBI-39 K-12 mirror/retention-logica — stories ST-051…ST-053, taken T-167…T-172 |
+| Backlog (increment 4) | PBI-40 K-06 DinD-grens · PBI-41 K-08 trust-scan · PBI-42 K-15 drift-gate · PBI-43 K-16 image-pins · PBI-44 K-18 rotate-env-credential · PBI-45 AUDIT-033 root-owned bundel |
+| Backlog (besluit 3) | PBI-26 read-only CI (na PBI-29) |
+
+Afwijking van het voorstel: AUDIT-033 is een eigen backlog-PBI (PBI-45) in plaats van een notitie bij
+stap G-taak T-50; de stap G-taken zijn niet gewijzigd.
+
+Volgorde binnen S-2026-09-30-3: T-148 → T-149 → T-150 (token); T-151 → T-152; T-153 → T-154; T-155;
+T-156, T-157; T-158 → T-159 (delta-GO) vóór T-162, T-163, T-165; T-160 → T-161 vóór de fixes;
+T-166; T-164 (bundelcommit + praktijkproef, apart akkoord) als laatste.
