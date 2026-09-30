@@ -139,7 +139,7 @@ Leg alle uitvoer vast onder `evidence/forgejo-17.0/fase0/` (redactieregels: Fase
 
 Doel: vóór het onomkeerbare venster op onze eigen data bewijzen dat (a) de migratie 15.0.9 → `V17` slaagt en hoe lang ze duurt, (b) doctor schoon is, (c) de trustgate en het runner-recordcontract tegen 17 werken, en (d) Runner 12.10.1 een job via `one-job --wait` kan draaien tegen 17. Productie merkt alleen een online `pg_dump` en een rsync-leeslast. Plan de fase buiten de slagen uit 0.7 (in de praktijk: niet tussen 03:00 en 04:00 lokaal), zodat `$RH` met de proefkopie niet in een restic-snapshot belandt. *Optioneel, vóór 15 oktober:* dezelfde fase met vooraf `IMG=codeberg.org/forgejo-experimental/forgejo:17.0-test` als vroege waarschuwing op de echte data; dat telt niet als Gate R.
 
-- **R.0 Opzet.**
+- **R.0 Opzet.** Eerst een schone lei: `docker ps -a --filter name=fj17 --format '{{.Names}}'`, `docker network ls --filter name=fj17 --format '{{.Name}}'` en `docker volume ls -q --filter name=fj17` → alle drie leeg, en `sudo test -e "$RH"` → bestaat niet. Staat er nog iets van een eerdere, afgebroken proef, dan eerst R.7: een overgebleven `fj17-rh-pgdata` zou anders stil als database van de nieuwe proef worden hergebruikt.
   ```sh
   sudo install -d -m 0700 -o root -g root "$RH" "$RH/data" "$RH/runner" "$RH/trust"
   docker network create --internal fj17-rh-net
@@ -290,7 +290,7 @@ Doel: vóór het onomkeerbare venster op onze eigen data bewijzen dat (a) de mig
   docker volume ls -q --filter name=fj17                              # → leeg
   diff <(docker volume ls -qf dangling=true | sort) /tmp/fj17-dangling-voor.txt && echo "GEEN NIEUW DANGLING VOLUME"
   ```
-  Toont de `diff` een verschil, dan is er een naamloos volume bijgekomen (of verdwenen) sinds R.0: beoordelen of het van de proef is en alleen dán dat ene volume op naam verwijderen — geen `prune`; volumes van andere sessies blijven staan. R.7 geldt ook na een afgebroken proef: de stappen falen dan deels op "bestaat niet", de controles eronder beslissen. De images (`$IMG`, `python:3.13-slim`) blijven staan; `$IMG` is in 1.3 toch nodig.
+  Toont de `diff` een verschil, dan is er een naamloos volume bijgekomen (of verdwenen) sinds R.0: beoordelen of het van de proef is en alleen dán dat ene volume op naam verwijderen — geen `prune`; volumes van andere sessies blijven staan. R.7 geldt ook na een afgebroken proef: de stappen falen dan deels op "bestaat niet", de controles eronder beslissen. `/tmp/fj17-dangling-voor.txt` (alleen volumenamen) gaat naar de evidence en wordt daarna verwijderd. De images (`$IMG`, `python:3.13-slim`) blijven staan; `$IMG` is in 1.3 toch nodig.
 
 **Gate R:** `PROEFKOPIE OK`, `PROEF-DB OK`, 17 draait op de kopie met versie `V17`, `MIG` vastgelegd; isolatie bewezen; `doctor exit 0` en `DOCTOR OK` (of alleen verklaarde bevindingen); trustgate gelijk aan productie; `CONTRACT OK`; runnerjob `success` (of een vastgelegd JP-besluit over een opzetfout in R.5); logs zonder `[F]`/panic/*creating new key*; opgeruimd (geen container, netwerk of volume met `fj17` in de naam, `GEEN NIEUW DANGLING VOLUME`, `$RH` weg). Leg vast in `evidence/forgejo-17.0/proef.md`: `MIG`, versie, image-digest, doctor-verschillen, trust-exit, vorm van `/admin/actions/runners`, R.5-uitkomst. Anders STOP — geen venster.
 
