@@ -8,7 +8,9 @@ Forgejo-Runner-poolbundel die op zowel `scrum4me-server` als `max2` draait.
 | Pad | Inhoud |
 |---|---|
 | `docs/forgejo-runner-pool/` | Ontwerp, reviewrapporten en runbook van de tweemachinepool |
-| `forgejo-runner/` | **Canonieke gedeelde bundel** (nog niet aangemaakt; volgt uit het implementatieplan) |
+| `forgejo-runner/` | **Canonieke gedeelde bundel** (draait op `max2`; `scrum4me-server` volgt in stap G) |
+| `scripts/` | Hosttools buiten de bundel en `verify.sh` (alle tests en shellcheck) |
+| `docs/runbooks/` | Runbooks en gedateerd bewijs |
 | `hosts/scrum4me-server/` | Host-overlay en bewijsmateriaal voor deze host (volgt) |
 
 De tweede host heeft een eigen repo: `max2`. Die bevat **uitsluitend** host-overlay,

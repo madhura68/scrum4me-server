@@ -11,3 +11,7 @@ forgejo-token
 # Lokale werkbestanden
 .DS_Store
 .claude/worktrees/
+
+# Python-bytecode
+__pycache__/
+*.pyc

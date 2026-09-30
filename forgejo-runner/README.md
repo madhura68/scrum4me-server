@@ -56,8 +56,9 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    ```
 10. `systemctl enable --now forgejo-runner-trust.timer`. Zonder deze timer
     verloopt het verdict na `trust.verdict_max_age_seconds` (24 uur) en stopt de
-    controller met het starten van runners — **stil**, want de gate logt zijn
-    reden niet. Controleer met `systemctl list-timers forgejo-runner-trust.timer`
+    controller met het starten van runners. De journal van
+    `forgejo-runner-cycle.service` meldt dat één keer, bij de wissel naar rood
+    (`trustgate ROOD: <reden>`), daarna niet opnieuw. Controleer met `systemctl list-timers forgejo-runner-trust.timer`
     dat er een `NEXT` staat, en met `systemctl start forgejo-runner-trust.service`
     dat een handmatige slag exit 0 geeft en `measured_at` in
     `trust-verdict.json` opschuift.

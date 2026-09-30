@@ -8,11 +8,11 @@ Host-repo voor de Ubuntu-machine `scrum4me-server` én **canonieke bron** van de
 - **product_id:** `cmsx8zbdh0002hk7rcgxxr00k`
 - **Code:** `PRODUCTION`
 - **Definition of Done:** nog niet geregistreerd in Scrum4Me (veld is leeg, gecontroleerd 2026-08-31). Tot JP er een vastlegt geldt voor het runnerpool-werk §9 "Definitie van een stabiele pool" uit [docs/forgejo-runner-pool/migratieontwerp.md](docs/forgejo-runner-pool/migratieontwerp.md): zeven aaneengesloten dagen waarin alle daar genoemde criteria groen zijn.
-- **Lopend werk:** Forgejo Runner tweemachinepool. Fase 1 is een stabiele pool op Runner 12.10.1 over `scrum4me-server` en `max2`; fase 2 is pas daarna een rolling upgrade naar Runner 13. Het ontwerp heeft GO (delta-review R12, ronde 3); het uitvoerbare implementatieplan bestaat nog niet.
+- **Lopend werk:** Forgejo Runner tweemachinepool. Fase 1 is een stabiele pool op Runner 12.10.1 over `scrum4me-server` en `max2`; fase 2 is pas daarna een rolling upgrade naar Runner 13. Het ontwerp heeft GO (R12, aangevuld met R14); post-GO delta R15 (audit-opvolging) is in review sinds 30 september 2026. De implementatieplannen staan in `docs/forgejo-runner-pool/implementatieplan-*.md`. De bundel draait op `max2`; `scrum4me-server` draait tot stap G nog de legacy runner (`runner:12` en `docker:dind` op tag, gemeten 30 september 2026).
 
 Volgt de globale Scrum4Me-methodiek (`~/.claude/rules/scrum4me-methodiek.md` voor Claude; de "Scrum4Me-methodiek"-sectie in `~/.codex/AGENTS.md` voor Codex). Niet-triviaal werk: plan → Sprint/PBI/Story/Taak via de `scrum4me` MCP → `update_task_status` per laag → docs in de DB.
 
-- **Verify:** deze repo bevat nog geen code. De verificatiecommando's worden vastgelegd in stap B van het migratieontwerp, samen met de bundel zelf.
+- **Verify:** `bash scripts/verify.sh` draait alle bats- en unittest-suites en shellcheck, faalt bij iedere fout en noemt overgeslagen tests met reden (`--only bats|py|shellcheck`). Integratietests zijn opt-in (`VERIFY_INTEGRATION=1`, `REC_PG_INTEGRATION=1`). Op macOS slaan 17 tests over (GNU tar, Linux-ACL, Postgres); draai vóór een uitrol ook op een Linux-host. Op `max2` ontbreekt shellcheck (gemeten 30 september 2026).
 
 ## Rol van deze repo
 
@@ -21,7 +21,9 @@ Canonieke bron van de gedeelde bundel plus de host-overlay voor `scrum4me-server
 | Pad | Inhoud | Bestaat nu |
 |---|---|---|
 | `docs/forgejo-runner-pool/` | Ontwerp, reviewrapporten en runbook van de tweemachinepool | ja |
-| `forgejo-runner/` | De volledige gedeelde bundel | nee — ontstaat in stap B |
+| `forgejo-runner/` | De volledige gedeelde bundel: compose-stack, systemd-units, cyclecontroller, trustscan, deploy- en verificatiescripts, tests | ja |
+| `scripts/` | Hosttools buiten de bundel: `rotate-env-credential`, `compose-inpak`, `compose-git-init` + `compose-git-pre-commit`, `forgejo-mirror/`, `docker-rollback-retention/`, `verify.sh`; tests in `scripts/tests/` | ja |
+| `docs/runbooks/` | Runbooks (credentialrotatie) en gedateerd bewijs | ja |
 | `hosts/scrum4me-server/` | Host-overlay en bewijsmateriaal voor deze host | nee — ontstaat in stap G |
 
 ## Oriëntatie
