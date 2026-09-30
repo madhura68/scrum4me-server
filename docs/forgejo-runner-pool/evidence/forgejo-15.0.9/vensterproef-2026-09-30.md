@@ -367,15 +367,17 @@ Lezing:
 - **Defect:** de regel "oude toets" laat zien dat de doctor-vergelijking uit de plantekst van 9 september
   387–388 verschilregels geeft tussen twee gezonde logs. Zie §4.
 
-## 4. De doctor-functies (D10), versie na delta-ronde 3
+## 4. De doctor-functies (D10), versie na delta-ronde 4
 
 Historie: de eerste versie (delta-ronde 2) filterde op het regeleinde `OK` en toetste alleen het na-log;
 de tweede (ronde 3) gebruikte getypeerde records en toetste beide logs, maar zag een doctor die tússen twee
-checks met exit 0 terugkeert niet. De versie hieronder eist daarnaast Forgejo's afsluitregel
-`All done (checks: N).` met N gelijk aan het aantal verdicts. Ze is byte-gelijk aan het blok
-"Hulpfuncties" in het plan en is gedraaid in `ubuntu:24.04` (GNU sed 4.9, mawk, bash 5.2) op de echte
-doctor-logs uit deze proef en uit de proef van het 17.0-plan, plus synthetische gevallen — waaronder die
-van de reviewer uit ronde 2 (5, 6, 7, 10) en ronde 3 (13, 21).
+checks met exit 0 terugkeert niet; de derde (ronde 4) eist daarom Forgejo's afsluitregel
+`All done (checks: N).` met N gelijk aan het aantal verdicts. Sinds ronde 4 zijn de functies zelf
+ongewijzigd; nieuw is dat stap 2.6 het verse vóór-log meteen met `doctorvolledig` toetst (gevallen 23 en
+24). Het blok hieronder is byte-gelijk aan "Hulpfuncties" in het plan en is gedraaid in `ubuntu:24.04`
+(GNU sed 4.9, mawk, bash 5.2) op de echte doctor-logs uit deze proef en uit de proef van het 17.0-plan,
+plus synthetische gevallen — waaronder die van de reviewer uit ronde 2 (5, 6, 7, 10), ronde 3 (13, 21) en
+ronde 4 (23).
 
 ```sh
 doctorlog() {            # $1 = container, $2 = logbestand: draait doctor en faalt luid bij een niet-nul exit
@@ -463,6 +465,12 @@ doctorlog scrum4me-forgejo /tmp/dbinit-run.log && doctortoets /tmp/syn-pre.log /
 docker() { cat /d/post-15.0.9.log; return 0; }                             # doctor-stub: gezond
 echo; echo "=== 22. keten gezond"
 doctorlog scrum4me-forgejo /tmp/post.log && doctortoets /d/pre-15.0.2.log /tmp/post.log; echo "keten-exit=$?"
+docker() { cat /tmp/syn-dbinit.log; return 0; }                            # doctor-stub: vroege return met exit 0 (ronde 3/4)
+echo; echo "=== 23. keten van 2.6 met de vroege return (exit 0): de volgende handeling mag niet bereikt worden (ronde 4)"
+doctorlog scrum4me-forgejo /tmp/pre-venster.log && doctorvolledig /tmp/pre-venster.log && echo "VOORLOG VOLLEDIG" && echo "(flush-queues en docker stop zouden nu volgen)"; echo "keten-exit=$?"
+docker() { cat /d/pre-15.0.2.log; return 0; }                              # doctor-stub: gezond
+echo; echo "=== 24. keten van 2.6 gezond"
+doctorlog scrum4me-forgejo /tmp/pre-venster.log && doctorvolledig /tmp/pre-venster.log && echo "VOORLOG VOLLEDIG" && echo "(flush-queues en docker stop zouden nu volgen)"; echo "keten-exit=$?"
 ```
 
 Uitvoer:
@@ -567,6 +575,17 @@ keten-exit=1
 doctor exit 0 → /tmp/post.log
 DOCTOR OK (volledige run, geen nieuwe bevindingen)
 keten-exit=0
+
+=== 23. keten van 2.6 met de vroege return (exit 0): de volgende handeling mag niet bereikt worden (ronde 4)
+doctor exit 0 → /tmp/pre-venster.log
+DOCTOR ROOD: /tmp/pre-venster.log sluit niet af met "All done (checks: 1)." (gevonden: "niets") — de run is niet aantoonbaar volledig — STOP
+keten-exit=1
+
+=== 24. keten van 2.6 gezond
+doctor exit 0 → /tmp/pre-venster.log
+VOORLOG VOLLEDIG
+(flush-queues en docker stop zouden nu volgen)
+keten-exit=0
 ```
 
 Lezing: de vier echte logs hebben een afsluitregel met hetzelfde aantal als hun verdicts (28, 28, 28, 27)
@@ -577,13 +596,16 @@ checks vóór of na (13, 14), een afsluitregel met een ander aantal (15) en een 
 Een `ERROR` die al in het vóór-log stond, telt niet als nieuw (12). `doctorbaseline` weigert een
 onvolledige run (17) en toont een waarschuwing die op "OK" eindigt (18). In de keten
 `doctorlog … && doctortoets …` stopt een doctor met exit 42 vóór de vergelijking (20) en wordt een vroege
-return met exit 0 door `doctortoets` afgewezen (21).
+return met exit 0 door `doctortoets` afgewezen (21). In de keten van stap 2.6,
+`doctorlog … && doctorvolledig … && echo "VOORLOG VOLLEDIG"`, geeft de vroege return met exit 0
+`DOCTOR ROOD` met keten-exit 1 en wordt de volgende handeling niet bereikt (23); de gezonde keten geeft
+`VOORLOG VOLLEDIG` (24).
 
 Live in de wegwerp-"host" (busybox-awk), tegen de proef-forge in de stand ná het 15.0.9-venster. Het
 laatste blok is een poging om de vroege return echt op te wekken met een config-kopie die naar een
 onbereikbare databasehost wijst: 15.0.9 draait dan toch alle checks, vrijwel elk met `ERROR`, en geeft
 exit 0 — rood via de nieuwe bevindingen. Het vroege-returnpad zelf is dus alleen met de bronafgeleide stub
-beproefd (gevallen 13, 14, 17, 21).
+beproefd (gevallen 13, 14, 17, 21, 23).
 
 ```sh
 #!/usr/bin/env bash
@@ -591,7 +613,8 @@ beproefd (gevallen 13, 14, 17, 21).
 source /trial/doctorproef3/functies.sh
 echo "awk: busybox ($(busybox 2>&1 | head -1 | cut -c1-24)) | bash $BASH_VERSION | forge: $(curl -s http://127.0.0.1:3010/api/v1/version)"
 echo "--- 0.4: doctorlog + doctorbaseline"; doctorlog scrum4me-forgejo "$HOME/doctor-pre.log" && doctorbaseline "$HOME/doctor-pre.log"; echo "exit=$?"
-echo "--- 2.6 + 4.5: twee runs, dan doctortoets"; doctorlog scrum4me-forgejo "$HOME/doctor-a.log"; doctorlog scrum4me-forgejo "$HOME/doctor-b.log" && doctortoets "$HOME/doctor-a.log" "$HOME/doctor-b.log"; echo "exit=$?"
+echo "--- 2.6: doctorlog + doctorvolledig"; doctorlog scrum4me-forgejo "$HOME/doctor-a.log" && doctorvolledig "$HOME/doctor-a.log" && echo "VOORLOG VOLLEDIG"; echo "exit=$?"
+echo "--- 4.5: doctorlog + doctortoets"; doctorlog scrum4me-forgejo "$HOME/doctor-b.log" && doctortoets "$HOME/doctor-a.log" "$HOME/doctor-b.log"; echo "exit=$?"
 echo "--- doctorlog tegen een niet-bestaande container"; doctorlog bestaat-niet "$HOME/doctor-x.log" && doctortoets "$HOME/doctor-a.log" "$HOME/doctor-x.log"; echo "exit=$?"
 echo "--- echte vroege return: doctor met een onbereikbare database (config-kopie met een niet-bestaande host), exit en log"
 docker exec -u git scrum4me-forgejo sh -c 'sed "s|^HOST *=.*|HOST = bestaat-niet.invalid:5432|" /data/gitea/conf/app.ini > /tmp/app-kapot.ini; forgejo --config /tmp/app-kapot.ini doctor check --all --log-file - ; echo "doctor-exit=$?"; rm -f /tmp/app-kapot.ini' > "$HOME/doctor-dbweg.log" 2>&1
@@ -606,8 +629,11 @@ awk: busybox (BusyBox v1.37.0 (2026-01) | bash 5.3.9(1)-release | forge: {"versi
 doctor exit 0 → /home/janpeter/doctor-pre.log
 checks: 28
 exit=0
---- 2.6 + 4.5: twee runs, dan doctortoets
+--- 2.6: doctorlog + doctorvolledig
 doctor exit 0 → /home/janpeter/doctor-a.log
+VOORLOG VOLLEDIG
+exit=0
+--- 4.5: doctorlog + doctortoets
 doctor exit 0 → /home/janpeter/doctor-b.log
 DOCTOR OK (volledige run, geen nieuwe bevindingen)
 exit=0
