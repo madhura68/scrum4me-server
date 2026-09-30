@@ -26,6 +26,15 @@ approved_at: "2026-08-31T21:56:04Z"
 # andere vorm is fail-closed geen bevestiging. Een roster-/policywijziging vraagt
 # herbeoordeling; per repo intrekbaar door de regel te verwijderen.
 
+# deploy_keys_acknowledged (AUDIT-012, T-173): een per-repo lijst van
+# vingerafdrukken (fingerprint zoals Forgejo ze toont, bv. "SHA256:...") van
+# deploy keys MET schrijfrecht (read_only: false) die JP voor die repo bewust
+# aanvaardt. Een schrijf-deploy-key kan buiten de identiteiten om code pushen en
+# is dus HARD tenzij zijn fingerprint hier staat; bevestigd geeft 'accepted'.
+# Alleen-lezen deploy keys hebben geen bevestiging nodig. Een ongeldige vorm
+# (geen lijst van niet-lege strings) is fail-closed: niets wordt bevestigd.
+# De lijst is een risicobesluit van de eigenaar; voeg niets toe zonder dat besluit.
+
 identities:
   - name: janpeter
   - name: s4m-codex-reviewer

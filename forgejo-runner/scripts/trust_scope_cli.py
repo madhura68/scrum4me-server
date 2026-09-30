@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import trust_scope
@@ -20,7 +21,8 @@ class ForgejoClient:
         self.base = base_url.rstrip("/")
         self.token = token
 
-    def _get(self, path, params=None, *, missing_ok=False, not_applicable=()):
+    def _get(self, path, params=None, *, missing_ok=False, not_applicable=(),
+             headers_out=None):
         """Haalt een API-pad op. Een foutstatus is standaard NIET normaal.
 
         Twee uitzonderingen, allebei gedocumenteerd in de OpenAPI-spec van deze
@@ -36,6 +38,9 @@ class ForgejoClient:
         Overal elders zou een foutstatus stil "geen collaborators", "geen teams"
         of "geen branch-protection" betekenen, en dat is fail-open in een gate
         die volgens 7.7 fail-closed moet zijn.
+
+        `headers_out` (een dict) wordt gevuld met de responsheaders, met
+        kleine letters als sleutel; de pager leest daaruit `x-total-count`.
         """
         url = f"{self.base}/api/v1{path}"
         if params:
@@ -43,6 +48,11 @@ class ForgejoClient:
         req = urllib.request.Request(url, headers={"Authorization": f"token {self.token}"})
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
+                if headers_out is not None:
+                    # Een nep-respons zonder headers levert geen totaal op.
+                    koppen = getattr(resp, "headers", None)
+                    if koppen is not None:
+                        headers_out.update({k.lower(): v for k, v in koppen.items()})
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as exc:
             if exc.code == 404 and missing_ok:
@@ -53,6 +63,44 @@ class ForgejoClient:
         except (urllib.error.URLError, ValueError) as exc:
             raise Unreadable(f"{path}: {exc}") from exc
 
+    PAGINAGROOTTE = 50
+    MAX_PAGINAS = 1000
+
+    def _pagineer(self, path, extraheer, params=None):
+        """Generieke pager met volledigheidscontrole.
+
+        Een server kan een kleinere paginagrootte hanteren dan gevraagd (gemeten
+        risico: een instance-maximum onder de 50). "Minder dan 50 items" is dus
+        geen teken van de laatste pagina. We pagineren tot een lege pagina of tot
+        het door `X-Total-Count` aangekondigde totaal is bereikt. Stuurt de server
+        dat totaal mee, dan moet het verzamelde aantal er exact mee overeenkomen;
+        een afwijking (te weinig of te veel) is onleesbaar. Zonder die check
+        meldt de gate groen terwijl hij niet alles heeft gezien.
+        """
+        out, totaal = [], None
+        for page in range(1, self.MAX_PAGINAS + 1):
+            koppen = {}
+            data = self._get(path, dict(params or {}, limit=self.PAGINAGROOTTE, page=page),
+                             headers_out=koppen)
+            items = extraheer(data, page)
+            if totaal is None and "x-total-count" in koppen:
+                try:
+                    totaal = int(koppen["x-total-count"])
+                except ValueError as exc:
+                    raise Unreadable(
+                        f"{path}: ongeldige X-Total-Count {koppen['x-total-count']!r}") from exc
+            out.extend(items)
+            if totaal is not None and len(out) >= totaal:
+                break
+            if not items:
+                break
+        else:
+            raise Unreadable(f"{path}: meer dan {self.MAX_PAGINAS} pagina's")
+        if totaal is not None and len(out) != totaal:
+            raise Unreadable(
+                f"{path}: {len(out)} items verzameld maar X-Total-Count meldt {totaal}")
+        return out
+
     def _gepagineerd(self, path):
         """Haalt een gepagineerd lijstendpoint volledig op.
 
@@ -62,15 +110,11 @@ class ForgejoClient:
         stil groen: een schrijver die nooit in de lijst verschijnt kan per
         definitie geen harde afwijking opleveren.
         """
-        out, page = [], 1
-        while True:
-            items = self._get(path, {"limit": 50, "page": page})
+        def extraheer(items, page):
             if not isinstance(items, list):
                 raise Unreadable(f"{path} pagina {page}: geen lijst")
-            out.extend(items)
-            if len(items) < 50:
-                return out
-            page += 1
+            return items
+        return self._pagineer(path, extraheer)
 
     def repos(self):
         """Alle zichtbare repositories, gepagineerd.
@@ -79,16 +123,11 @@ class ForgejoClient:
         lijst betekent "niets te toetsen" en zou de trustgate groen maken
         zonder een enkele repository te hebben gemeten.
         """
-        out, page = [], 1
-        while True:
-            data = self._get("/repos/search", {"limit": 50, "page": page})
+        def extraheer(data, page):
             if not isinstance(data, dict) or not isinstance(data.get("data"), list):
                 raise Unreadable(f"/repos/search pagina {page}: onverwachte respons")
-            items = data["data"]
-            out.extend(items)
-            if len(items) < 50:
-                return out
-            page += 1
+            return data["data"]
+        return self._pagineer("/repos/search", extraheer)
 
     def contents(self, full_name, path):
         # De enige plek waar een 404 een geldige uitkomst is: de workflowmap
@@ -99,6 +138,11 @@ class ForgejoClient:
     # moet de gate rood maken in plaats van een lege verzameling te leveren.
     def collaborators(self, full_name):
         return self._gepagineerd(f"/repos/{full_name}/collaborators")
+
+    def deploy_keys(self, full_name):
+        # Een 404 is hier nooit normaal: een onleesbare sleutellijst mag niet als
+        # "geen deploy keys" gelden.
+        return self._gepagineerd(f"/repos/{full_name}/keys")
 
     def collaborator_permission(self, full_name, login):
         return self._get(f"/repos/{full_name}/collaborators/{login}/permission")
@@ -222,6 +266,10 @@ def main():
             source = repo["workflow_source"]
             print(f"    workflow_source: {source if source else 'null'}")
             print(f"    writers: [{', '.join(repo['writers'])}]")
+            schrijf = sorted(k["fingerprint"] for k in repo.get("deploy_keys", [])
+                             if not k["read_only"])
+            if schrijf:
+                print(f"    deploy_keys_acknowledged: [{', '.join(schrijf)}]")
         return 0
 
     os.makedirs(args.out, exist_ok=True)
