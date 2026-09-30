@@ -309,6 +309,29 @@ class TestMain(unittest.TestCase):
         for naam in ("compose_file", "allowed_images_file", "labels_file",
                      "allowlist_file", "marker_path", "trust_verdict_path"):
             self.assertIn(naam, err.getvalue())
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read mode 000")
+    def test_check_unreadable_file(self):
+        # ISS-47: --check only tested existence; an unreadable file passed and crashed the unit.
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = _check_toml(tmp)
+            os.chmod(os.path.join(tmp, "images.txt"), 0)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = cr.main(["--config", cfg_path, "--check"])
+        self.assertEqual(rc, 2)
+        self.assertIn("allowed_images_file is niet leesbaar", err.getvalue())
+    def test_check_path_hidden_by_protecthome(self):
+        # ISS-47: the unit has ProtectHome=true; a path under /root, /home or /run/user exists
+        # for --check (run by an operator) but is invisible to the service.
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = _check_toml(tmp)
+            t = open(cfg_path).read().replace(f"{tmp}/images.txt", "/root/proef-images.txt")
+            open(cfg_path, "w").write(t)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = cr.main(["--config", cfg_path, "--check"])
+        self.assertEqual(rc, 2)
+        self.assertIn("ProtectHome", err.getvalue())
     def test_check_poll_zero(self):
         rc, err = self._check(**{"poll_interval_seconds = 1": "poll_interval_seconds = 0"})
         self.assertEqual(rc, 2)
@@ -498,6 +521,54 @@ class TestGateTransitionLogging(unittest.TestCase):
             with self.assertLogs(rt.log, level="WARNING") as cm:
                 rt.tick()
             self.assertTrue(any("rc=17" in m for m in cm.output))
+
+class TestAllowedImagesFailClosed(unittest.TestCase):
+    """ISS-47: an unreadable allowed_images_file crashed the controller (crashloop on max2,
+    2026-09-30, ProtectHome hid a path under /root). It must fail closed like the other gates:
+    no crash, no runner, one warning with the reason plus a reminder, and recovery on its own."""
+    def _run(self, rt, clock, seconds):
+        for _ in range(int(seconds)):
+            clock.advance(1.0); rt.tick()
+
+    def test_missing_file_no_crash_no_runner_logged_once_plus_reminder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            path = rt.cfg.allowed_images_file
+            os.rename(path, path + ".weg")
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                self._run(rt, clock, 65)
+            self.assertEqual(rec.starts, [])               # no scrub/pull/runner
+            rood = [m for m in cm.output if "allowed_images_file onleesbaar" in m]
+            nog = [m for m in cm.output if "allowed_images_file nog steeds onleesbaar" in m]
+            self.assertEqual(len(rood), 1)
+            self.assertIn(path, rood[0]); self.assertIn("FileNotFoundError", rood[0])
+            self.assertEqual(len(nog), 2)                   # t=30 and t=60 at retry_interval 30
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read mode 000")
+    def test_unreadable_file_same_as_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            os.chmod(rt.cfg.allowed_images_file, 0)
+            with self.assertLogs(rt.log, level="WARNING") as cm:
+                self._run(rt, clock, 5)
+            self.assertEqual(rec.starts, [])
+            self.assertTrue(any("PermissionError" in m for m in cm.output))
+
+    def test_recovers_when_file_becomes_readable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rt, ctrl, rec, clock = build_runtime(tmp)
+            path = rt.cfg.allowed_images_file
+            os.rename(path, path + ".weg")
+            self._run(rt, clock, 40)
+            self.assertEqual(rec.starts, [])
+            os.rename(path + ".weg", path)
+            with self.assertLogs(rt.log, level="INFO") as cm:
+                for _ in range(8):
+                    clock.advance(30.0); rt.tick()      # scrub/pull complete on their own (auto rc0)
+            self.assertIn("runner", rec.starts)
+            self.assertTrue(any("allowed_images_file weer leesbaar" in m for m in cm.output))
+            self.assertFalse(rt._blocked)                  # recoverable gate, not the sticky _block
+
 
 if __name__ == "__main__":
     unittest.main()
