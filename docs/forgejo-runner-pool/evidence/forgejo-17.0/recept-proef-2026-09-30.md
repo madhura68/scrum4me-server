@@ -57,7 +57,13 @@ Fouten die de proef in een eerdere versie van het recept vond en die vóór de r
    proef) staat in [vensterproef 15.0.9](../forgejo-15.0.9/vensterproef-2026-09-30.md) §4.
 3. **R4-databasenaam:** een tweede R4 faalt op de hernoeming als `forgejo_failed_17_0` al bestaat; 0.5
    toetst nu dat de naam vrij is (zelfde bewijs, §5).
-4. Klein: de runnerconfig van de proef zet nu `cache.enabled: false` (zoals de productiepolicy); zonder dat
+4. **Anoniem volume (plan-review ronde 1, beide reviewers):** de wegwerp-Postgres liet na `docker rm -f` een
+   anoniem volume met de herstelde database achter, en R.7 keek alleen naar containers en netwerken. In deze
+   wegwerpomgeving viel dat niet op omdat de hele "host" wordt weggegooid; §5 laat het zien en toont dat
+   een benoemd volume met `docker rm -f -v` en `docker volume rm` niets achterlaat.
+5. **"Cron uit" klopte niet (ronde 1):** `FORGEJO__cron__ENABLED=false` zet de afzonderlijke crontaken niet
+   uit; de regel is geschrapt en het plan zegt nu wat wél geldt (`[mirror]` en `[mailer]` uit, netwerk intern).
+6. Klein: de runnerconfig van de proef zet nu `cache.enabled: false` (zoals de productiepolicy); zonder dat
    logt de runner op een netwerk zonder uitgaand verkeer een foutregel over de cacheserver. En R.3 laat
    `IMG` vooraf zetten toe, zodat de optionele vroege proef met `17.0-test` hetzelfde blok gebruikt.
 
@@ -125,8 +131,10 @@ step "R.0"; source $BL/b03.sh; echo "exit=$?"
 step "R.1"; source $BL/b04.sh 2>&1 | q
 step "R.2"; source $BL/b05.sh 2>&1 | q
 step "R.3"; source $BL/b06.sh > /tmp/r3.out 2>&1; echo "blok-exit=$?"; q < /tmp/r3.out
-docker exec fj17-rh sh -c 'curl -s -m 5 -o /dev/null https://codeberg.org; echo "curl-exit=$?"'; docker port fj17-rh; echo "(einde docker port)"
-docker exec -u git fj17-rh forgejo admin user generate-access-token --username janpeter --token-name proef --scopes all --raw | sudo tee "$RH/proef.token" >/dev/null && sudo chmod 0600 "$RH/proef.token"; echo "token-exit=$?"
+docker exec fj17-rh sh -c 'curl -s -m 5 -o /dev/null https://codeberg.org; echo "curl-dns-exit=$?"; curl -s -m 5 -o /dev/null https://1.1.1.1; echo "curl-ip-exit=$?"'; docker port fj17-rh; echo "(einde docker port)"
+docker exec fj17-rh awk '/^\[/{s=$0} (s=="[mirror]"||s=="[mailer]") && /^ENABLED/{print s, $0}' /data/gitea/conf/app.ini
+TRUSTUSER=janpeter   # op de host: uit 0.18
+docker exec -u git fj17-rh forgejo admin user generate-access-token --username "$TRUSTUSER" --token-name proef --scopes all --raw | sudo tee "$RH/proef.token" >/dev/null && sudo chmod 0600 "$RH/proef.token"; echo "token-exit=$?"
 step "R.4 doctor"; doctorlog fj17-rh "$HOME/proef-doctor.log" && doctortoets "$HOME/doctor-pre.log" "$HOME/proef-doctor.log"; echo "keten-exit=$?"
 echo "checks vóór/na: $(doctorsamenvatting "$HOME/doctor-pre.log" | awk -F'\t' '$1=="V"{c++} END{print c+0}') / $(doctorsamenvatting "$HOME/proef-doctor.log" | awk -F'\t' '$1=="V"{c++} END{print c+0}')"
 step "R.4 trustgate"; source $BL/b07.sh 2>&1 | tail -3
@@ -134,7 +142,7 @@ step "R.4 contract";  source $BL/b08.sh 2>&1 | tail -3
 step "R.5 setup + runner"; source $BL/b09.sh 2>&1 | q | cut -c1-190
 step "R.5 runstatus"; source $BL/b10.sh; echo "exit=$?"
 step "R.6"; docker logs fj17-rh 2>&1 | grep -E '\[F\]|panic|creating new key'; echo "(einde [F]/panic/creating new key)"; echo "[E]-regels: $(docker logs fj17-rh 2>&1 | grep -c '\[E\]')"
-step "R.7"; source $BL/b11.sh 2>&1; echo "(einde R.7-controles)"; sudo test -e "$RH" && echo "RH bestaat nog" || echo "RH weg"
+step "R.7"; source $BL/b11.sh 2>&1; echo "(einde R.7-blok)"; sudo test -e "$RH" && echo "RH bestaat nog" || echo "RH weg"; echo "volumes met fj17 in de naam: $(docker volume ls -q --filter name=fj17 | wc -l)"
 echo; echo "################ VENSTER (V17=17.0.0 = lokale hertag van 17.0-test) ################"
 upgrade() {
   step "2.4"; PRE_CF=$(sha256sum "$CF" | cut -d' ' -f1); echo "PRE_CF=${PRE_CF:0:16}…"; git -C "$CD" status --porcelain; echo "(einde git status)"
@@ -193,7 +201,7 @@ uid=1000 gid=1000 groups=1000
 ################ FASE R (IMG=17.0-test) ################
 
 ===== R.0
-34513572a4bde74cc58df44b9a0d716e640767901cf72fbdce3bc49f202e4850
+4619a0747201c210b3f8d132a4339677f1f926793b85f1c4da43ad707842b035
 true
 exit=0
 
@@ -201,17 +209,20 @@ exit=0
 PROEFKOPIE OK
 
 ===== R.2
-d80e56f129bb76f22ffd421f4d0e70c63f89861d577be95392eecd4732670a9c
+40c0ec64fe943aa2d65fc59ad04971ee5e294fd6730caa7bb5eea36c1f04f5c1
 PROEF-DB OK
 
 ===== R.3
 blok-exit=0
 codeberg.org/forgejo-experimental/forgejo:17.0-test
-f6b492e021f3b39993dfc01397bc5e734c4f8c6f52feccd5f4796ad6645f4246
+dab4270c8e80c4a98bc7c1f4e0f0b52946f33e81acd1e1218dc75368b47ccd98
 migratie + start: 5s
 {"version":"17.0.0-dev-577-c4d05ee1a9+gitea-1.22.0"}
-curl-exit=6
+curl-dns-exit=6
+curl-ip-exit=7
 (einde docker port)
+[mirror] ENABLED = false
+[mailer] ENABLED = false
 token-exit=0
 
 ===== R.4 doctor
@@ -229,13 +240,13 @@ CONTRACT OK: 2 runners, 0 jobs
 
 ===== R.5 setup + runner
 PROEF-SETUP OK voor janpeter
-time="2026-09-30T11:30:06Z" level=info msg="Starting job"
-time="2026-09-30T11:30:06Z" level=info msg="runner: proef-runner, with version: v12.10.1, with labels: [proef], ephemeral: false, declared successfully"
-time="2026-09-30T11:30:06Z" level=info msg="single task poller launched"
-time="2026-09-30T11:30:06Z" level=info msg="single task poller received no task from http://fj17-rh:3000/, trying again"
-time="2026-09-30T11:30:08Z" level=info msg="single task poller successfully fetched one task from http://fj17-rh:3000/"
-time="2026-09-30T11:30:08Z" level=info msg="task 1 repo is janpeter/proef-smoke https://data.forgejo.org http://fj17-rh:3000/"
-time="2026-09-30T11:30:08Z" level=info msg="single task poller is shutting down"
+time="2026-09-30T11:53:41Z" level=info msg="Starting job"
+time="2026-09-30T11:53:41Z" level=info msg="runner: proef-runner, with version: v12.10.1, with labels: [proef], ephemeral: false, declared successfully"
+time="2026-09-30T11:53:41Z" level=info msg="single task poller launched"
+time="2026-09-30T11:53:41Z" level=info msg="single task poller received no task from http://fj17-rh:3000/, trying again"
+time="2026-09-30T11:53:43Z" level=info msg="single task poller successfully fetched one task from http://fj17-rh:3000/"
+time="2026-09-30T11:53:43Z" level=info msg="task 1 repo is janpeter/proef-smoke https://data.forgejo.org http://fj17-rh:3000/"
+time="2026-09-30T11:53:43Z" level=info msg="single task poller is shutting down"
 runner-exit=0
 
 ===== R.5 runstatus
@@ -249,9 +260,12 @@ exit=0
 ===== R.7
 fj17-rh
 fj17-rh-db
+fj17-rh-pgdata
 fj17-rh-net
-(einde R.7-controles)
+GEEN NIEUW DANGLING VOLUME
+(einde R.7-blok)
 RH weg
+volumes met fj17 in de naam: 0
 
 ################ VENSTER (V17=17.0.0 = lokale hertag van 17.0-test) ################
 
@@ -274,8 +288,8 @@ flush-exit=0
 Exited (0) Less than a second ago
 
 ===== 2.7
-bb8c46468bdf48bd7a5fca9efc820430eda9f043d9f5c5367747e81fcd67f9c7  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
-402701
+31eab09ccdad932e2b381fe30f5a0bed0f26aa7689d5a01f5d4518e827ed6e7a  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
+402908
 KOUD ROLLBACKPUNT OK
 
 ===== 4.2
@@ -339,8 +353,8 @@ flush-exit=0
 Exited (0) Less than a second ago
 
 ===== 2.7
-1580c8acc3a060403dc526007629eab82c83925c5f86cbd298df91879a8646f0  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
-402803
+cfefec05d68106f0c98f9545fa7daf30de9346761e6e155501ef4a6a6fe97df2  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
+403009
 KOUD ROLLBACKPUNT OK
 
 ===== 4.2
@@ -377,8 +391,95 @@ postgres scrum4me template1 template0 forgejo_failed_15_0_9 forgejo_failed_17_0 
 ```
 
 Lezing: 0.4 geeft `doctor exit 0` en 28 checks zonder niet-OK-regels; de R4-databasenaam is vrij. Fase R
-loopt van R.0 t/m R.7 zonder rood (`PROEFKOPIE OK`, `PROEF-DB OK`, versie van het 17-image, geen uitgaand
-verkeer, `DOCTOR OK`, `trust-exit=10`, `CONTRACT OK`, `runner-exit=0`, run `success`, schone logs, alles
-opgeruimd). Het venster geeft `VOORLOG VOLLEDIG`, `KOUD ROLLBACKPUNT OK`, `TAGWISSEL OK`, de juiste image,
+loopt van R.0 t/m R.7 zonder rood: `PROEFKOPIE OK`, `PROEF-DB OK`, de versie van het 17-image, geen
+verkeer naar buiten op naam (exit 6) en op IP (exit 7), geen poorten, `[mirror]` en `[mailer]` op
+`ENABLED = false`, `DOCTOR OK`, `trust-exit=10`, `CONTRACT OK`, `runner-exit=0`, run `success`, schone
+logs; na R.7 geen container, netwerk of volume met `fj17` in de naam en `GEEN NIEUW DANGLING VOLUME`.
+Het venster geeft `VOORLOG VOLLEDIG`, `KOUD ROLLBACKPUNT OK`, `TAGWISSEL OK`, de juiste image,
 ongewijzigde legacy-containers en `DOCTOR OK`. R4 herstelt 15.0.9 met `DOCTOR OK` ten opzichte van het log
 van vóór het venster. De tweede upgrade en de commit volgens de hostregel slagen.
+
+## 5. Proeven bij de bevindingen van plan-review ronde 1
+
+**Volumes en isolatie op IP-niveau** (in de wegwerp-"host"; de vijf dangling volumes bij de start zijn de
+restanten van de eerdere proefrondes met het oude recept — precies het defect):
+
+```sh
+#!/usr/bin/env bash
+# als janpeter in de wegwerp-"host": laat de proef anonieme volumes achter, en helpt een benoemd volume + rm -v?
+echo "volumes nu: totaal $(docker volume ls -q | wc -l), dangling $(docker volume ls -qf dangling=true | wc -l), met naam fj17*: $(docker volume ls -q --filter name=fj17 | wc -l)"
+docker image inspect postgres:17 --format 'postgres:17 VOLUME: {{json .Config.Volumes}}'
+docker image inspect code.forgejo.org/forgejo/runner@sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533 --format 'runner VOLUME: {{json .Config.Volumes}}'
+docker image inspect codeberg.org/forgejo-experimental/forgejo:17.0-test --format 'forgejo 17.0-test VOLUME: {{json .Config.Volumes}}'
+DV0=$(docker volume ls -qf dangling=true | sort)
+echo "--- oud recept: docker run zonder volume, docker rm -f zonder -v"
+docker network create --internal fj17-rh-net >/dev/null
+docker run -d --name fj17-rh-db --network fj17-rh-net -e POSTGRES_PASSWORD=proefpw123 postgres:17 >/dev/null; sleep 3
+docker rm -f fj17-rh-db >/dev/null; echo "dangling erbij: $(comm -13 <(echo "$DV0") <(docker volume ls -qf dangling=true | sort) | wc -l)"
+docker volume rm $(comm -13 <(echo "$DV0") <(docker volume ls -qf dangling=true | sort)) >/dev/null
+echo "--- nieuw recept: benoemd volume, rm -f -v, volume rm"
+docker run -d --name fj17-rh-db --network fj17-rh-net -v fj17-rh-pgdata:/var/lib/postgresql/data -e POSTGRES_PASSWORD=proefpw123 postgres:17 >/dev/null; sleep 3
+docker volume ls -q --filter name=fj17
+docker rm -f -v fj17-rh-db >/dev/null; echo "na rm -f -v: benoemd volume bestaat nog: $(docker volume ls -q --filter name=fj17 | wc -l) (rm -v verwijdert alleen anonieme volumes)"
+docker volume rm fj17-rh-pgdata; docker volume ls -q --filter name=fj17 | wc -l
+[ "$(docker volume ls -qf dangling=true | sort)" = "$DV0" ] && echo "dangling volumes gelijk aan vóór de proef" || echo "DANGLING VERSCHILT"
+echo "--- runner met timeout: blijft er een container met anoniem volume?"
+docker run -d --name fj17-rh-runner --network fj17-rh-net --entrypoint /bin/sh code.forgejo.org/forgejo/runner@sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533 -c 'sleep 300' >/dev/null
+docker rm -f fj17-rh-runner >/dev/null; echo "zonder -v, dangling erbij: $(comm -13 <(echo "$DV0") <(docker volume ls -qf dangling=true | sort) | wc -l)"
+docker volume rm $(comm -13 <(echo "$DV0") <(docker volume ls -qf dangling=true | sort)) >/dev/null 2>&1
+docker run -d --name fj17-rh-runner --network fj17-rh-net --entrypoint /bin/sh code.forgejo.org/forgejo/runner@sha256:3d49075f9115054ae2485d8cea2819296a904dfd4f00017285168028615d8533 -c 'sleep 300' >/dev/null
+docker rm -f -v fj17-rh-runner >/dev/null; echo "met -v, dangling erbij: $(comm -13 <(echo "$DV0") <(docker volume ls -qf dangling=true | sort) | wc -l)"
+echo "--- isolatie op IP-niveau vanuit een container op het interne netwerk"
+docker run --rm --network fj17-rh-net --entrypoint /bin/sh codeberg.org/forgejo-experimental/forgejo:17.0-test -c 'curl -s -m 5 -o /dev/null https://1.1.1.1; echo "curl-ip-exit=$?"; curl -s -m 5 -o /dev/null https://codeberg.org; echo "curl-dns-exit=$?"'
+docker network rm fj17-rh-net >/dev/null
+```
+
+```text
+volumes nu: totaal 7, dangling 5, met naam fj17*: 0
+postgres:17 VOLUME: {"/var/lib/postgresql/data":{}}
+runner VOLUME: {"/data":{}}
+forgejo 17.0-test VOLUME: {"/data":{}}
+--- oud recept: docker run zonder volume, docker rm -f zonder -v
+dangling erbij: 1
+--- nieuw recept: benoemd volume, rm -f -v, volume rm
+fj17-rh-pgdata
+na rm -f -v: benoemd volume bestaat nog: 1 (rm -v verwijdert alleen anonieme volumes)
+fj17-rh-pgdata
+0
+dangling volumes gelijk aan vóór de proef
+--- runner met timeout: blijft er een container met anoniem volume?
+zonder -v, dangling erbij: 1
+met -v, dangling erbij: 0
+--- isolatie op IP-niveau vanuit een container op het interne netwerk
+curl-ip-exit=7
+curl-dns-exit=6
+```
+
+**Het account van de productiescan (0.18)** — het commando uit het plan, met de URL van de proef-forge en
+een proeftoken in een root-only env-bestand van dezelfde vorm als `trust-scan.env`:
+
+```sh
+#!/usr/bin/env bash
+# als janpeter in de wegwerp-"host": het 0.18-commando voor TRUSTUSER, tegen de proef-forge (URL aangepast; env-bestand met een proeftoken, root 0600)
+TK=$(docker exec -u git scrum4me-forgejo forgejo admin user generate-access-token --username janpeter --token-name "tu-$(date +%s)" --scopes all --raw)
+sudo mkdir -p /opt/forgejo-runner/credentials && printf 'FORGEJO_TOKEN=%s\n' "$TK" | sudo tee /opt/forgejo-runner/credentials/trust-scan.env >/dev/null && sudo chmod 0600 /opt/forgejo-runner/credentials/trust-scan.env
+sudo bash -c 'set -a; . /opt/forgejo-runner/credentials/trust-scan.env; set +a; curl --config <(printf "header = \"Authorization: token %s\"\n" "$FORGEJO_TOKEN") -sS --fail-with-body --max-time 30 http://127.0.0.1:3010/api/v1/user' | python3 -c 'import json,sys; print(json.load(sys.stdin)["login"])'
+echo "exit=${PIPESTATUS[0]}/${PIPESTATUS[1]}"; sudo rm -rf /opt/forgejo-runner
+```
+
+```text
+janpeter
+exit=0/0
+```
+
+**Migraties tussen twee tags (0.0)** — het filter uit het plan tegen de Codeberg-API, 30 september 2026.
+De patchlijn 16.0.x bevat een migratiebestand dat tussen 16.0.0 en 16.0.5 is gewijzigd: releasenotes
+alleen zijn dus geen betrouwbare bron, de brontoets wel.
+
+```text
+v16.0.4...v16.0.5 → []
+v16.0.0...v16.0.1 → []
+v16.0.0...v16.0.5 → 425 bestanden, 93 commits; treffer: models/forgejo_migrations/v17a_add-action-run-workflow-source-commit.go
+v16.0.5...v17.0/forgejo → 3522 bestanden, 581 commits; treffers o.a. models/forgejo_migrations/v17a_add_package_cleanup_based_on_last_download.go,
+                          models/forgejo_migrations/v17a_add_action_task_step_summary.go, models/forgejo_migrations_legacy/v32_test.go
+```
