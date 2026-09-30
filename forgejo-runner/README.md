@@ -87,6 +87,17 @@ beoordeeld. Hard/onleesbaar, onverwachte exits en ongeldige of tegenstrijdige JS
 invalideren oud groen. De scanner onderzoekt de defaultbranch, niet de geselecteerde
 featurecommit. Merge en hostuitrol vereisen afzonderlijk akkoord.
 
+Het vaste ingangspunt voor de hele repo is `scripts/verify.sh` (vanaf de repo-root):
+het draait alle bats-, Python- en shellcheck-suites, meldt overgeslagen tests met
+naam en reden, en geeft exit ≠ 0 zodra één onderdeel faalt. Integratietests zijn
+opt-in (`VERIFY_INTEGRATION=1` voor `test_compose_runner_exec.bats`).
+
+```bash
+bash scripts/verify.sh            # alles; --only bats|py|shellcheck beperkt dit
+```
+
+Los, vanuit deze map, hetzelfde als handwerk:
+
 ```bash
 bats tests/*.bats
 for f in tests/test_*.py; do python3 "$f"; done
