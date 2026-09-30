@@ -1,6 +1,6 @@
 # Implementatieplan — Forgejo 15.0.2 → 15.0.9 op `scrum4me-server`
 
-> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-ronde 1 GO, ronde 2–4 NO-GO (doctor-functies en hun plaats in 2.6), ronde 5 loopt.** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
+> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-review GO na vijf rondes (30 sep, `mac:codex`); klaar voor de JP-gate.** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
 
 > **Voor uitvoerders:** dit is een **operator-gedreven onderhoudsactie** op een productiehost, geen code-implementatie. Voer fase voor fase uit met de gate ná elke fase; bij een rode gate: **STOP** (stoppen, journal/uitvoer vastleggen, JP melden — niet forceren, niet de gate versoepelen). Elke fase heeft een terugweg (zie Rollback). Commando's zonder host-label draaien **op `scrum4me-server`** als `janpeter` (docker-groep, `sudo` waar aangegeven); `[max2]`-stappen draaien op `max2`; `[mac]`-stappen op de mac met persoonlijk `FORGEJO_TOKEN`; `[JP]`-stappen zijn JP-only (beheerinterface, besluiten).
 
@@ -453,5 +453,12 @@ De functies zijn beproefd met de echte doctor-logs uit de proef (15.0.2 → 15.0
 - **Beproefd:** twee ketengevallen erbij (evidence §4, 23 en 24): de vroege return met exit 0 in de 2.6-keten geeft `DOCTOR ROOD`, keten-exit 1, en de volgende handeling wordt niet bereikt; de gezonde keten geeft `VOORLOG VOLLEDIG`. Ook live in de wegwerpomgeving.
 - **Verdict:** `mac:codex` NO-GO.
 
-### Delta-ronde 5 — 2026-09-30 (laatste ronde van de delta-loop)
-- **Reviewer:** één cross-model reviewer (codex), JP-armd. Onderwerp: de plaats van de volledigheidscontrole in 2.6. Verdict volgt.
+### Delta-ronde 5 — 2026-09-30 — **GO** ✅ (laatste ronde van de delta-loop)
+- **Reviewer:** `mac:codex` op commit `d87b0a9` (beide pins gecontroleerd). **0 BLOCKER · 0 MAJOR · 0 MINOR.** De ronde-4-fix *held*: 2.6 controleert het verse vóór-log op procesexit én volledigheid voordat flush en stoppen zijn toegestaan; de `&&`-keten bereikt `VOORLOG VOLLEDIG` alleen als beide voorgangers slagen. Geen schrappingskandidaat.
+- **Eigen verificatie van de reviewer:** de 2.6-keten uit de gepinde tekst met een Docker-stub in acht gevallen (gezond; vroege return met exit 0; afgebroken run met exit 42; leeg log; Docker-exit 125; verkeerd aantal in de afsluitregel; dubbele afsluitregel; open check zonder verdict) — alleen het gezonde geval bereikt de volgende handeling.
+- **Samenhang van de hele post-GO-delta (`ce63096..d87b0a9`) beoordeeld:** 0.4, 2.6, 4.5 en R4 stap 6 sluiten op elkaar aan; er is geen resterend uitstel van een validatie over een onomkeerbare stap; een STOP in 2.6 na de `app.ini`-wijzigingen van 2.5 is met de algemene STOP-regel en `app.ini.pre` afdoende; Gate 2 botst niet met R2; D11 blijft staan.
+- **Verdict:** `mac:codex` GO. De reviewer noteert expliciet: technisch GO autoriseert geen uitvoering, merge of deployment; de hostmetingen en de JP-gates blijven gelden.
+
+## Delta-conclusie
+
+De omzetting naar 15.0.9 heeft na **vijf delta-rondes** GO (commit `d87b0a9`): ronde 1 GO met twee MINORs; daarna bracht de vensterproef een onbruikbare doctor-vergelijking aan het licht, en de vervanging daarvan kostte drie NO-GO-rondes (2 → 1 → 1 MAJOR, elke smaller dan de vorige, alle bevestigd en verwerkt, geen afgewezen) voordat ronde 5 zonder bevindingen sloot. Het plan is klaar voor de **JP-gate** (Uitvoerhandoff stap 2). Ceremonie en uitvoering volgen elk alleen op een afzonderlijke opdracht van JP.
