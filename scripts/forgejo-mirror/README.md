@@ -1,7 +1,7 @@
 # Forgejo → GitHub nightly mirror
 
-`forgejo-mirror-sync.sh` (+ `forgejo-mirror-lib.sh`) runs nightly as `forgejo-mirror.service`
-(user `forgejo-mirror`, timer ~02:30, env from `/etc/forgejo-mirror/{forgejo,github}.env`).
+`forgejo-mirror-sync.sh` (+ `forgejo-mirror-lib.sh`) runs nightly as `forgejo-mirror-sync.service`
+(user `forgejo-mirror`, timer 02:30 UTC ±5 min, env from `/etc/forgejo-mirror/{forgejo,github}.env`).
 Per repository: check that a GitHub counterpart exists, check the GitHub default branch,
 ensure a Forgejo push mirror, trigger a sync, then verify SHA and tags. Installed copies live in
 `/srv/scrum4me/scripts/`; this directory is the source (imported 2026-09-30, until then only on
