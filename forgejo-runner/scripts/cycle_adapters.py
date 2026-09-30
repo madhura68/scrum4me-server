@@ -1,6 +1,7 @@
 """Neveneffect-adapters voor de cyclecontroller-runtime (dunne bring-up)."""
 
 import hashlib
+import http.client
 import json
 import os
 import signal
@@ -50,10 +51,12 @@ class TransportProbe:
                 }
             finally:
                 getattr(e, "close", lambda: None)()
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # HTTPException (IncompleteRead, BadStatusLine, …) is geen OSError maar komt wél
+        # uit resp.read(): een afgebroken body is een transportfout, geen crash.
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as e:
             return {
                 "kind": "general",
-                "error": str(e),
+                "error": f"{type(e).__name__}: {e}",
                 "status": None,
                 "schema_ok": False,
             }
@@ -74,15 +77,19 @@ class _Compose:
 
 
 class DindHealth(_Compose):
+    last_rc = None  # returncode van de laatste healthy()-check, voor de gatelog
+
     def ensure_up(self):
-        self._run(self._b + ["up", "-d", "dind"], self._t)
+        return self._run(self._b + ["up", "-d", "dind"], self._t).returncode
 
     def healthy(self):
+        self.last_rc = None
         cp = self._run(
             self._b
             + ["exec", "-T", "dind", "docker", "-H", "tcp://127.0.0.1:2375", "info"],
             self._t,
         )
+        self.last_rc = cp.returncode
         return cp.returncode == 0
 
 
@@ -213,19 +220,27 @@ class TrustVerdictReader:
         self._vp = vp
         self._lf = lf
         self._af = af
+        self.last_error = None  # reden van de laatste niet-leesbare invoer (voor de gatelog)
 
     def read(self):
+        self.last_error = None
         try:
             with open(self._vp, "rb") as fh:
                 verdict = json.load(fh)
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError:
             verdict = None
-        return verdict, _sha256(self._lf), _sha256(self._af)
+        except (OSError, ValueError) as exc:
+            # Fail-closed: onleesbaar (bv. PermissionError) telt als "geen verdict".
+            self.last_error = f"verdict onleesbaar: {type(exc).__name__}"
+            verdict = None
+        return verdict, self._sha(self._lf), self._sha(self._af)
 
-
-def _sha256(path):
-    try:
-        with open(path, "rb") as fh:
-            return hashlib.sha256(fh.read()).hexdigest()
-    except FileNotFoundError:
-        return ""
+    def _sha(self, path):
+        try:
+            with open(path, "rb") as fh:
+                return hashlib.sha256(fh.read()).hexdigest()
+        except FileNotFoundError:
+            return ""
+        except OSError as exc:
+            self.last_error = f"{os.path.basename(path)} onleesbaar: {type(exc).__name__}"
+            return ""

@@ -8,7 +8,6 @@ import logging
 import math
 import re
 import signal
-import subprocess
 import tomllib
 from collections import namedtuple
 from dataclasses import dataclass
@@ -184,6 +183,9 @@ class Runtime:
         self._pull_queue = []
         self._loaded = False
         self._blocked = False
+        self._blocked_reason = None
+        self._blocked_logged = None  # mono-tijd van de laatste blokkade-logregel
+        self._dind_last = None  # laatst gelogde (gezond, detail) van de DinD-gate
         self._stop = False
         self._reconciled = False
         self._last_probe = None
@@ -201,8 +203,53 @@ class Runtime:
             self._loaded = True
 
     def _trust_green(self):
-        verdict, ls, as_ = self.a.trust.read()
-        return verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
+        try:
+            verdict, ls, as_ = self.a.trust.read()
+        except Exception as exc:  # fail-closed: een onverwachte leesfout mag de tick niet slopen
+            return False, f"trust-read faalde: {type(exc).__name__}: {exc}"
+        green, reden = verdict_green(verdict, self.clock()[1], self.cfg, ls, as_)
+        detail = getattr(self.a.trust, "last_error", None)
+        if not green and detail:
+            reden = f"{reden} ({detail})"
+        return green, reden
+
+    def _safe_probe(self):
+        try:
+            return self.a.probe.probe()
+        except Exception as exc:
+            self.log.warning("probe faalde onverwacht: %s: %s → transportfout", type(exc).__name__, exc)
+            return {"kind": "general", "error": f"{type(exc).__name__}: {exc}", "status": None, "schema_ok": False}
+
+    def _dind_healthy(self):
+        try:
+            healthy = bool(self.a.dind.healthy())
+            detail = "" if healthy else f"rc={getattr(self.a.dind, 'last_rc', None)}"
+        except Exception as exc:
+            healthy = False
+            detail = f"{type(exc).__name__}: {exc}"
+        state = (healthy, detail)
+        if state != self._dind_last:
+            eerste = self._dind_last is None
+            self._dind_last = state
+            if healthy:
+                if not eerste:  # een gezonde start is geen nieuws, herstel wel
+                    self.log.info("dind gezond")
+            else:
+                self.log.warning("dind health-check ROOD: %s → geen nieuwe runners", detail)
+        return healthy
+
+    def _block(self, reden, now=None):
+        # Eén plek waar de blokkade aan gaat, zodat de reden nooit stil verdwijnt.
+        if not self._blocked:
+            self.log.warning("controller GEBLOKKEERD: %s", reden)
+            self._blocked_logged = self.clock()[0] if now is None else now
+        self._blocked = True
+        self._blocked_reason = reden
+
+    def _remind_blocked(self, now):
+        if self._blocked and (now - self._blocked_logged) >= self.cfg.retry_interval:
+            self._blocked_logged = now
+            self.log.warning("controller nog steeds geblokkeerd: %s", self._blocked_reason)
 
     def _log_trust_transition(self, green, reden):
         # Een rode trustgate was stil: de reden werd weggegooid terwijl unit en DinD
@@ -218,16 +265,12 @@ class Runtime:
             self.log.warning("trustgate ROOD: %s → geen nieuwe runners", reden)
 
     def _readiness_and_gates(self, now):
-        klasse = classify_probe(self.a.probe.probe())
+        klasse = classify_probe(self._safe_probe())
         self.readiness.observe(klasse, now)
         self.controller.on_event(self.loop.submit("readiness", {"klasse": klasse}))
         green, reden = self._trust_green()
         self._log_trust_transition(green, reden)
-        try:
-            healthy = self.a.dind.healthy()
-        except (subprocess.SubprocessError, OSError) as exc:
-            self.log.warning("dind health-check faalde: %r → ongezond", exc)
-            healthy = False
+        healthy = self._dind_healthy()
         self.controller.gates_groen = bool(green) and healthy
 
     def _busy(self):
@@ -273,8 +316,7 @@ class Runtime:
                 if self._pull_queue:
                     self._pull_queue.pop(0)
             else:
-                self._blocked = True
-                self.log.warning("pre-pull faalde rc=%s → geblokkeerd", rc)
+                self._block(f"pre-pull faalde rc={rc}")
 
     def _advance_child(self):
         if self.child is None:
@@ -301,7 +343,12 @@ class Runtime:
 
     def _start_runner(self):
         self.clean_proven = False
-        self.child = self.a.runner.start()
+        try:
+            self.child = self.a.runner.start()
+        except Exception as exc:  # fail-closed: geen child, volgende tick probeert opnieuw
+            self.child = None
+            self.log.warning("runner-start faalde: %s: %s → geen runner", type(exc).__name__, exc)
+            return
         self.log.info("cyclus: runner gestart")
 
     def tick(self):
@@ -313,10 +360,13 @@ class Runtime:
         ):
             self._last_probe = now
             try:
-                self.a.dind.ensure_up()
-            except (subprocess.SubprocessError, OSError) as exc:
+                rc = self.a.dind.ensure_up()
+                if isinstance(rc, int) and rc != 0:
+                    self.log.warning("dind ensure_up (compose up -d dind) gaf rc=%s", rc)
+            except Exception as exc:
                 self.log.warning("dind ensure_up faalde: %r", exc)
             self._readiness_and_gates(now)
+        self._remind_blocked(now)
         self.controller.tick(now, wall)
         self._reconcile_once()  # Taak 10
         self._advance_op()
@@ -341,8 +391,7 @@ class Runtime:
         self._reconciled = True
         try:
             if self.a.reconcile.leftover_runners():
-                self._blocked = True
-                self.log.warning("startup: achtergebleven runner — fail-closed")
+                self._block("startup: achtergebleven runner — fail-closed")
                 return
             if self.a.reconcile.marker_present():
                 self.log.warning(
@@ -352,8 +401,7 @@ class Runtime:
                 self.clean_proven = False
                 self._begin_op("scrub")
         except Exception as exc:  # ReconcileError e.d. → fail-closed
-            self._blocked = True
-            self.log.warning("startup-reconciliatie faalde: %r → geblokkeerd", exc)
+            self._block(f"startup-reconciliatie faalde: {exc!r}")
 
     def request_stop(self):
         self._stop = True
