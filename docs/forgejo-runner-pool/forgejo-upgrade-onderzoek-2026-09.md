@@ -2,7 +2,7 @@
 
 **Datum:** 9 september 2026  
 **Vraag (JP):** wat betekent het om Forgejo te updaten, en kunnen we dat combineren met de upgrade van de runners naar versie 13? Forgejo 16.0.3 is beschikbaar; wij draaien `15.0.2+gitea-1.22.0`.  
-**Status:** onderzoeksrecord met aanbeveling. Het uitvoerbare plan voor de eerste stap staat in [implementatieplan-forgejo-15.0.7.md](implementatieplan-forgejo-15.0.7.md).  
+**Status:** onderzoeksrecord met aanbeveling. Het uitvoerbare plan voor de eerste stap staat in [implementatieplan-forgejo-15.0.9.md](implementatieplan-forgejo-15.0.9.md) (op 30 september 2026 omgezet van 15.0.7 naar 15.0.9; waar dit onderzoek 15.0.7 noemt, geldt nu de nieuwste LTS-patch 15.0.9).  
 **Antwoord in één zin:** Forgejo 16 en Runner 13 zijn technisch onafhankelijk (geen van beide vereist de ander); combineer ze niet in één wijziging, patch nu naar 15.0.7 (LTS), laat fase 2 (Runner 13) zoals ontworpen ná stap H lopen, en ga alleen naar 16 bij een bewuste keuze voor de kwartaaltrein.
 
 ## 1. Gemeten uitgangssituatie op `scrum4me-server`
@@ -69,7 +69,7 @@ Bronnen: [Runner v13.0.0](https://forgejo.org/2026-08-runner-release-v13/) (3 au
 
 ## 5. Aanbeveling en volgorde
 
-1. **Nu: Forgejo 15.0.2 → 15.0.7** in één onderhoudsvenster, samen met het expliciet zetten van `REVERSE_PROXY_TRUSTED_PROXIES` en de rotatie van de twee gelekte secrets (§6). Zelfde major, geen breaking changes, rollback via een vóór het venster bewezen backup. Plan: [implementatieplan-forgejo-15.0.7.md](implementatieplan-forgejo-15.0.7.md).
+1. **Nu: Forgejo 15.0.2 → 15.0.7** in één onderhoudsvenster, samen met het expliciet zetten van `REVERSE_PROXY_TRUSTED_PROXIES` en de rotatie van de twee gelekte secrets (§6). Zelfde major, geen breaking changes, rollback via een vóór het venster bewezen backup. Plan: [implementatieplan-forgejo-15.0.9.md](implementatieplan-forgejo-15.0.9.md).
 2. **Fase 2 (Runner 13) blijft zoals ontworpen** (`migratieontwerp.md` §12): ná stap H, canary op `max2`, hoeft niet op Forgejo 16 te wachten. De workflowscan en `validate` vormen stap 1 van §12.
 3. **Forgejo 16 alleen als bewuste keuze voor de kwartaaltrein.** Anders op de LTS-lijn blijven tot v19 LTS (april 2027); rechtstreeks naar de laatste versie upgraden wordt door de upgrade-guide ondersteund, per-major stappen zijn het troubleshooting-pad.
 
