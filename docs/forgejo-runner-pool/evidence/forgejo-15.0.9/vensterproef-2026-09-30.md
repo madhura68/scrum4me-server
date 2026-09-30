@@ -367,47 +367,78 @@ Lezing:
 - **Defect:** de regel "oude toets" laat zien dat de doctor-vergelijking uit de plantekst van 9 september
   387–388 verschilregels geeft tussen twee gezonde logs. Zie §4.
 
-## 4. De doctor-vergelijking (D10)
+## 4. De doctor-functies (D10), versie na delta-ronde 2
 
-De functies zijn uit het planbestand geëxtraheerd (byte-gelijk aan het blok "Hulpfuncties") en gedraaid in
+De eerste versie van de functies (delta-ronde 2) filterde op het regeleinde `OK` en toetste alleen het
+na-log; de reviewer liet zien dat een waarschuwing die op "OK" eindigt en een afgebroken doctor-run dan
+groen gaven. De versie hieronder is byte-gelijk aan het blok "Hulpfuncties" in het plan en is gedraaid in
 `ubuntu:24.04` (GNU sed 4.9, mawk, bash 5.2) op de echte doctor-logs uit deze proef en uit de proef van het
-17.0-plan.
+17.0-plan, plus synthetische gevallen (waaronder de vier van de reviewer).
 
 ```sh
-doctorsamenvatting() {   # per check: naam<TAB>OK|ERROR, plus elke [W]/[E]-regel van die check — zonder logregels, kleurcodes en volgnummers
-  grep -v -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' "$1" | sed -E 's/\x1b\[[0-9;]*m//g' \
-    | awk '/^\[[0-9]+\] /{sub(/^\[[0-9]+\] /,""); n=$0; next} /^ - \[(W|E)\]/{print n "\t" $0; next} /^(OK|ERROR)$/{print n "\t" $0}'
+doctorlog() {            # $1 = container, $2 = logbestand: draait doctor en faalt luid bij een niet-nul exit
+  docker exec -u git "$1" forgejo doctor check --all --log-file - > "$2" 2>&1; local rc=$?
+  [ "$rc" -eq 0 ] && echo "doctor exit 0 → $2" || { echo "DOCTOR-RUN MISLUKT (exit $rc) — STOP; $2 is onvolledig"; return 1; }
 }
-doctornieuw() {          # bevindingen die in $2 staan en niet in $1: een check die ERROR werd, of een nieuwe [W]/[E]-regel
-  comm -13 <(doctorsamenvatting "$1" | LC_ALL=C sort) <(doctorsamenvatting "$2" | LC_ALL=C sort) | grep -v 'OK$'
+doctorsamenvatting() {   # V<TAB>check<TAB>OK|ERROR|GEEN-VERDICT per check, I<TAB>check<TAB>regel per [W]/[E]-melding; zonder logregels, kleurcodes en volgnummers
+  grep -v -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' "$1" | sed -E 's/\x1b\[[0-9;]*m//g' | awk '
+    function sluit() { if (o) print "V\t" n "\tGEEN-VERDICT"; o = 0 }
+    /^\[[0-9]+\] /    { sluit(); sub(/^\[[0-9]+\] /, ""); n = $0; o = 1; next }
+    /^ - \[(W|E)\]/   { print "I\t" n "\t" $0; next }
+    /^(OK|ERROR)$/    { if (o) { print "V\t" n "\t" $0; o = 0 }; next }
+    END               { sluit() }'
 }
-doctortoets() {          # $1 = log vóór, $2 = log na; exit 0 alleen als $2 echte checks bevat en geen nieuwe bevindingen heeft
-  local n nieuw
-  n=$(doctorsamenvatting "$2" | grep -c -E '(OK|ERROR)$')
-  nieuw=$(doctornieuw "$1" "$2")
-  if [ "$n" -gt 0 ] && [ -z "$nieuw" ]; then echo "DOCTOR OK ($n checks, geen nieuwe bevindingen)"; return 0; fi
-  printf '%s\n' "$nieuw"; echo "DOCTOR ROOD ($n checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP"; return 1
+doctorbaseline() {       # $1 = log: het aantal checks en elke regel die geen OK-verdict is
+  echo "checks: $(doctorsamenvatting "$1" | awk -F'\t' '$1 == "V"' | wc -l)"
+  doctorsamenvatting "$1" | awk -F'\t' '!($1 == "V" && $3 == "OK")'
+}
+doctortoets() {          # $1 = log vóór, $2 = log na: exit 0 alleen als beide logs volledig zijn en $2 niets nieuws bevat
+  local f n nieuw
+  for f in "$1" "$2"; do
+    [ -r "$f" ] || { echo "DOCTOR ROOD: $f ontbreekt of is onleesbaar — STOP"; return 1; }
+    n=$(doctorsamenvatting "$f" | awk -F'\t' '$1 == "V"' | wc -l)
+    [ "$n" -gt 0 ] || { echo "DOCTOR ROOD: $f bevat geen checkverdicts — STOP"; return 1; }
+    [ "$(doctorsamenvatting "$f" | awk -F'\t' '$1 == "V" && $3 == "GEEN-VERDICT"' | wc -l)" -eq 0 ] || { echo "DOCTOR ROOD: $f is onvolledig (een check zonder verdict) — STOP"; return 1; }
+  done
+  nieuw=$(awk -F'\t' 'FILENAME == ARGV[1] { gezien[$0] = 1; next } !($0 in gezien) && !($1 == "V" && $3 == "OK")' <(doctorsamenvatting "$1") <(doctorsamenvatting "$2")) \
+    || { echo "DOCTOR ROOD: de vergelijking zelf mislukte — STOP"; return 1; }
+  [ -z "$nieuw" ] && { echo "DOCTOR OK ($n checks, geen nieuwe bevindingen)"; return 0; }
+  printf '%s\n' "$nieuw"; echo "DOCTOR ROOD: nieuwe bevindingen hierboven — beoordelen, onverklaard = STOP"; return 1
 }
 
 # --- proefscript ---
 #!/usr/bin/env bash
-# Proef van doctorsamenvatting/doctornieuw/doctortoets met echte doctor-logs uit de wegwerpomgeving
+# Proef van doctorlog/doctorsamenvatting/doctorbaseline/doctortoets: echte doctor-logs uit de wegwerpomgeving + afwijkingsgevallen
 source /d/functies.sh
 echo "awk: $(readlink -f "$(command -v awk)") | $(sed --version | head -1) | bash $BASH_VERSION"
-geval() { echo; echo "=== $1"; shift; doctortoets "$@" 2>&1 | cut -c1-160; echo "exit=${PIPESTATUS[0]}"; }
-echo; echo "ruwe diff uit de oude plantekst, 15.0.2 → 15.0.9: $(diff <(grep -v -E '^\[I\]' /d/pre-15.0.2.log) <(grep -v -E '^\[I\]' /d/post-15.0.9.log) | grep -c '^[<>]') verschilregels; 15.0.9 → 17.0-test: $(diff <(grep -v -E '^\[I\]' /d/pre-15.0.9.log) <(grep -v -E '^\[I\]' /d/post-17.0-test.log) | grep -c '^[<>]')"
-echo "baseline 15.0.2 (niet-OK): $(doctorsamenvatting /d/pre-15.0.2.log | grep -v 'OK$' | wc -l) regels; baseline 15.0.9 (niet-OK): $(doctorsamenvatting /d/pre-15.0.9.log | grep -v 'OK$' | tr '\t' ' ')"
-echo "verdwenen 15.0.9 → 17.0-test: $(comm -23 <(doctorsamenvatting /d/pre-15.0.9.log | LC_ALL=C sort) <(doctorsamenvatting /d/post-17.0-test.log | LC_ALL=C sort) | tr '\t' ' ')"
-geval "1. echt: 15.0.2 → 15.0.9"            /d/pre-15.0.2.log /d/post-15.0.9.log
-geval "2. echt: 15.0.9 → 17.0-test"         /d/pre-15.0.9.log /d/post-17.0-test.log
-awk 'BEGIN{c=0} /^\[3\] /{print; print " - [E] kapot"; c=1; next} c==1 && /^OK$/{print "ERROR"; c=0; next} {print}' /d/post-15.0.9.log > /tmp/bad-a.log
-geval "3. injectie: OK-check wordt ERROR"    /d/pre-15.0.2.log /tmp/bad-a.log
-awk '/^\[4\] /{print; print " - [W] nieuw"; next} {print}' /d/post-15.0.9.log > /tmp/bad-b.log
-geval "4. injectie: alleen een nieuwe [W]"   /d/pre-15.0.2.log /tmp/bad-b.log
+geval() { echo; echo "=== $1"; shift; "$@" 2>&1 | cut -c1-170; echo "exit=${PIPESTATUS[0]}"; }
+mk() { printf '%s\n' "$@"; }
+mk '[1] First check' 'OK' '[2] Second check' 'OK' > /tmp/syn-pre.log
+mk '[1] First check' 'OK' '[2] Second check' ' - [W] connection not OK' 'OK' > /tmp/syn-wok.log
+mk '[1] First check' 'OK' '[2] Second check' > /tmp/syn-afgebroken.log
+awk 'BEGIN{c=0} /^\[3\] /{print; print " - [E] kapot"; c=1; next} c==1 && /^OK$/{print "ERROR"; c=0; next} {print}' /d/post-15.0.9.log > /tmp/bad-err.log
+awk '/^\[4\] /{print; print " - [W] nieuw"; next} {print}' /d/post-15.0.9.log > /tmp/bad-w.log
 : > /tmp/leeg.log
-geval "5. post-log leeg"                     /d/pre-15.0.2.log /tmp/leeg.log
-geval "6. post-log ontbreekt"                /d/pre-15.0.2.log /tmp/bestaat-niet.log
-geval "7. bestaande ERROR blijft ERROR (baseline)" /d/pre-15.0.9.log /d/pre-15.0.9.log
+geval " 1. echt: 15.0.2 → 15.0.9"                        doctortoets /d/pre-15.0.2.log /d/post-15.0.9.log
+geval " 2. echt: 15.0.9 → 17.0-test"                     doctortoets /d/pre-15.0.9.log /d/post-17.0-test.log
+geval " 3. OK-check wordt ERROR met een [E]-regel"       doctortoets /d/pre-15.0.2.log /tmp/bad-err.log
+geval " 4. alleen een nieuwe [W]-regel"                  doctortoets /d/pre-15.0.2.log /tmp/bad-w.log
+geval " 5. nieuwe [W] die op OK eindigt (reviewer)"      doctortoets /tmp/syn-pre.log /tmp/syn-wok.log
+geval " 6. vóór-log ontbreekt (reviewer)"                doctortoets /tmp/bestaat-niet.log /d/post-15.0.9.log
+geval " 7. vóór-log leeg (reviewer)"                     doctortoets /tmp/leeg.log /d/post-15.0.9.log
+geval " 8. na-log leeg"                                  doctortoets /d/pre-15.0.2.log /tmp/leeg.log
+geval " 9. na-log ontbreekt"                             doctortoets /d/pre-15.0.2.log /tmp/bestaat-niet.log
+geval "10. na-log afgebroken: check zonder verdict (reviewer)" doctortoets /tmp/syn-pre.log /tmp/syn-afgebroken.log
+geval "11. vóór-log afgebroken"                          doctortoets /tmp/syn-afgebroken.log /tmp/syn-pre.log
+geval "12. bestaande ERROR blijft ERROR (baseline)"      doctortoets /d/pre-15.0.9.log /d/pre-15.0.9.log
+geval "13. baseline toont een [W] die op OK eindigt"     doctorbaseline /tmp/syn-wok.log
+geval "14. baseline echt (15.0.9 zonder LFS)"            doctorbaseline /d/pre-15.0.9.log
+docker() { mk '[1] First check' 'OK' '[2] Second check'; return 42; }     # doctor-stub: breekt af met exit 42 na één verdict
+echo; echo "=== 15. doctorlog met een afgebroken doctor (exit 42), in de keten van R4 stap 6"
+doctorlog scrum4me-forgejo /tmp/r4.log && doctortoets /tmp/syn-pre.log /tmp/r4.log; echo "keten-exit=$?"
+docker() { cat /d/post-15.0.9.log; return 0; }                             # doctor-stub: gezond
+echo; echo "=== 16. doctorlog gezond, in de keten van 4.5"
+doctorlog scrum4me-forgejo /tmp/post.log && doctortoets /d/pre-15.0.2.log /tmp/post.log; echo "keten-exit=$?"
 ```
 
 Uitvoer:
@@ -415,48 +446,131 @@ Uitvoer:
 ```text
 awk: /usr/bin/mawk | sed (GNU sed) 4.9 | bash 5.2.21(1)-release
 
-ruwe diff uit de oude plantekst, 15.0.2 → 15.0.9: 388 verschilregels; 15.0.9 → 17.0-test: 385
-baseline 15.0.2 (niet-OK): 4 regels; baseline 15.0.9 (niet-OK): Garbage collect LFS ERROR
-verdwenen 15.0.9 → 17.0-test: Check if hook files are up-to-date and executable OK
-
-=== 1. echt: 15.0.2 → 15.0.9
+===  1. echt: 15.0.2 → 15.0.9
 DOCTOR OK (28 checks, geen nieuwe bevindingen)
 exit=0
 
-=== 2. echt: 15.0.9 → 17.0-test
+===  2. echt: 15.0.9 → 17.0-test
 DOCTOR OK (27 checks, geen nieuwe bevindingen)
 exit=0
 
-=== 3. injectie: OK-check wordt ERROR
-Check if there are orphaned archives in storage	 - [E] kapot
-Check if there are orphaned archives in storage	ERROR
-DOCTOR ROOD (28 checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP
+===  3. OK-check wordt ERROR met een [E]-regel
+I	Check if there are orphaned archives in storage	 - [E] kapot
+V	Check if there are orphaned archives in storage	ERROR
+DOCTOR ROOD: nieuwe bevindingen hierboven — beoordelen, onverklaard = STOP
 exit=1
 
-=== 4. injectie: alleen een nieuwe [W]
-Check if there are orphaned attachments in storage	 - [W] nieuw
-DOCTOR ROOD (28 checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP
+===  4. alleen een nieuwe [W]-regel
+I	Check if there are orphaned attachments in storage	 - [W] nieuw
+DOCTOR ROOD: nieuwe bevindingen hierboven — beoordelen, onverklaard = STOP
 exit=1
 
-=== 5. post-log leeg
-
-DOCTOR ROOD (0 checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP
+===  5. nieuwe [W] die op OK eindigt (reviewer)
+I	Second check	 - [W] connection not OK
+DOCTOR ROOD: nieuwe bevindingen hierboven — beoordelen, onverklaard = STOP
 exit=1
 
-=== 6. post-log ontbreekt
-grep: /tmp/bestaat-niet.log: No such file or directory
-grep: /tmp/bestaat-niet.log: No such file or directory
-
-DOCTOR ROOD (0 checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP
+===  6. vóór-log ontbreekt (reviewer)
+DOCTOR ROOD: /tmp/bestaat-niet.log ontbreekt of is onleesbaar — STOP
 exit=1
 
-=== 7. bestaande ERROR blijft ERROR (baseline)
+===  7. vóór-log leeg (reviewer)
+DOCTOR ROOD: /tmp/leeg.log bevat geen checkverdicts — STOP
+exit=1
+
+===  8. na-log leeg
+DOCTOR ROOD: /tmp/leeg.log bevat geen checkverdicts — STOP
+exit=1
+
+===  9. na-log ontbreekt
+DOCTOR ROOD: /tmp/bestaat-niet.log ontbreekt of is onleesbaar — STOP
+exit=1
+
+=== 10. na-log afgebroken: check zonder verdict (reviewer)
+DOCTOR ROOD: /tmp/syn-afgebroken.log is onvolledig (een check zonder verdict) — STOP
+exit=1
+
+=== 11. vóór-log afgebroken
+DOCTOR ROOD: /tmp/syn-afgebroken.log is onvolledig (een check zonder verdict) — STOP
+exit=1
+
+=== 12. bestaande ERROR blijft ERROR (baseline)
 DOCTOR OK (28 checks, geen nieuwe bevindingen)
 exit=0
+
+=== 13. baseline toont een [W] die op OK eindigt
+checks: 2
+I	Second check	 - [W] connection not OK
+exit=0
+
+=== 14. baseline echt (15.0.9 zonder LFS)
+checks: 28
+V	Garbage collect LFS	ERROR
+exit=0
+
+=== 15. doctorlog met een afgebroken doctor (exit 42), in de keten van R4 stap 6
+DOCTOR-RUN MISLUKT (exit 42) — STOP; /tmp/r4.log is onvolledig
+keten-exit=1
+
+=== 16. doctorlog gezond, in de keten van 4.5
+doctor exit 0 → /tmp/post.log
+DOCTOR OK (28 checks, geen nieuwe bevindingen)
+keten-exit=0
 ```
 
-Lezing: de twee echte paren geven `DOCTOR OK`; een check die `ERROR` wordt en een losse nieuwe `[W]`-regel
-geven `DOCTOR ROOD` met de betreffende regels; een leeg en een ontbrekend log geven `DOCTOR ROOD` (0 checks
-gelezen); een `ERROR` die al in de baseline stond, telt niet als nieuw. De "baseline 15.0.9: Garbage collect
-LFS ERROR" komt uit de proefinstance van het 17.0-plan, waar LFS niet was aangezet; het toont dat doctor
-exit 0 geeft terwijl een check `ERROR` meldt, en dat zo'n regel in 0.4 als baseline beoordeeld moet worden.
+Lezing: de twee echte paren geven `DOCTOR OK`. Rood zijn: een check die `ERROR` wordt (3), een losse
+nieuwe `[W]` (4), een nieuwe `[W]` waarvan de tekst op "OK" eindigt (5), een ontbrekend of leeg log vóór
+(6, 7) of na (8, 9), en een afgebroken log vóór of na (10, 11). Een `ERROR` die al in het vóór-log stond,
+telt niet als nieuw (12). `doctorbaseline` toont ook de waarschuwing die op "OK" eindigt (13). In de keten
+`doctorlog … && doctortoets …` stopt een doctor die met exit 42 afbreekt vóór de vergelijking (15).
+
+Live tegen de proef-forge (in de wegwerp-"host", busybox-awk; de forge stond daar op 17.0-test na de
+eindproef van het 17.0-plan):
+
+```sh
+#!/usr/bin/env bash
+# als janpeter in de wegwerp-"host": de functies tegen de draaiende proef-forge (na de eindproef van het 17.0-plan: 17.0-test)
+source /trial/doctorproef2/functies.sh
+echo "awk: $(awk --version 2>&1 | head -1 | cut -c1-40) | bash $BASH_VERSION | forge: $(curl -s http://127.0.0.1:3010/api/v1/version)"
+echo "--- 0.4-vorm: doctorlog + doctorbaseline"; doctorlog scrum4me-forgejo "$HOME/doctor-live.log" && doctorbaseline "$HOME/doctor-live.log"; echo "exit=$?"
+echo "--- 4.5-vorm: doctorlog + doctortoets tegen het log van vóór het venster"; doctorlog scrum4me-forgejo "$HOME/doctor-live2.log" && doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-live2.log"; echo "exit=$?"
+echo "--- doctorlog tegen een niet-bestaande container"; doctorlog bestaat-niet "$HOME/doctor-x.log" && doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-x.log"; echo "exit=$?"
+```
+
+```text
+awk: awk: unrecognized option: - | bash 5.3.9(1)-release | forge: {"version":"17.0.0-dev-577-c4d05ee1a9+gitea-1.22.0"}
+--- 0.4-vorm: doctorlog + doctorbaseline
+doctor exit 0 → /home/janpeter/doctor-live.log
+checks: 27
+exit=0
+--- 4.5-vorm: doctorlog + doctortoets tegen het log van vóór het venster
+doctor exit 0 → /home/janpeter/doctor-live2.log
+DOCTOR OK (27 checks, geen nieuwe bevindingen)
+exit=0
+--- doctorlog tegen een niet-bestaande container
+DOCTOR-RUN MISLUKT (exit 1) — STOP; /home/janpeter/doctor-x.log is onvolledig
+exit=1
+```
+
+## 5. De R4-databasenaam (D11)
+
+`ALTER DATABASE … RENAME` naar een naam die al bestaat, met proefdatabases (niet de forge-database), en de
+telling die 0.5 daarvoor gebruikt:
+
+```sh
+#!/usr/bin/env bash
+# als janpeter: wat doet R4 stap 3 als de doelnaam van de hernoeming al bestaat? (proefdatabases, niet de forge-database)
+docker exec scrum4me-postgres psql -q -U scrum4me -d postgres -c "create database proef_forgejo" -c "create database proef_forgejo_failed"
+docker exec scrum4me-postgres sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE proef_forgejo RENAME TO proef_forgejo_failed"'; echo "rename-exit=$?"
+PGU=$(docker exec scrum4me-postgres sh -c 'printf %s "${POSTGRES_USER:-postgres}"')
+echo "0.5-toets op een bestaande naam: $(docker exec scrum4me-postgres psql -U "$PGU" -d postgres -Atc "select count(*) from pg_database where datname = 'proef_forgejo_failed'")"
+echo "0.5-toets op een vrije naam:     $(docker exec scrum4me-postgres psql -U "$PGU" -d postgres -Atc "select count(*) from pg_database where datname = 'proef_bestaat_niet'")"
+docker exec scrum4me-postgres psql -q -U scrum4me -d postgres -c "drop database proef_forgejo" -c "drop database proef_forgejo_failed"
+```
+
+```text
+ERROR:  database "proef_forgejo_failed" already exists
+rename-exit=1
+0.5-toets op een bestaande naam: 1
+0.5-toets op een vrije naam:     0
+```

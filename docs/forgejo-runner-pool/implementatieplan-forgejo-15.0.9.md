@@ -1,6 +1,6 @@
 # Implementatieplan — Forgejo 15.0.2 → 15.0.9 op `scrum4me-server`
 
-> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-ronde 1 GO (`mac:codex`); delta-ronde 2 loopt (D10, na de vensterproef).** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
+> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-ronde 1 GO, ronde 2 NO-GO (doctor-functies), ronde 3 loopt.** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
 
 > **Voor uitvoerders:** dit is een **operator-gedreven onderhoudsactie** op een productiehost, geen code-implementatie. Voer fase voor fase uit met de gate ná elke fase; bij een rode gate: **STOP** (stoppen, journal/uitvoer vastleggen, JP melden — niet forceren, niet de gate versoepelen). Elke fase heeft een terugweg (zie Rollback). Commando's zonder host-label draaien **op `scrum4me-server`** als `janpeter` (docker-groep, `sudo` waar aangegeven); `[max2]`-stappen draaien op `max2`; `[mac]`-stappen op de mac met persoonlijk `FORGEJO_TOKEN`; `[JP]`-stappen zijn JP-only (beheerinterface, besluiten).
 
@@ -36,26 +36,41 @@ VOL=/var/lib/docker/volumes/forgejo_forgejo-data/_data      # forge-datavolume (
 BK=/srv/backups/manual/forgejo-pre-15.0.9                   # koud rollbackpunt, root-only
 ```
 
-Hulpfuncties voor de doctor-stappen (0.4, 4.5, R4 stap 6; in elke shell opnieuw zetten, bash):
+Hulpfuncties voor de doctor-stappen (0.4, 2.6, 4.5, R4 stap 6; in elke shell opnieuw zetten, bash):
 
 ```sh
-doctorsamenvatting() {   # per check: naam<TAB>OK|ERROR, plus elke [W]/[E]-regel van die check — zonder logregels, kleurcodes en volgnummers
-  grep -v -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' "$1" | sed -E 's/\x1b\[[0-9;]*m//g' \
-    | awk '/^\[[0-9]+\] /{sub(/^\[[0-9]+\] /,""); n=$0; next} /^ - \[(W|E)\]/{print n "\t" $0; next} /^(OK|ERROR)$/{print n "\t" $0}'
+doctorlog() {            # $1 = container, $2 = logbestand: draait doctor en faalt luid bij een niet-nul exit
+  docker exec -u git "$1" forgejo doctor check --all --log-file - > "$2" 2>&1; local rc=$?
+  [ "$rc" -eq 0 ] && echo "doctor exit 0 → $2" || { echo "DOCTOR-RUN MISLUKT (exit $rc) — STOP; $2 is onvolledig"; return 1; }
 }
-doctornieuw() {          # bevindingen die in $2 staan en niet in $1: een check die ERROR werd, of een nieuwe [W]/[E]-regel
-  comm -13 <(doctorsamenvatting "$1" | LC_ALL=C sort) <(doctorsamenvatting "$2" | LC_ALL=C sort) | grep -v 'OK$'
+doctorsamenvatting() {   # V<TAB>check<TAB>OK|ERROR|GEEN-VERDICT per check, I<TAB>check<TAB>regel per [W]/[E]-melding; zonder logregels, kleurcodes en volgnummers
+  grep -v -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' "$1" | sed -E 's/\x1b\[[0-9;]*m//g' | awk '
+    function sluit() { if (o) print "V\t" n "\tGEEN-VERDICT"; o = 0 }
+    /^\[[0-9]+\] /    { sluit(); sub(/^\[[0-9]+\] /, ""); n = $0; o = 1; next }
+    /^ - \[(W|E)\]/   { print "I\t" n "\t" $0; next }
+    /^(OK|ERROR)$/    { if (o) { print "V\t" n "\t" $0; o = 0 }; next }
+    END               { sluit() }'
 }
-doctortoets() {          # $1 = log vóór, $2 = log na; exit 0 alleen als $2 echte checks bevat en geen nieuwe bevindingen heeft
-  local n nieuw
-  n=$(doctorsamenvatting "$2" | grep -c -E '(OK|ERROR)$')
-  nieuw=$(doctornieuw "$1" "$2")
-  if [ "$n" -gt 0 ] && [ -z "$nieuw" ]; then echo "DOCTOR OK ($n checks, geen nieuwe bevindingen)"; return 0; fi
-  printf '%s\n' "$nieuw"; echo "DOCTOR ROOD ($n checks gelezen; nieuwe bevindingen staan hierboven, of het log is leeg of onleesbaar) — beoordelen, onverklaard = STOP"; return 1
+doctorbaseline() {       # $1 = log: het aantal checks en elke regel die geen OK-verdict is
+  echo "checks: $(doctorsamenvatting "$1" | awk -F'\t' '$1 == "V"' | wc -l)"
+  doctorsamenvatting "$1" | awk -F'\t' '!($1 == "V" && $3 == "OK")'
+}
+doctortoets() {          # $1 = log vóór, $2 = log na: exit 0 alleen als beide logs volledig zijn en $2 niets nieuws bevat
+  local f n nieuw
+  for f in "$1" "$2"; do
+    [ -r "$f" ] || { echo "DOCTOR ROOD: $f ontbreekt of is onleesbaar — STOP"; return 1; }
+    n=$(doctorsamenvatting "$f" | awk -F'\t' '$1 == "V"' | wc -l)
+    [ "$n" -gt 0 ] || { echo "DOCTOR ROOD: $f bevat geen checkverdicts — STOP"; return 1; }
+    [ "$(doctorsamenvatting "$f" | awk -F'\t' '$1 == "V" && $3 == "GEEN-VERDICT"' | wc -l)" -eq 0 ] || { echo "DOCTOR ROOD: $f is onvolledig (een check zonder verdict) — STOP"; return 1; }
+  done
+  nieuw=$(awk -F'\t' 'FILENAME == ARGV[1] { gezien[$0] = 1; next } !($0 in gezien) && !($1 == "V" && $3 == "OK")' <(doctorsamenvatting "$1") <(doctorsamenvatting "$2")) \
+    || { echo "DOCTOR ROOD: de vergelijking zelf mislukte — STOP"; return 1; }
+  [ -z "$nieuw" ] && { echo "DOCTOR OK ($n checks, geen nieuwe bevindingen)"; return 0; }
+  printf '%s\n' "$nieuw"; echo "DOCTOR ROOD: nieuwe bevindingen hierboven — beoordelen, onverklaard = STOP"; return 1
 }
 ```
 
-Ze bestaan omdat de ruwe doctor-uitvoer niet te vergelijken is: met `--log-file -` staan er logregels met tijdstempels doorheen, en de exitcode van `doctor check` is ook 0 wanneer een check `ERROR` meldt. Beide zijn gemeten in de vensterproef van 30 september; de `diff` na `grep -v '^\[I\]'` uit de eerdere plantekst gaf daar 388 verschilregels tussen twee gezonde logs. `doctortoets` is fail-closed: een leeg of ontbrekend log geeft `DOCTOR ROOD`.
+Ze bestaan omdat de ruwe doctor-uitvoer niet te vergelijken is: met `--log-file -` staan er logregels met tijdstempels doorheen, en de exitcode van `doctor check` is ook 0 wanneer een check `ERROR` meldt (beide gemeten in de vensterproef van 30 september; de `diff` na `grep -v '^\[I\]'` uit de eerdere plantekst gaf daar 388 verschilregels tussen twee gezonde logs). `doctorlog` dwingt exit 0 van doctor zelf af. `doctortoets` is fail-closed: een ontbrekend, leeg of afgebroken log — vóór of na — geeft `DOCTOR ROOD`, en een nieuwe melding telt ook als haar tekst op "OK" eindigt, omdat het verdict een eigen veld is.
 
 ---
 
@@ -66,8 +81,8 @@ Leg alle uitvoer vast onder `evidence/forgejo-15.0.9/fase0/` (zie Fase 6 voor de
 - **0.1 Versie en compose-project.** `docker exec scrum4me-forgejo forgejo --version` → verwacht `15.0.2+gitea-1.22.0`. `docker compose -f "$CF" config --services` → bevat `forgejo`, `runner`, `dind`. `docker compose ls --filter name=forgejo` → project `forgejo` running.
 - **0.2 Compose-regels (op inhoud, niet op regelnummer).** De regelnummers van 9 september gelden niet meer als toets: op 28 september verscheen in dezelfde map een kopie `docker-compose.yml.bak-throttle-…` van een andere sessie (`docs/runbooks/evidence/2026-09-28-compose-git-init.md:45`), wat op een lopende wijziging aan dit bestand wijst. `grep -n -E 'image:|depends_on|ports:|container_name' "$CF"` → exact één regel `image: codeberg.org/forgejo/forgejo:15.0.2` (`grep -c 'forgejo/forgejo:' "$CF"` → `1`); de forge-service heeft géén `depends_on`; poorten `127.0.0.1:3010:3000` en de SSH-regel op het Tailscale-IP. Env-namen van de forge-service, **namen alleen**: `grep -n -o -E 'FORGEJO__[A-Za-z0-9_]+' "$CF" | sort -u`. Staat `FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES` erin, dan is dat een **STOP**: dit plan dekt alleen de app.ini-tak (op 9 sep op de host gemeten door `scrum4me-server:claude`, Review record ronde 1); die waarde in `$CF` wijzigen vraagt een terugweg die de hostregel niet als losse kopie toestaat, en dus eerst een herzien plan. Ownership van het bestand: `stat -c '%U:%G %a' "$CF"`.
 - **0.3 Containergebruiker en configpad.** `docker exec scrum4me-forgejo id git` → bestaat (rootful image draait Forgejo als `git`, UID `USER_UID`). `docker exec scrum4me-forgejo stat -c '%U:%G %a' /data/gitea/conf/app.ini` → noteer eigenaar en mode; 2.5 draait als die eigenaar (`-u git` als `git` eigenaar is, anders `-u root`) en herstelt daarna eigenaar en mode met `chown`/`chmod` naar exact deze waarden, omdat `sed -i` het bestand opnieuw aanmaakt. `docker inspect scrum4me-forgejo --format '{{.HostConfig.RestartPolicy.Name}} {{.Config.Image}} {{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1` → restartbeleid, image, **env-namen** (waarden worden bewust niet getoond).
-- **0.4 Doctor vooraf.** `docker exec -u git scrum4me-forgejo forgejo doctor check --all --log-file - > "$HOME/doctor-pre.log" 2>&1; echo "exit=$?"` → exit 0. `doctorsamenvatting "$HOME/doctor-pre.log" | grep -c -E '(OK|ERROR)$'` → aantal checks > 0; `doctorsamenvatting "$HOME/doctor-pre.log" | grep -v 'OK$'` → elke regel (een check met `ERROR`, of een `[W]`/`[E]`-melding) beoordelen en als baseline vastleggen. Een onbegrepen `ERROR` is een STOP (eerst begrijpen, dan pas upgraden).
-- **0.5 Omvang en ruimte.** `sudo du -sb "$VOL"`; `PGU=$(docker exec scrum4me-postgres sh -c 'printf %s "${POSTGRES_USER:-postgres}"')` (alleen de rolnaam); `docker exec scrum4me-postgres psql -U "$PGU" -d postgres -Atc "select pg_database_size('forgejo')"`; `sudo mkdir -p /srv/backups/manual && df -B1 --output=avail /srv/backups | tail -1`. Voorwaarde: vrij ≥ 2 × (volume + database).
+- **0.4 Doctor vooraf.** `doctorlog scrum4me-forgejo "$HOME/doctor-pre.log" && doctorbaseline "$HOME/doctor-pre.log"` → `doctor exit 0`, `checks:` > 0, en daaronder elke regel die geen OK-verdict is (een check met `ERROR`, of een `[W]`/`[E]`-melding): die beoordelen en als baseline vastleggen. Een onbegrepen `ERROR` is een STOP (eerst begrijpen, dan pas upgraden).
+- **0.5 Omvang en ruimte.** `sudo du -sb "$VOL"`; `PGU=$(docker exec scrum4me-postgres sh -c 'printf %s "${POSTGRES_USER:-postgres}"')` (alleen de rolnaam); `docker exec scrum4me-postgres psql -U "$PGU" -d postgres -Atc "select pg_database_size('forgejo')"`; `sudo mkdir -p /srv/backups/manual && df -B1 --output=avail /srv/backups | tail -1`. Voorwaarde: vrij ≥ 2 × (volume + database). En de naam die R4 stap 3 aan de gemigreerde database geeft, is nog vrij: `docker exec scrum4me-postgres psql -U "$PGU" -d postgres -Atc "select count(*) from pg_database where datname = 'forgejo_failed_15_0_9'"` → `0`. Bestaat hij al (restant van een eerdere poging), dan zou de hernoeming in R4 falen met *database already exists*; `[JP]` laat hem dan eerst vallen.
 - **0.6 Gereedschap.** `command -v rsync` (vereist voor Fase 1/2; ontbreekt het → JP beslist over `sudo apt-get install rsync` vóór Fase 1, of het plan wordt herzien — er is bewust geen tar-fallback, omdat die de volledige kopietijd in het venster legt). `docker exec scrum4me-postgres pg_restore --version`.
 - **0.7 Timers en tijdzone.** `systemctl list-timers --all --no-pager | grep -i -E 'backup|restic|prune|mirror'` (nachtelijke backup: geen overlap met het venster; de nachtelijke `forgejo-mirror-sync.timer`, 02:30 UTC ± 5 min volgens `scripts/forgejo-mirror/README.md`, schrijft via de Forgejo-API: ook daar geen overlap). `[max2]` `systemctl list-timers forgejo-runner-trust.timer --no-pager` en `timedatectl | grep 'Time zone'` → het venster valt buiten 00:00–00:06, 06:00–06:06, 12:00–12:06 en 18:00–18:06 lokale tijd van `max2` (`OnCalendar` + `RandomizedDelaySec=300` in `forgejo-runner-trust.timer`).
 - **0.8 Routerlog aanwezig?** `docker logs --since 30m scrum4me-forgejo 2>&1 | grep -c 'router: completed'` → > 0 betekent dat Gate 3 het client-IP via het routerlog kan bewijzen; 0 betekent dat Gate 3 terugvalt op de configregel + foutloze start (leg vast welke).
@@ -78,7 +93,7 @@ Leg alle uitvoer vast onder `evidence/forgejo-15.0.9/fase0/` (zie Fase 6 voor de
 - **0.13 Compose-map onder git?** `if [ -d "$CD/.git" ]; then echo GIT_CF=ja; git -C "$CD" status --porcelain; else echo GIT_CF=nee; fi` → noteer `GIT_CF`. Bij `ja` moet de statusuitvoer leeg zijn; een vuile werkboom is volgens de hostregel een STOP (wijziging van een andere sessie: `git status` en `git diff --stat` tonen, JP vragen, niet committen). Losse kopieën in de map zijn niet van dit plan en blijven onaangeroerd.
 - **0.14 Automatische schrijvers (invulling van de write-fence).** Naast de runnerpool schrijven naar Forgejo: de nachtelijke mirror-sync (0.7) en de applicaties `scrum4me-mcp` (PR's, reviews, issue-mirror), `Scrum4Me` (review-dispatch, issue-sync), `scrum4me-docker` (docs-audit-PR's, releasetags) en de review-bot `s4m-codex-reviewer` (inventaris over alle repositories, 28 sep). `[JP]` besluit per schrijver: pauzeren voor het venster, of accepteren onder het restrisico van Gate 4; vastleggen in `venster.md`.
 
-**Gate 0:** versie 15.0.2 bevestigd; de compose-inhoud (0.2) en de DB-configuratie komen overeen met §1 van het onderzoek; doctor-baseline vastgelegd zonder onbegrepen `ERROR`; ruimte ≥ 2×; rsync + pg_restore aanwezig; venster gekozen buiten de timerslagen en de mirror-sync; app.ini-tak bevestigd (0.2); `GIT_CF` bekend en de werkboom schoon (0.13); schrijversbesluit vastgelegd (0.14); routerlog-uitkomst bekend; beide runnerrecords `idle`; jobstatus-endpoint `200`; `SUBNET` bekend. Anders STOP.
+**Gate 0:** versie 15.0.2 bevestigd; de compose-inhoud (0.2) en de DB-configuratie komen overeen met §1 van het onderzoek; doctor-baseline vastgelegd zonder onbegrepen `ERROR`; ruimte ≥ 2× en de R4-databasenaam vrij; rsync + pg_restore aanwezig; venster gekozen buiten de timerslagen en de mirror-sync; app.ini-tak bevestigd (0.2); `GIT_CF` bekend en de werkboom schoon (0.13); schrijversbesluit vastgelegd (0.14); routerlog-uitkomst bekend; beide runnerrecords `idle`; jobstatus-endpoint `200`; `SUBNET` bekend. Anders STOP.
 
 ---
 
@@ -154,7 +169,7 @@ Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` in de **losst
     [ "$rc" -eq 0 ] && echo "ROTATIE OK" || { echo "ROTATIE NIET/ONVOLLEDIG DOORGEVOERD (exit $rc) — STOP"; false; }
     ```
     De controle is **luid én afbrekend**: de twee tests staan in een **losstaande** `set -e`-subshell waarvan de exit in `rc` wordt gevangen — bij een gelijke vingerafdruk of een onverwacht aantal regels is `rc` ≠ 0 en eindigt het blok met een melding en exit ≠ 0. Dit móét een losstaande subshell zijn: `( … ) && … || …` zou de `set -e` binnen de subshell onderdrukken, zodat alléén de laatste test telt. `^JWT_SECRET` matcht alleen de `[oauth2]`-sleutel (de `[server]`-sleutel begint met `LFS_`); JP's grep van 9 september toonde precies die twee sleutels. `forgejo generate secret LFS_JWT_SECRET` is in de CLI een **alias** van `JWT_SECRET` (dezelfde generator); de tweede aanroep dient alleen om de doelsleutel te benoemen. Base64url bevat geen `|`, `&` of `/`, dus de sed-vervanging is veilig. Slaat JP de rotatie over: leg dat besluit vast in `venster.md` en sla (b) over; de rest van het plan verandert niet.
-- **2.6 Doctor + queues, dan stoppen.** `docker exec -u git scrum4me-forgejo forgejo doctor check --all --log-file - > "$HOME/doctor-pre-venster.log" 2>&1`; `docker exec -u git scrum4me-forgejo forgejo manager flush-queues --timeout 2m` → exit 0. Dan `docker stop -t 90 scrum4me-forgejo` en `docker ps -a --filter 'name=^/scrum4me-forgejo$' --format '{{.Status}}'` → `Exited (…)`. `TSTOP=$(date -u +%FT%TZ)`. Legacy runner- en DinD-containers blijven ongemoeid: `docker inspect -f '{{.Id}} {{.State.Status}}' scrum4me-forgejo-runner scrum4me-forgejo-dind` → beide `running`; bewaar de ID's als `RID`/`DID` voor Gate 4.
+- **2.6 Doctor + queues, dan stoppen.** `doctorlog scrum4me-forgejo "$HOME/doctor-pre-venster.log"` → `doctor exit 0` (een mislukte run is een STOP terwijl de forge nog draait); `docker exec -u git scrum4me-forgejo forgejo manager flush-queues --timeout 2m` → exit 0. Dan `docker stop -t 90 scrum4me-forgejo` en `docker ps -a --filter 'name=^/scrum4me-forgejo$' --format '{{.Status}}'` → `Exited (…)`. `TSTOP=$(date -u +%FT%TZ)`. Legacy runner- en DinD-containers blijven ongemoeid: `docker inspect -f '{{.Id}} {{.State.Status}}' scrum4me-forgejo-runner scrum4me-forgejo-dind` → beide `running`; bewaar de ID's als `RID`/`DID` voor Gate 4.
 - **2.7 Koud rollbackpunt.** De hele reeks draait in een subshell met `set -e`, zodat elk falend commando — inclusief de `pg_restore --list`-verificatie — de reeks hard afbreekt (een losse `| wc -l` in een `&&`-keten zou dat níét doen: de pijplijn-exit is die van `wc`, en het plan zet nergens `pipefail`):
   ```sh
   ( set -e
@@ -220,7 +235,7 @@ Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` in de **losst
   De derde toets vervangt de `diff` tegen een kopie: rekent de nieuwe inhoud met dezelfde vervanging terug naar exact de hash uit 2.4, dan verschilt alléén de imageregel. Rood → STOP vóór 4.3: tag terugzetten met het recept uit R4 stap 5 (zonder de recreate), `docker start scrum4me-forgejo`, controles 3.1/3.2, dan Fase 5 (uitkomst `rolled_back`). Beproefd met GNU sed 4.9 en bash 5.2 in een tijdelijke map, inclusief vier afwijkingsgevallen: [recept-proef-2026-09-30.md](evidence/forgejo-15.0.9/recept-proef-2026-09-30.md).
 - **4.3 Service-gebonden opbrengen.** `docker compose -f "$CF" up -d --no-deps forgejo` → de container wordt hercreëerd met dezelfde naam, hetzelfde volume en dezelfde netwerken. Direct daarna: `docker inspect scrum4me-forgejo --format '{{.Config.Image}}'` → `codeberg.org/forgejo/forgejo:15.0.9`; `docker inspect -f '{{.Id}} {{.State.Status}}' scrum4me-forgejo-runner scrum4me-forgejo-dind` → ID's gelijk aan `RID`/`DID`, beide `running` (bewijs dat `--no-deps` de legacy stack niet raakte).
 - **4.4 Migraties volgen.** `docker logs -f scrum4me-forgejo` tot de HTTP-listener meldt dat hij luistert; `curl -s http://127.0.0.1:3010/api/v1/version` → een versie die met `15.0.9` begint (het achtervoegsel is voor 15.0.9 niet vooraf gemeten; op 15.0.2 is het `+gitea-1.22.0`). `docker logs --since 5m scrum4me-forgejo 2>&1 | grep -E '\[E\]|\[F\]|panic'` → leeg. Caddy lost `forgejo` via Docker-DNS per verzoek op; blijft `[mac]` `curl -s https://git.jp-visser.nl/api/v1/version` na 60 s 502 geven, dan is dat een STOP-bevinding (géén eigenmachtige Caddy-herstart; JP beslist).
-- **4.5 Doctor achteraf.** `docker exec -u git scrum4me-forgejo forgejo doctor check --all --log-file - > "$HOME/doctor-post.log" 2>&1; echo "exit=$?"` → exit 0; `doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-post.log"` → `DOCTOR OK`. Bij `DOCTOR ROOD` elke getoonde regel beoordelen; een onverklaarde nieuwe bevinding maakt Gate 4 rood.
+- **4.5 Doctor achteraf.** `doctorlog scrum4me-forgejo "$HOME/doctor-post.log" && doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-post.log"` → `doctor exit 0` en `DOCTOR OK`. `DOCTOR-RUN MISLUKT` of `DOCTOR ROOD` zonder verklaring maakt Gate 4 rood; bij `DOCTOR ROOD` elke getoonde regel beoordelen.
 - **4.6 [JP] Functioneel.** Inloggen, een repository, een pull request en de Actions-pagina van `janpeter/scrum4me-shared` openen; `forgejo --version` in de container: `docker exec scrum4me-forgejo forgejo --version` → bevat `15.0.9`.
 
 **Gate 4:** versie 15.0.9 via 3010, via Caddy en via `forgejo --version`; `DOCTOR OK` (4.5); geen `[E]` in het startlog (4.4); legacy container-ID's ongewijzigd; JP-functioneel groen. Anders **Rollback R4**. Beslisregel: is Gate 4 op **T+20** niet groen, dan begint R4 meteen, zodat het venster inclusief herstel binnen 30 min blijft.
@@ -288,7 +303,7 @@ Elke terugweg herstelt naar de toestand van het laatst groene gate; er is geen "
      `ALTER DATABASE … RENAME` vereist dat niemand op `forgejo` verbonden is (de forge is gestopt). `pg_restore --create` maakt de database met de in het archief vastgelegde eigenschappen opnieuw aan; `-d postgres` is alleen de onderhoudsverbinding.
   4. Volume terug: `sudo rsync -aHAX --numeric-ids --delete "$BK/data/" "$VOL/"` (bevat de `app.ini` van ná 2.5 én de Fase 3-writes; wil JP ook de configuratie terug, dan daarna `app.ini.pre` kopiëren zoals in R2).
   5. Tag terug en bewijzen dat `$CF` weer byte-gelijk is aan 2.4: `sudo sed -i 's|image: codeberg.org/forgejo/forgejo:15.0.9$|image: codeberg.org/forgejo/forgejo:15.0.2|' "$CF"; [ "$(sha256sum "$CF" | cut -d' ' -f1)" = "$PRE_CF" ] && echo "COMPOSE TERUG OP PRE_CF" || { echo "COMPOSE WIJKT AF VAN PRE_CF — STOP, JP"; false; }` → daarna `docker compose -f "$CF" up -d --no-deps forgejo`.
-  6. Controles 3.1/3.2 op 15.0.2; `docker exec -u git scrum4me-forgejo forgejo doctor check --all --log-file - > "$HOME/doctor-r4.log" 2>&1` en `doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-r4.log"` → `DOCTOR OK` → dan Fase 5 (pool herstellen, uitkomst `rolled_back`). Bevinding, logs en de naam `forgejo_failed_15_0_9` naar JP; het onderzoek bepaalt of en wanneer een tweede poging volgt.
+  6. Controles 3.1/3.2 op 15.0.2; `doctorlog scrum4me-forgejo "$HOME/doctor-r4.log" && doctortoets "$HOME/doctor-pre-venster.log" "$HOME/doctor-r4.log"` → `doctor exit 0` en `DOCTOR OK` (anders STOP: de pool gaat niet open op een onvolledige of rode doctor) → dan Fase 5 (pool herstellen, uitkomst `rolled_back`). Bevinding, logs en de naam `forgejo_failed_15_0_9` naar JP; het onderzoek bepaalt of en wanneer een tweede poging volgt.
 - **Fase 5 faalt (runner komt niet online, trust rood, smoke rood):** dit is een poolbevinding, geen reden om de forge terug te zetten. Legacy runner en controller volgen runbook §9 ("als iets misgaat"); JP beslist.
 
 ---
@@ -401,11 +416,20 @@ Na het GO is het hele venster **letterlijk uit dit plan** uitgevoerd in een wegw
 
 | # | Wijziging | Waarom | Waar |
 |---|---|---|---|
-| D10 | De doctor-vergelijking `diff <(grep -v '^\[I\]' …)` is vervangen door `doctortoets` (met `doctorsamenvatting`/`doctornieuw`); 0.4 legt een baseline vast in plaats van "geen `[E]`-regel" | de oude toets gaf 388 verschilregels tussen twee gezonde logs (tijdstempels en logregels), en doctor geeft exit 0 ook als een check `ERROR` meldt — Gate 4 was op dit punt niet te beoordelen | Hulpfuncties, 0.4, Gate 0, 4.5, Gate 4, R4 stap 6 |
+| D10 | De doctor-vergelijking `diff <(grep -v '^\[I\]' …)` is vervangen door `doctorlog` + `doctortoets` (met `doctorsamenvatting`); 0.4 legt met `doctorbaseline` een baseline vast in plaats van "geen `[E]`-regel" | de oude toets gaf 388 verschilregels tussen twee gezonde logs (tijdstempels en logregels), en doctor geeft exit 0 ook als een check `ERROR` meldt — Gate 4 was op dit punt niet te beoordelen | Hulpfuncties, 0.4, Gate 0, 2.6, 4.5, Gate 4, R4 stap 6 |
+| D11 | 0.5 toetst dat de databasenaam `forgejo_failed_15_0_9` nog niet bestaat | R4 stap 3 hernoemt de gemigreerde database naar die naam; bestaat hij al, dan faalt `ALTER DATABASE … RENAME` (*already exists*, beproefd op proefdatabases) en loopt de terugweg vast. Gevonden bij het herhalen van R4 in de proefomgeving | 0.5, Gate 0 |
 
-`doctortoets` is beproefd met de echte doctor-logs uit de proef (15.0.2 → 15.0.9: `DOCTOR OK`, 28 checks) en met vijf afwijkingsgevallen (check wordt `ERROR`, alleen een nieuwe `[W]`, leeg log, ontbrekend log, bestaande `ERROR` blijft baseline), onder GNU sed 4.9, mawk en bash 5.2: zelfde evidence, §4. De proef bevestigt verder D8: de versie-string van 15.0.9 is `15.0.9+gitea-1.22.0`.
+De functies zijn beproefd met de echte doctor-logs uit de proef (15.0.2 → 15.0.9: `DOCTOR OK`, 28 checks) en met veertien afwijkings- en ketengevallen, onder GNU sed 4.9, mawk en bash 5.2, en live tegen de proef-forge: zelfde evidence, §4 (versie na delta-ronde 2). De proef bevestigt verder D8: de versie-string van 15.0.9 is `15.0.9+gitea-1.22.0`.
 
 **Niet door de proef gedekt** (en dus nog steeds alleen door Fase 0 en de gates op de host): de echte data en omvang, de drain en het nulbewijs (2.1–2.3), Caddy en het client-IP-bewijs (3.2/3.3), `max2` (5.2), de smoke (5.3).
 
-### Delta-ronde 2 — 2026-09-30
-- **Reviewer:** één cross-model reviewer (codex), JP-armd. Onderwerp: alleen D10 en de vensterproef. Verdict volgt.
+### Delta-ronde 2 — 2026-09-30 — **NO-GO**
+- **Reviewer:** `mac:codex` op commit `987bc08` (beide pins op sha256 gecontroleerd). **0 BLOCKER · 2 MAJOR · 0 MINOR.** De twee MINOR-fixes van ronde 1 *held*; de vensterproef *held* binnen de beschreven proefscope; D10 *partially held*.
+- **Beide MAJORs bevestigd (gereproduceerd met de fixtures van de reviewer) en verwerkt — geen afgewezen:**
+  - *Een nieuwe waarschuwing met suffix OK verdween uit de vergelijking.* `grep -v 'OK$'` filterde elke regel die op "OK" eindigt (bv. ` - [W] connection not OK`), en `grep -c '(OK|ERROR)$'` telde zo'n regel als verdict; ook de baselinefilter in 0.4 had dat defect. **Fix:** `doctorsamenvatting` schrijft nu getypeerde records — `V<TAB>check<TAB>verdict` en `I<TAB>check<TAB>melding` — en alle filters toetsen het exacte verdictveld (`$1 == "V" && $3 == "OK"`), nooit het regeleinde.
+  - *R4 accepteerde een afgebroken doctor-run als groen; de invoercontrole toetste één verdict in alleen het na-log.* Een ontbrekend of leeg vóór-log gaf `DOCTOR OK`, en een na-log met één verdict en een begonnen tweede check ook; R4 stap 6 controleerde de exit van doctor niet. **Fix:** `doctorlog` draait doctor en geeft bij een niet-nul exit `DOCTOR-RUN MISLUKT` (de keten `doctorlog … && doctortoets …` bereikt de vergelijking dan niet) — gebruikt in 0.4, 2.6, 4.5 en R4 stap 6; `doctortoets` eist voor **beide** logs dat ze leesbaar zijn, verdicts bevatten en geen check zonder verdict hebben (`GEEN-VERDICT`), en een mislukte vergelijking geldt niet als leeg verschil. `doctornieuw` is opgegaan in `doctortoets` (de reviewer merkte op dat de losse functie niet nodig was).
+- **Beproefd:** zestien gevallen, waaronder de vier van de reviewer (waarschuwing op "OK", ontbrekend en leeg vóór-log, afgebroken na-log) en de R4-keten met een doctor-stub die met exit 42 afbreekt; plus live tegen de proef-forge. Evidence §4.
+- **Verdict:** `mac:codex` NO-GO.
+
+### Delta-ronde 3 — 2026-09-30
+- **Reviewer:** één cross-model reviewer (codex), JP-armd. Onderwerp: de herschreven doctor-functies. Verdict volgt.
