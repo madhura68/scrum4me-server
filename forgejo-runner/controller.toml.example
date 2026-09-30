@@ -5,7 +5,8 @@
 # staat hier niet in. controller.toml is hostspecifiek en géén onderdeel van
 # de byte-identieke bundel-hash: niet meekopiëren tussen hosts, wel per host
 # invullen. Start `cycle_runtime.py --config controller.toml --check` om de
-# invulling te valideren zonder de loop te starten.
+# invulling te valideren zonder de loop te starten: controleert bestanden, mappen,
+# getallen > 0, child_stop_grace < 300 (TimeoutStopSec) en log.level; exit 2 bij fout.
 
 [forgejo]
 base_url = "https://git.jp-visser.nl"     # transport-probe target (/api/v1/version)
