@@ -26,25 +26,36 @@ die() { log -l ERROR "$*"; exit 1; }
 
 # ─────────────────────── HTTP wrappers (curl + jq) ──────────────────
 
-# Schrijft response-body naar stdout, http-code naar fd 3 (gevangen).
-# Args:  <method> <full-url> [auth-header] [data-string]
-# Echoes: body
+# Token-hygiene: auth-headers gaan nooit via -H in curl's argv (zichtbaar voor
+# `ps`), maar via `-K <config>` uit een process-substitution (pipe, geen bestand).
+# printf is een builtin, dus de token komt ook daar niet in een argv. Een
+# request-body (kan een token bevatten, zie ensure_push_mirror) gaat via stdin.
+#
+# _curl_code <method> <url> <auth-header-waarde> <accept> [data] [out-file]
+# Echoes de HTTP-code; schrijft de body naar out-file (default /dev/null).
+_curl_code() {
+  local method="$1" url="$2" auth="$3" accept="$4" data="${5:-}" out="${6:-/dev/null}"
+  auth=${auth//\\/\\\\}; auth=${auth//\"/\\\"}   # escape voor de curl-config
+  if [ -n "$data" ]; then
+    printf '%s' "$data" | curl -sS -m 30 -o "$out" -w '%{http_code}' \
+      -X "$method" -K <(printf 'header = "Authorization: %s"\n' "$auth") \
+      -H "Accept: $accept" -H "Content-Type: application/json" \
+      --data-binary @- "$url"
+  else
+    curl -sS -m 30 -o "$out" -w '%{http_code}' \
+      -X "$method" -K <(printf 'header = "Authorization: %s"\n' "$auth") \
+      -H "Accept: $accept" "$url"
+  fi
+}
+
+# Schrijft response-body naar stdout.
+# Args:  <method> <full-url> <auth-header-waarde> [data-string]
 # Returns 0 als 2xx, 1 als 4xx/5xx (body bevat error-info uit API).
 _http() {
-  local method="$1" url="$2" auth="${3:-}" data="${4:-}"
+  local method="$1" url="$2" auth="$3" data="${4:-}"
   local tmp; tmp=$(mktemp) || return 2
   local code
-  # shellcheck disable=SC2086  # we willen 'auth' als losse header-arg of niet
-  if [ -n "$data" ]; then
-    code=$(curl -sS -m 30 -o "$tmp" -w '%{http_code}' \
-      -X "$method" -H "$auth" -H "Accept: application/json" \
-      -H "Content-Type: application/json" \
-      --data "$data" "$url")
-  else
-    code=$(curl -sS -m 30 -o "$tmp" -w '%{http_code}' \
-      -X "$method" -H "$auth" -H "Accept: application/json" \
-      "$url")
-  fi
+  code=$(_curl_code "$method" "$url" "$auth" "application/json" "$data" "$tmp")
   cat "$tmp"
   rm -f "$tmp"
   case "$code" in
@@ -57,23 +68,14 @@ _http() {
 fj() {
   local method="$1" path="$2" data="${3:-}"
   _http "$method" "${FORGEJO_BASE_URL%/}/api/v1${path}" \
-    "Authorization: token $FORGEJO_TOKEN" "$data"
+    "token $FORGEJO_TOKEN" "$data"
 }
 
 # Forgejo HTTP-code only (geen body).  fj_code <method> <path> [data]
 fj_code() {
   local method="$1" path="$2" data="${3:-}"
-  if [ -n "$data" ]; then
-    curl -sS -m 30 -o /dev/null -w '%{http_code}' \
-      -X "$method" -H "Authorization: token $FORGEJO_TOKEN" \
-      -H "Accept: application/json" -H "Content-Type: application/json" \
-      --data "$data" "${FORGEJO_BASE_URL%/}/api/v1${path}"
-  else
-    curl -sS -m 30 -o /dev/null -w '%{http_code}' \
-      -X "$method" -H "Authorization: token $FORGEJO_TOKEN" \
-      -H "Accept: application/json" \
-      "${FORGEJO_BASE_URL%/}/api/v1${path}"
-  fi
+  _curl_code "$method" "${FORGEJO_BASE_URL%/}/api/v1${path}" \
+    "token $FORGEJO_TOKEN" "application/json" "$data"
 }
 
 # Per-repo GitHub token-override. Geeft env-var GH_TOKEN_<REPO_UPPER> terug
@@ -96,23 +98,13 @@ gh_token_for_repo() {
 gh() {
   local method="$1" path="$2" data="${3:-}"
   _http "$method" "${GH_API_URL%/}${path}" \
-    "Authorization: Bearer $GH_TOKEN" "$data"
+    "Bearer $GH_TOKEN" "$data"
 }
 
 gh_code() {
   local method="$1" path="$2" data="${3:-}"
-  if [ -n "$data" ]; then
-    curl -sS -m 30 -o /dev/null -w '%{http_code}' \
-      -X "$method" -H "Authorization: Bearer $GH_TOKEN" \
-      -H "Accept: application/vnd.github+json" \
-      -H "Content-Type: application/json" \
-      --data "$data" "${GH_API_URL%/}${path}"
-  else
-    curl -sS -m 30 -o /dev/null -w '%{http_code}' \
-      -X "$method" -H "Authorization: Bearer $GH_TOKEN" \
-      -H "Accept: application/vnd.github+json" \
-      "${GH_API_URL%/}${path}"
-  fi
+  _curl_code "$method" "${GH_API_URL%/}${path}" \
+    "Bearer $GH_TOKEN" "application/vnd.github+json" "$data"
 }
 
 # ───────────────────────────── preflight ────────────────────────────
@@ -273,11 +265,12 @@ ensure_push_mirror() {
     return 0
   fi
 
+  # Token via de omgeving (jq $ENV), niet via --arg: geen token in jq's argv.
   local payload
-  payload=$(jq -n \
-    --arg ra "$remote" --arg user "$GH_USERNAME" --arg pw "$GH_TOKEN" \
+  payload=$(GH_TOKEN="$GH_TOKEN" jq -n \
+    --arg ra "$remote" --arg user "$GH_USERNAME" \
     --arg int "$interval" --arg bf "$branch" \
-    '{remote_address:$ra, remote_username:$user, remote_password:$pw,
+    '{remote_address:$ra, remote_username:$user, remote_password:$ENV.GH_TOKEN,
       interval:$int, sync_on_commit:false, branch_filter:$bf}')
   fj POST "/repos/${owner}/${repo}/push_mirrors" "$payload" >/dev/null || return 1
   log "push_mirror aangemaakt voor ${owner}/${repo}"
@@ -374,36 +367,76 @@ verify_tags() {
 
 # Bare-clone lokaal + git push --tags --force naar GitHub. Vereist dat
 # git op host het kan; geen Forgejo-API nodig.
+#
+# Geen credentials in URLs of argv: clone/fetch/push-URL's zijn zonder userinfo
+# en de credentials komen via een GIT_ASKPASS-helper (0700 tempdir, door een
+# trap opgeruimd) die ze uit de omgeving van het git-proces leest. Niets
+# belandt in de config van de bare clone; een bestaande clone die nog een
+# userinfo-URL heeft krijgt `remote set-url` naar de schone URL.
+_ASKPASS_DIR=""
+_cleanup_askpass() { [ -n "$_ASKPASS_DIR" ] && rm -rf "$_ASKPASS_DIR"; _ASKPASS_DIR=""; return 0; }
+
+_make_askpass() {
+  _ASKPASS_DIR=$(mktemp -d) || return 1
+  chmod 700 "$_ASKPASS_DIR"
+  cat > "$_ASKPASS_DIR/askpass.sh" <<'EOS'
+#!/bin/sh
+case "$1" in
+  Username*) printf '%s' "$MIRROR_GIT_USER" ;;
+  *)         printf '%s' "$MIRROR_GIT_PASS" ;;
+esac
+EOS
+  chmod 700 "$_ASKPASS_DIR/askpass.sh"
+}
+
+_tags_fallback_git() {  # <user> <pass> <git-args...>; env geldt alleen voor dat git-proces
+  local u="$1" pw="$2"; shift 2
+  MIRROR_GIT_USER="$u" MIRROR_GIT_PASS="$pw" \
+    GIT_ASKPASS="$_ASKPASS_DIR/askpass.sh" GIT_TERMINAL_PROMPT=0 \
+    git -c credential.helper= "$@"
+}
+
+_tags_fallback_run() {  # gebruikt GH_TOKEN van de aanroeper (dynamic scoping)
+  local owner="$1" repo="$2" clonedir="$3" fj_url="$4" gh_url="$5"
+  if [ ! -d "$clonedir" ]; then
+    log "bare-clonen ${owner}/${repo} → $clonedir"
+    _tags_fallback_git "$FORGEJO_USERNAME" "$FORGEJO_TOKEN" \
+      clone --bare --quiet "$fj_url" "$clonedir" || return 1
+  else
+    log "git fetch in $clonedir"
+    # Scrub een eventueel oude userinfo-URL uit een eerdere versie van dit script.
+    git -C "$clonedir" remote set-url origin "$fj_url" || return 1
+    _tags_fallback_git "$FORGEJO_USERNAME" "$FORGEJO_TOKEN" \
+      -C "$clonedir" fetch --tags --quiet origin '+refs/heads/*:refs/heads/*' || return 1
+  fi
+  _tags_fallback_git "$GH_USERNAME" "$GH_TOKEN" \
+    -C "$clonedir" push --tags --force --quiet "$gh_url" || return 1
+  log "tags-fallback OK voor ${owner}/${repo}"
+}
+
 tags_fallback() {
   local owner="$1" repo="$2"
   local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   local clonedir="${MIRROR_CLONE_DIR:-/srv/scrum4me/repos/mirrors}/${owner}-${repo}.git"
+  local fj_url="${FORGEJO_BASE_URL%/}/${owner}/${repo}.git"
+  local gh_url="https://github.com/${GH_USERNAME}/${repo}.git"
   mkdir -p "$(dirname "$clonedir")"
-  if [ ! -d "$clonedir" ]; then
-    if [ "${DRY_RUN:-0}" = "1" ]; then
-      log "DRY_RUN: zou bare-clone $clonedir aanmaken vanaf Forgejo"
-      return 0
-    fi
-    log "bare-clonen ${owner}/${repo} → $clonedir"
-    git clone --bare --quiet \
-      "https://${FORGEJO_USERNAME}:${FORGEJO_TOKEN}@${FORGEJO_BASE_URL#https://}/${owner}/${repo}.git" \
-      "$clonedir" || return 1
-  else
-    if [ "${DRY_RUN:-0}" = "1" ]; then
-      log "DRY_RUN: zou git fetch in $clonedir doen"
-      return 0
-    fi
-    log "git fetch in $clonedir"
-    git -C "$clonedir" fetch --tags --quiet origin '+refs/heads/*:refs/heads/*' || return 1
-  fi
   if [ "${DRY_RUN:-0}" = "1" ]; then
-    log "DRY_RUN: zou git push --tags --force naar GitHub doen voor ${owner}/${repo}"
+    if [ ! -d "$clonedir" ]; then
+      log "DRY_RUN: zou bare-clone $clonedir aanmaken vanaf Forgejo"
+    else
+      log "DRY_RUN: zou git fetch in $clonedir doen"
+    fi
     return 0
   fi
-  git -C "$clonedir" push --tags --force --quiet \
-    "https://${GH_USERNAME}:${GH_TOKEN}@github.com/${GH_USERNAME}/${repo}.git" || return 1
-  log "tags-fallback OK voor ${owner}/${repo}"
+
+  _make_askpass || return 1
+  trap _cleanup_askpass EXIT
+  local rc=0
+  _tags_fallback_run "$owner" "$repo" "$clonedir" "$fj_url" "$gh_url" || rc=$?
+  _cleanup_askpass; trap - EXIT
+  return "$rc"
 }
 
 # ─────────────────────────── state-file ─────────────────────────────

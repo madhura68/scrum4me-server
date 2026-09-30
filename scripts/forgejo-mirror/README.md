@@ -27,5 +27,17 @@ and root gets `Permission denied` on it (protected_regular).
 | `SKIP … bevat .github/workflows` | The default PAT lacks the Workflows scope | Set `GH_TOKEN_<REPO>` in `github.env` with workflow scope |
 | `GitHub counterpart ontbreekt` | No GitHub repo | Create it on GitHub (empty, same visibility) |
 
-Note: `fj`/`gh` put the token in curl's argv (`-H "Authorization: …"`), which `ps` can see while
-it runs. Compare ISS-41/ISS-43; moving to `-H @file` is an open improvement.
+## Token hygiene
+
+No token appears in any process argv or URL (compare ISS-41/ISS-43):
+
+- `fj`/`gh` pass the `Authorization` header to curl through `-K <(…)` (a process-substitution
+  pipe, never `-H` in argv).
+- The push-mirror payload (which contains the GitHub token as `remote_password`) is built by `jq`
+  from the environment (`$ENV.GH_TOKEN`) and sent on curl's stdin (`--data-binary @-`).
+- `tags_fallback` clones/fetches/pushes with URLs without userinfo; credentials come from a
+  `GIT_ASKPASS` helper in a 0700 `mktemp -d` that is removed on exit. The bare clone's
+  `remote.origin.url` never holds a credential; an existing clone that still has one from an older
+  version is rewritten with `git remote set-url` on the next run.
+
+Tests: `bats scripts/tests/test_forgejo_mirror.bats` (fake curl/git/flock, no network).

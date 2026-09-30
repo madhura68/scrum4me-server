@@ -192,3 +192,63 @@ mutations() { grep -cE '^(POST|PATCH|DELETE|PUT) ' "$LOGDIR/calls.log" || true; 
   grep -q 'clone --bare' "$LOGDIR/git.log"
   grep -q 'push --tags --force' "$LOGDIR/git.log"
 }
+
+# ───────────────────── token-hygiene (T-169) ─────────────────────
+
+@test "tokens staan niet in curl-argv; auth gaat via -K config" {
+  set_repos alpha; healthy_repo alpha
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ -s "$LOGDIR/curl.log" ]
+  ! grep -qF "$FJTOK" "$LOGDIR/curl.log"
+  ! grep -qF "$GHTOK" "$LOGDIR/curl.log"
+  ! grep -q -- '-H Authorization' "$LOGDIR/curl.log"
+  grep -q -- '-K ' "$LOGDIR/curl.log"
+  # de credentials komen wél (alleen) via de config-pipe binnen
+  grep -qF "token $FJTOK" "$LOGDIR/config.log"
+  grep -qF "Bearer $GHTOK" "$LOGDIR/config.log"
+}
+
+@test "push-mirror-payload gaat via stdin met de token, niet via argv" {
+  set_repos alpha; healthy_repo alpha
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/push_mirrors" '[]'
+  fx POST "$FJ/api/v1/repos/janpeter/alpha/push_mirrors" '{}' 201
+  run bash "$SCRIPT"
+  grep -q 'POST https://forgejo.test/api/v1/repos/janpeter/alpha/push_mirrors$' "$LOGDIR/calls.log"
+  ! grep -qF "$GHTOK" "$LOGDIR/curl.log"
+  ! grep -qF "$FJTOK" "$LOGDIR/curl.log"
+  grep -q -- '--data-binary @-' "$LOGDIR/curl.log"
+  [ "$(jq -r '.remote_password' "$LOGDIR/stdin.log")" = "$GHTOK" ]
+  [ "$(jq -r '.remote_username' "$LOGDIR/stdin.log")" = "ghuser" ]
+}
+
+@test "tags_fallback: URL's zonder userinfo, credentials via GIT_ASKPASS, tempdir opgeruimd" {
+  set_repos alpha; healthy_repo alpha
+  fx GET "$GH/repos/ghuser/alpha/tags" '[]'
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q 'clone --bare' "$LOGDIR/git.log"
+  grep -q 'push --tags --force' "$LOGDIR/git.log"
+  ! grep -qF "$FJTOK" "$LOGDIR/git.log"
+  ! grep -qF "$GHTOK" "$LOGDIR/git.log"
+  ! grep -Eq '://[^/ ]*@' "$LOGDIR/git.log"
+  # de helper leverde de credentials aan git (clone: Forgejo, push: GitHub)
+  grep -qF "$FJTOK" "$LOGDIR/askpass.log"
+  grep -qF "$GHTOK" "$LOGDIR/askpass.log"
+  # helper-dir is na afloop weg
+  ap=$(grep -m1 '^ASKPASS=/' "$LOGDIR/git-env.log" | cut -d= -f2-)
+  [ -n "$ap" ]
+  [ ! -e "$ap" ]
+  [ ! -e "$(dirname "$ap")" ]
+}
+
+@test "tags_fallback: bestaande clone krijgt remote set-url zonder userinfo" {
+  set_repos alpha; healthy_repo alpha
+  fx GET "$GH/repos/ghuser/alpha/tags" '[]'
+  mkdir -p "$MIRROR_CLONE_DIR/janpeter-alpha.git"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q 'remote set-url origin https://forgejo.test/janpeter/alpha.git$' "$LOGDIR/git.log"
+  grep -q 'fetch --tags' "$LOGDIR/git.log"
+  ! grep -Eq '://[^/ ]*@' "$LOGDIR/git.log"
+}
