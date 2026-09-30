@@ -24,20 +24,21 @@ class Scenarios(unittest.TestCase):
         if starts(rec, "runner") and not hit: hit.append(limit)
         return hit[0] if hit else None
 
-    # A — AUDIT-007: één mislukte probe mag geen alarm en geen minuut vertraging geven
+    # A — AUDIT-007: één mislukte probe (controle eerst, dan het bekende watchdoggedrag)
     def test_A_controle_alle_probes_ok_start_binnen_31s(self):
         rt, ctl, rec, clock = build_runtime(self.tmp, probe_seq=lambda: OK_PROBE)
         t = self._first_start(rt, rec, clock, 120)
         self.assertIsNotNone(t); self.assertLessEqual(t, 31)
 
-    # AUDIT-007; gewenst gedrag volgens ontwerpdelta (PBI-32), faalt tot PBI-34/35
-    @unittest.expectedFailure
-    def test_A_eenmalige_probefout_geen_alarm_en_start_binnen_70s(self):
+    # AUDIT-007 is in delta R15 UITGESTELD (review ronde 1): zonder assignment-nulbewijs
+    # wist de fence alleen via de 60 s-watchdog. Dit legt het bekende gedrag vast: één
+    # alarm en een start rond t=120 i.p.v. t=30. Wordt aangescherpt zodra het nulbewijs bestaat.
+    def test_A_eenmalige_probefout_watchdog_alarm_en_start_rond_120s(self):
         seq = iter([BAD_PROBE])
         rt, ctl, rec, clock = build_runtime(self.tmp, probe_seq=lambda: next(seq, OK_PROBE))
         t = self._first_start(rt, rec, clock, 180)
-        self.assertEqual(events(rt, "alarm"), [])
-        self.assertIsNotNone(t); self.assertLessEqual(t, 70)
+        self.assertEqual(len(events(rt, "alarm")), 1)
+        self.assertIsNotNone(t); self.assertLessEqual(t, 125)
 
     # B — AUDIT-003, door de eigenaar ACCEPTED op 2026-09-30: een rode trustgate stopt
     # geen al lopende (wachtende) runner; hij mag nog één job oppakken. Dit is bewust

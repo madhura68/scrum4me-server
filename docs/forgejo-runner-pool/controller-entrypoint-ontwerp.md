@@ -46,8 +46,12 @@ adapters komen later:
   slice beslist op de **procesexitcode** (§7.9 exitcodecontract).
 - **`job_accepted`-detectie** via runnerlog-parsing (zie §7.3).
 - **stoppen van een wachtend child** bij een rode gate of een fence: niet in deze
-  slice. Per host kan na een rode gate nog één job starten; JP aanvaardt dit venster
-  (R15, `migratieontwerp.md` §7.7 "Aanvaard one-job-venster").
+  slice. Het reeds wachtende child kan per host nog hoogstens één job aannemen, zonder
+  tijdsgrens; JP aanvaardt dit (R15, `migratieontwerp.md` §7.7 "Aanvaard
+  one-job-venster").
+- **fence-herstel zonder watchdog**: zonder assignment-nulbewijs wist een fence alleen
+  via de 60 s-watchdog, ook na één losse mislukte probe (alarm, ~2 min vertraging;
+  AUDIT-007, uitgesteld in R15).
 
 ## 3. Uitgangspunten (gemeten)
 
@@ -70,7 +74,7 @@ zodat ze in tests vervangbaar zijn en het hart onaangeraakt blijft.
 
 | Bestand | Rol | Nieuw? |
 |---|---|---|
-| `scripts/forgejo_runner_cycle.py` | Puur beslis-hart. Krijgt onderaan enkel: `if __name__ == "__main__": from cycle_runtime import main; raise SystemExit(main())`. `SystemExit` is builtin en `main()` leest zelf `sys.argv` ⇒ **geen** extra import in het hart. Verder ongewijzigd. | bestaand + 2 regels |
+| `scripts/forgejo_runner_cycle.py` | Puur beslis-hart. Krijgt onderaan enkel: `if __name__ == "__main__": from cycle_runtime import main; raise SystemExit(main())`. `SystemExit` is builtin en `main()` leest zelf `sys.argv` ⇒ **geen** extra import in het hart. Verder ongewijzigd, behalve de heropen-wachttijd na een runnerfout (R15, §7.3). | bestaand + 2 regels (R15: wachttijd) |
 | `scripts/cycle_runtime.py` | `main(argv=None)` (default `sys.argv[1:]`): config laden, adapters bedraden, de serialiseerde poll-loop, de twee runtime-preconditions (§5.2), signal-handling, logging. | nieuw |
 | `scripts/cycle_adapters.py` | De neveneffect-adapters achter interfaces: `TransportProbe`, `DindHealth`, `TrustVerdict`, `RunnerLifecycle`, `Scrub`, `Reconcile`, `Clock`. | nieuw |
 
@@ -337,9 +341,15 @@ het `RUNNING`/`volgende_state`-spoor.
   per retry-interval. Iedere gatewissel (trust, DinD-health, blokkade) geeft één
   journalregel.
 - **deadline per operatie** (R15): scrub 300 s, pull 900 s (configureerbaar in
-  `controller.toml`). Overschrijding → SIGTERM, na 10 s SIGKILL, marker bewaard,
-  alarm; scrub-overschrijding → `QUARANTINED`, pull-overschrijding telt als
-  pre-pullfout.
+  `controller.toml`). Overschrijding → SIGTERM naar de lokale client, na 10 s
+  SIGKILL, marker bewaard, alarm; scrub-overschrijding → `QUARANTINED`,
+  pull-overschrijding telt als pre-pullfout.
+- **herstel na een onzeker operatie-einde** (R15): een afgekapte of door een signaal
+  beëindigde operatie kan in DinD doorlopen (§6.4); een lokale exit bewijst niets.
+  Vóór iedere volgende muterende operatie — na de geldende wachttijd, binnen dezelfde
+  runtime, niet tijdens stop of drain — opnieuw de opstartreconciliatie: DinD-herstart,
+  volledige scrub, marker pas na geslaagd scrubbewijs weg. Geen procesherstart, zodat
+  de backoffteller blijft staan.
 - **scrub-fout**: geen start; alarm; `clean_proven` blijft
   `False` tot een geslaagde scrub.
 
@@ -356,12 +366,9 @@ Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herste
 
 Herstel duurt ~60 s (watchdog) + ~2 probes. De runtime doet hier niets bijzonders.
 
-**R15 — lokaal triviaal nulbewijs.** Bestond er vanaf het zetten van de fence tot
-aan de tweede geldige probe geen runner-child en liep er geen cyclusoperatie, dan
-zet de runtime `controller.nulbewijs_ok` voor die fence: er was geen runner van deze
-host die een taak kon ophalen. De fence wist dan via de gewone herstelregel, zonder
-watchdog-alarm. Bestond er wel een child, dan blijft de watchdogroute hierboven
-gelden.
+**R15:** dit watchdogpad blijft ook na één losse mislukte probe het enige; het geeft
+dan een alarm en circa twee minuten vertraging. Bekend en uitgesteld (AUDIT-007) tot
+het assignment-nulbewijs bestaat.
 (De eerdere "herstart bij gefencete impasse" is verwijderd: hij berustte op de
 onjuiste premisse dat een fence alleen met nulbewijs wist — regels 336–338 en
 377–379 wissen hem óók.) De enige herstart is systemd's `Restart=on-failure` bij
@@ -459,7 +466,14 @@ dunne slice is een alarm log-only (geen queue/Forgejo-sink).
   4. `clean_proven`-levenscyclus: ingetrokken bij childstart en scrub-fout; alleen
      door geslaagde scrub+bewijs gezet;
   5. start-stappen in de volgorde van `cycle_stappen()`;
-  6. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 → `QUARANTINED`;
+  6. child exit `0` → scrub ok → `WAITING`; child exit ≠ 0 → `QUARANTINED`, alarm, en
+     heropenen pas na de wachttijd 1, 2, 4 … max. 30 min (R15; scenario C);
+  6a. deadline op scrub/pull → client beëindigd, alarm, marker bewaard; vóór de
+     volgende operatie DinD-herstart + volledige scrub, ook als de lokale client al
+     weg is terwijl de gesimuleerde DinD-operatie nog loopt (R15; scenario E en een
+     nieuw scenario);
+  6b. één pre-pullfout → retry met backoff, geen blokkade (R15; scenario D);
+  6c. wachtend child + rode gate → child loopt door (aanvaard venster; scenario B);
   7. transport-fout → `SOURCE_WAIT`; fence-blip → watchdog → `SOURCE_WAIT` →
      `WAITING`, **zonder** herstart (§7.5);
   8. **startup-reconciliatie** (B3): achtergebleven beheerde runnercontainer →
@@ -602,7 +616,8 @@ herstelproeven volgen in de plan-/bouwfase.
 
 ### Delta R15 — audit-opvolging — in review — 30 september 2026
 
-Spiegelt `migratieontwerp.md` §13 "Delta R15": aanvaard one-job-venster (§2),
-heropenen na runnerfout met oplopende wachttijd (§7.3), pre-pullretry, deadlines per
-operatie en gatelogging (§7.4), lokaal triviaal nulbewijs (§7.5). Aanleiding en
-besluiten staan daar. Delta-variant, één cross-model reviewer `mac:codex`.
+Spiegelt `migratieontwerp.md` §13 "Delta R15": aanvaard one-job-venster en
+uitgestelde fence-optimalisatie (§2, §7.5), heropenen na runnerfout met oplopende
+wachttijd (§4, §7.3), pre-pullretry, deadlines per operatie, herstel na een onzeker
+operatie-einde en gatelogging (§7.4), proeven (§11). Aanleiding, besluiten en
+reviewrondes staan daar. Delta-variant, één cross-model reviewer `mac:codex`.
