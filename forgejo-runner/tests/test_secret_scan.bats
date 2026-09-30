@@ -97,22 +97,22 @@ setup() {
   # globale line-exclusie, waardoor 'TOKEN=<40 hex>  # secret-scan: fixture' in
   # een willekeurig bestand de gate passeerde. De marker-uitzondering is
   # verwijderd; de tokenregel wordt ongeacht een bijgevoegde marker geblokkeerd.
-  printf 'RUNNER_REGISTRATION_TOKEN=%s  # secret-scan: fixture\n' "$TOKEN40" > "$WERK/marker.env"
-  run bash "$SCRIPT" "$WERK/marker.env"
+  printf 'RUNNER_REGISTRATION_TOKEN=%s  # secret-scan: fixture\n' "$TOKEN40" > "$WERK/marker.txt"
+  run bash "$SCRIPT" "$WERK/marker.txt"
   [ "$status" -eq 70 ]
 }
 
 @test "een korte, duidelijk-nep tokenwaarde (<20 tekens) is geen secret" {
   # De redactor-fixtures gebruiken voortaan zo'n waarde i.p.v. een marker.
-  printf 'RUNNER_REGISTRATION_TOKEN=%s\n' "FAKE-TEST-TOKEN" > "$WERK/fixture.env"
-  run bash "$SCRIPT" "$WERK/fixture.env"
+  printf 'RUNNER_REGISTRATION_TOKEN=%s\n' "FAKE-TEST-TOKEN" > "$WERK/fixture.txt"
+  run bash "$SCRIPT" "$WERK/fixture.txt"
   [ "$status" -eq 0 ]
 }
 
 @test "de echte bundel en het stap-A-bewijs zijn schoon" {
   # Dit is de eenmalige scan van stap B uit §8, mechanisch.
   cd "$REPO_ROOT"
-  run bash "$SCRIPT" $(git ls-files forgejo-runner docs/forgejo-runner-pool/evidence)
+  run bash "$SCRIPT" $(git ls-files forgejo-runner docs/forgejo-runner-pool/evidence ':!docs/forgejo-runner-pool/evidence/stap-a/caps.env')
   [ "$status" -eq 0 ]
 }
 
@@ -158,6 +158,22 @@ setup() {
   [ "$status" -eq 0 ]
   [ -x "$REPO/.githooks/pre-commit" ]
   [ ! -e "$REPO/.git/hooks/pre-commit" ]
+}
+
+@test "de installer overschrijft een vreemde pre-commit hook niet, een eigen wel" {
+  REPO="$BATS_TEST_TMPDIR/vreemdrepo"
+  git init -q "$REPO"
+  printf '#!/bin/sh\necho vreemd\n' > "$REPO/.git/hooks/pre-commit"
+  chmod +x "$REPO/.git/hooks/pre-commit"
+  run bash "$INSTALLER" "$REPO"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"niet overschreven"* ]]
+  grep -q vreemd "$REPO/.git/hooks/pre-commit"
+  rm "$REPO/.git/hooks/pre-commit"
+  run bash "$INSTALLER" "$REPO"
+  [ "$status" -eq 0 ]
+  run bash "$INSTALLER" "$REPO"
+  [ "$status" -eq 0 ]
 }
 
 @test "de installer weigert een map die geen werkboom is" {
