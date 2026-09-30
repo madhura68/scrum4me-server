@@ -78,6 +78,9 @@ run() {
     if ! ensure_github_counterpart "$owner" "$repo"; then
       skipped_other=$((skipped_other + 1)); continue
     fi
+    if ! ensure_github_default_branch "$owner" "$repo" "$default_branch"; then
+      errors=$((errors + 1)); continue
+    fi
     if ! ensure_push_mirror "$owner" "$repo" "$default_branch"; then
       errors=$((errors + 1)); continue
     fi

@@ -192,6 +192,24 @@ ensure_github_counterpart() {
   fi
 }
 
+# GitHub's default branch must equal Forgejo's. The push mirror mirrors all refs, so it deletes a
+# branch on GitHub that no longer exists in Forgejo; GitHub refuses to delete its default branch
+# ("refusing to delete the current branch"), which Forgejo reports as a 500 on push_mirrors-sync.
+# Seen on 2026-09-30 for When2Watch (GitHub default still codex/when2watch-increment-1).
+ensure_github_default_branch() {
+  local owner="$1" repo="$2" expected="$3" actual
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local GH_TOKEN="$_repo_token"
+  actual=$(gh GET "/repos/${GH_USERNAME}/${repo}" | jq -r '.default_branch // empty') || actual=""
+  if [ -z "$actual" ]; then
+    log -l WARN "default branch van GitHub ${GH_USERNAME}/${repo} niet leesbaar; check overgeslagen"
+    return 0
+  fi
+  [ "$actual" = "$expected" ] && return 0
+  log -l ERROR "GitHub ${GH_USERNAME}/${repo}: default branch '${actual}' ≠ Forgejo '${expected}' — de push-mirror kan '${actual}' niet verwijderen; zet op GitHub de default branch op '${expected}' (Settings → Default branch) en run opnieuw"
+  return 1
+}
+
 # ─────────────────── push-mirror config (idempotent) ────────────────
 
 # Maakt/herbevestigt push_mirror in Forgejo. Bij mismatch op interval of
