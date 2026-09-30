@@ -1,6 +1,6 @@
 # Ontwerp — controller-entrypoint (dunne bring-up)
 
-Status: concept voor review (delta-review met `mac:codex`).
+Status: GO na 4 rondes (zie Review record); post-GO delta R15 (audit-opvolging, 30 september 2026) in review.
 Datum: 2026-09-06.
 Reikwijdte: **stap D + de kern van stap E** uit `migratieontwerp.md` §8.
 Product: `scrum4me-server` (canonieke bundel); doelhost van deze slice: **max2**.
@@ -45,6 +45,9 @@ adapters komen later:
 - **terminale-Forgejo-jobstatus-correlatie** per job (vergt API-toegang); de
   slice beslist op de **procesexitcode** (§7.9 exitcodecontract).
 - **`job_accepted`-detectie** via runnerlog-parsing (zie §7.3).
+- **stoppen van een wachtend child** bij een rode gate of een fence: niet in deze
+  slice. Per host kan na een rode gate nog één job starten; JP aanvaardt dit venster
+  (R15, `migratieontwerp.md` §7.7 "Aanvaard one-job-venster").
 
 ## 3. Uitgangspunten (gemeten)
 
@@ -304,8 +307,10 @@ pollt niet-blokkerend; bij exit: `submit("child_exit",{code})` → `SCRUBBING` �
 
 - `ok` én exit `0` → `WAITING`; groene én rode workflow leveren beide exit `0`; de
   terminale Forgejo-status wordt buiten de controller waargenomen (stap-E-bewijs).
-- exit ≠ 0 of scrub-fout → `QUARANTINED`. Het hart kan `QUARANTINED` bij een latere
-  bevestigde READY + gates heropenen (regel 330–333), **maar** een start vereist
+- exit ≠ 0 of scrub-fout → `QUARANTINED`. Het hart heropent `QUARANTINED` pas na de
+  oplopende wachttijd uit `migratieontwerp.md` §7.9 (1, 2, 4 … max. 30 min, alarm per
+  fout, teller terug op nul na een geslaagde cyclus; R15), en dan bij een
+  bevestigde READY + gates via de koude-startpad, **maar** een start vereist
   `clean_proven` (§5.2/§6.1 stap 8), dat na een scrub-fout `False` is en alleen door
   een nieuwe geslaagde scrub hersteld wordt — readiness-herstel omzeilt de scrub dus
   niet (B2).
@@ -325,7 +330,17 @@ het `RUNNING`/`volgende_state`-spoor.
   toestand blijft `SOURCE_WAIT`/geblokkeerd. **Bewuste beperking:** geen
   `QUARANTINED`-label bij een trust-hardfout (het hart kent die overgang niet en
   wordt niet gewijzigd); dat label is follow-up.
-- **pre-pull/image-fout of scrub-fout**: geen start; alarm; `clean_proven` blijft
+- **pre-pull-fout** (R15): geen start; de runtime probeert de pull opnieuw met een
+  wachttijd die vanaf 30 s verdubbelt tot max. 15 min en logt per poging de reden;
+  geen permanente blokkade. Alleen een achtergebleven runnercontainer of een
+  mislukte opstartreconciliatie blokkeert tot een mens ingrijpt, met een logregel
+  per retry-interval. Iedere gatewissel (trust, DinD-health, blokkade) geeft één
+  journalregel.
+- **deadline per operatie** (R15): scrub 300 s, pull 900 s (configureerbaar in
+  `controller.toml`). Overschrijding → SIGTERM, na 10 s SIGKILL, marker bewaard,
+  alarm; scrub-overschrijding → `QUARANTINED`, pull-overschrijding telt als
+  pre-pullfout.
+- **scrub-fout**: geen start; alarm; `clean_proven` blijft
   `False` tot een geslaagde scrub.
 
 ### 7.5 Fence-herstel gebeurt in het hart (geen herstart-tak)
@@ -340,6 +355,13 @@ Een transport-blip die de controller in `WAITING` fencet (→ `DRAINING`) herste
   (regel ~330–333) weer `WAITING`.
 
 Herstel duurt ~60 s (watchdog) + ~2 probes. De runtime doet hier niets bijzonders.
+
+**R15 — lokaal triviaal nulbewijs.** Bestond er vanaf het zetten van de fence tot
+aan de tweede geldige probe geen runner-child en liep er geen cyclusoperatie, dan
+zet de runtime `controller.nulbewijs_ok` voor die fence: er was geen runner van deze
+host die een taak kon ophalen. De fence wist dan via de gewone herstelregel, zonder
+watchdog-alarm. Bestond er wel een child, dan blijft de watchdogroute hierboven
+gelden.
 (De eerdere "herstart bij gefencete impasse" is verwijderd: hij berustte op de
 onjuiste premisse dat een fence alleen met nulbewijs wist — regels 336–338 en
 377–379 wissen hem óók.) De enige herstart is systemd's `Restart=on-failure` bij
@@ -577,3 +599,10 @@ nodig):
 Verdict ronde 4: **GO**. De **spec-fase is afgerond** na 4 rondes (delta-variant,
 één cross-model reviewer `mac:codex`, per JP-instructie). Implementatie, mounts en
 herstelproeven volgen in de plan-/bouwfase.
+
+### Delta R15 — audit-opvolging — in review — 30 september 2026
+
+Spiegelt `migratieontwerp.md` §13 "Delta R15": aanvaard one-job-venster (§2),
+heropenen na runnerfout met oplopende wachttijd (§7.3), pre-pullretry, deadlines per
+operatie en gatelogging (§7.4), lokaal triviaal nulbewijs (§7.5). Aanleiding en
+besluiten staan daar. Delta-variant, één cross-model reviewer `mac:codex`.
