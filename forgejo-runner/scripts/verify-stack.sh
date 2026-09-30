@@ -3,7 +3,8 @@
 # Verifieert de uitgerolde stack op deze host (§6.1, §7.5, §7.6).
 # Exit 0 groen, 60 commit-drift, 61 bundelhash-drift, 62 isolatiefout (ook
 # een ontbrekende `ss`), 63 systemd-unit-drift, 64 eigendom/schrijfrechten van
-# de bundel, 2 gebruiksfout.
+# de bundel, 65 DinD-guard ontbreekt of de DinD-API is vanaf de host bereikbaar,
+# 2 gebruiksfout.
 #
 # BUNDLE_COMMIT_FILE en SYSTEMD_DIR zijn overschrijfbaar zodat de faaltakken
 # zonder host getest kunnen worden; op de hosts zijn het
@@ -31,7 +32,7 @@ HUIDIGE_HASH="$(bash "$SCRIPT_DIR/bundle-hash.sh" "$BUNDLE")"
 # Geïnstalleerde units moeten byte-gelijk zijn aan de bundelkopie (AUDIT-023):
 # de bundelhash dekt alleen de bestanden in /opt/forgejo-runner, niet wat
 # systemd daadwerkelijk laadt.
-for unit in forgejo-runner-cycle.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
+for unit in forgejo-runner-cycle.service forgejo-runner-dind-guard.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
   cmp -s "$BUNDLE/$unit" "$SYSTEMD_DIR/$unit" || {
     printf 'unit-drift: %s ontbreekt of wijkt af van de bundelkopie (%s)\n' "$unit" "$SYSTEMD_DIR" >&2 ; exit 63 ; }
 done
@@ -59,4 +60,29 @@ if ss -ltn 2>/dev/null | grep -qE ':(2375|2376)([^0-9]|$)'; then
   printf 'isolatiefout: er luistert iets op 2375 of 2376\n' >&2 ; exit 62
 fi
 
-printf 'commit: %s\nbundel_hash: %s\nisolatie: OK\n' "$HUIDIG_COMMIT" "$HUIDIGE_HASH"
+# DinD-guard (T-188): de firewallregel moet bestaan én de DinD-API mag vanaf de
+# host niet bereikbaar zijn op de bridge fr-dind0. De gedragsproef is het echte
+# bewijs; ontbreekt DinD, docker of timeout, dan is de guard niet te bewijzen
+# en faalt de gate (fail-closed).
+bash "$SCRIPT_DIR/dind-guard.sh" check || {
+  printf 'guardfout: dind-guard.sh check faalde, firewallregel ontbreekt\n' >&2 ; exit 65 ; }
+for cmd in docker timeout; do
+  command -v "$cmd" >/dev/null 2>&1 || {
+    printf 'guardfout: %s ontbreekt, bereikbaarheid niet te proeven\n' "$cmd" >&2 ; exit 65 ; }
+done
+DIND_ID="$(docker ps -q --filter label=com.docker.compose.project=forgejo-runner \
+  --filter label=com.docker.compose.service=dind 2>/dev/null | head -n 1)"
+DIND_IPS=""
+[ -z "$DIND_ID" ] || DIND_IPS="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$DIND_ID" 2>/dev/null || true)"
+[ -n "${DIND_IPS// /}" ] || {
+  printf 'guardfout: geen draaiende DinD-container met IP gevonden, bereikbaarheid niet te proeven\n' >&2 ; exit 65 ; }
+for ip in $DIND_IPS; do
+  for poort in 2375 2376; do
+    # shellcheck disable=SC2016  # $0/$1 zijn de argumenten van de kind-bash
+    if timeout 3 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$ip" "$poort" 2>/dev/null; then
+      printf 'guardfout: DinD-API bereikbaar vanaf de host op %s:%s\n' "$ip" "$poort" >&2 ; exit 65
+    fi
+  done
+done
+
+printf 'commit: %s\nbundel_hash: %s\nisolatie: OK\nguard: OK\n' "$HUIDIG_COMMIT" "$HUIDIGE_HASH"
