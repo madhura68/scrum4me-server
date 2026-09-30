@@ -7,6 +7,7 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   UNIT="$REPO_ROOT/forgejo-runner/forgejo-runner-cycle.service"
+  GUARD_UNIT="$REPO_ROOT/forgejo-runner/forgejo-runner-dind-guard.service"
 }
 
 @test "unit heeft alle vier verplichte afhankelijkheden" {
@@ -60,4 +61,17 @@ setup() {
   grep -q '^NoNewPrivileges=true' "$UNIT"
   grep -q '^ProtectHome=true' "$UNIT"
   grep -q '^WorkingDirectory=/opt/forgejo-runner' "$UNIT"
+}
+
+@test "cycle-unit vereist en volgt de dind-guard-unit (T-188)" {
+  grep -q '^Requires=forgejo-runner-dind-guard.service' "$UNIT"
+  grep -q '^After=forgejo-runner-dind-guard.service' "$UNIT"
+}
+
+@test "dind-guard-unit is een oneshot die dind-guard.sh apply draait" {
+  grep -q '^Type=oneshot' "$GUARD_UNIT"
+  grep -q '^RemainAfterExit=yes' "$GUARD_UNIT"
+  grep -qE '^ExecStart=.*/opt/forgejo-runner/scripts/dind-guard\.sh apply$' "$GUARD_UNIT"
+  grep -q '^WantedBy=multi-user.target' "$GUARD_UNIT"
+  grep -q '^NoNewPrivileges=true' "$GUARD_UNIT"
 }

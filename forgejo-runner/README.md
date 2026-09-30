@@ -16,6 +16,7 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 | `runner-config.policy.yml` | gedeelde runnerpolicy; `render-config.sh` voegt de hostspecifieke UUID en `token_url` toe |
 | `trusted-actions-scope.yml` | trust-allowlist voor global scope (§7.7) |
 | `forgejo-runner-cycle.service` | systemd-unit die de Python-cyclecontroller draait |
+| `forgejo-runner-dind-guard.service` | oneshot die `scripts/dind-guard.sh apply` draait (iptables-REJECT op de DinD-API) |
 | `forgejo-runner-trust.service` + `.timer` | vernieuwen het trust-verdict vóór het verloopt (§7.7 "dagelijks") |
 | `scripts/` | preflight, render-config, resolve-digests, scrub-dind, bundle-hash, verify-stack, secret-scan, de cyclecontroller en de read-only inventarisatiescripts |
 | `tests/` | bats- en unittest-suite; draait niet mee op de hosts en telt niet mee in de bundelhash |
@@ -48,12 +49,22 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    bundelkopie; `verify-stack.sh` vergelijkt ze en faalt met exit 63 bij een
    ontbrekende of afwijkende unit):
    ```sh
-   for u in forgejo-runner-cycle.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
+   for u in forgejo-runner-cycle.service forgejo-runner-dind-guard.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
      sudo install -o root -g root -m 0644 /opt/forgejo-runner/$u /etc/systemd/system/
    done
    sudo systemctl daemon-reload
    ```
-   Daarna `systemctl enable --now forgejo-runner-cycle.service`.
+   Daarna `systemctl enable --now forgejo-runner-dind-guard.service` (de
+   firewallguard die hostverkeer naar de DinD-API op bridge `fr-dind0` weigert,
+   T-188) en dan `systemctl enable --now forgejo-runner-cycle.service`; die
+   laatste vereist de guard-unit.
+
+   Bestaande stack met de oude, automatisch benoemde bridge: de vaste naam
+   `fr-dind0` vraagt een nieuw netwerk. Stop `forgejo-runner-cycle.service`
+   (drain eerst), draai `docker compose down` (het volume
+   `forgejo-runner-dind-data` blijft bestaan) en `docker compose up -d`, en start
+   daarna de cycle-unit. `verify-stack.sh` faalt met exit 65 als de guardregel
+   ontbreekt of de DinD-API vanaf de host bereikbaar is.
 8. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven; de
    bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit.
 9. Leg de credential voor de trustscan neer als

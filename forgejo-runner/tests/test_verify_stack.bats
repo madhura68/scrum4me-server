@@ -2,7 +2,7 @@
 # forgejo-runner/tests/test_verify_stack.bats
 # De driftgate uit §6.1 en de isolatiegate uit §7.5: iedere faaltak moet
 # aantoonbaar kunnen falen (60 commit-drift, 61 bundelhash-drift, 62
-# hostlistener, 63 unit-drift, 64 eigendom), want een gate die niet kan falen
+# hostlistener, 63 unit-drift, 64 eigendom, 65 DinD-guard), want een gate die niet kan falen
 # is geen gate. Het script leest het uitrolrecord, de systemd-map en `ss` via
 # overschrijfbare paden en `stat` via een stub, zodat dit zonder host (en op
 # macOS) kan draaien.
@@ -15,10 +15,11 @@ setup() {
   mkdir -p "$BUNDLE/scripts"
   cp "$HASHER" "$BUNDLE/scripts/bundle-hash.sh"
   cp "$SCRIPT" "$BUNDLE/scripts/verify-stack.sh"
+  cp "$REPO_ROOT/forgejo-runner/scripts/dind-guard.sh" "$BUNDLE/scripts/dind-guard.sh"
   echo "a" > "$BUNDLE/compose.yaml"
   export SYSTEMD_DIR="$BATS_TEST_TMPDIR/systemd"
   mkdir -p "$SYSTEMD_DIR"
-  for u in forgejo-runner-cycle.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
+  for u in forgejo-runner-cycle.service forgejo-runner-dind-guard.service forgejo-runner-trust.service forgejo-runner-trust.timer; do
     echo "unit $u" > "$BUNDLE/$u"
     cp "$BUNDLE/$u" "$SYSTEMD_DIR/$u"
   done
@@ -39,6 +40,33 @@ f="$BATS_TEST_TMPDIR/stat/\$(basename "\${3}")"
 if [ -f "\$f" ]; then cat "\$f"; else echo "0 755"; fi
 EOF
   chmod +x "$FAKE_BIN/stat"
+  # DinD-guard (T-188): fake iptables (regels in een bestand), docker (container
+  # met IP 172.30.0.2) en timeout (exit 0 = de verbinding lukte, 1 = geweigerd).
+  export REGELS="$BATS_TEST_TMPDIR/regels"
+  for p in 2375 2376; do
+    echo "OUTPUT -o fr-dind0 -p tcp --dport $p -j REJECT --reject-with tcp-reset" >> "$REGELS"
+  done
+  cat > "$FAKE_BIN/iptables" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1" = "-w" ] && shift
+[ "$1" = "-C" ] || exit 9
+shift
+grep -qxF -- "$*" "$REGELS"
+FAKE
+  export IPTABLES="$FAKE_BIN/iptables"
+  cat > "$FAKE_BIN/docker" <<FAKE
+#!/usr/bin/env bash
+case "\$1" in
+  ps) cat "$BATS_TEST_TMPDIR/dind-id" ;;
+  inspect) echo "172.30.0.2 " ;;
+esac
+FAKE
+  echo "abc" > "$BATS_TEST_TMPDIR/dind-id"
+  cat > "$FAKE_BIN/timeout" <<FAKE
+#!/usr/bin/env bash
+[ -f "$BATS_TEST_TMPDIR/probe-connect" ]
+FAKE
+  chmod +x "$FAKE_BIN/iptables" "$FAKE_BIN/docker" "$FAKE_BIN/timeout"
   PATH="$FAKE_BIN:$PATH"
 }
 
@@ -48,6 +76,7 @@ verify() { bash "$BUNDLE/scripts/verify-stack.sh" "$@"; }
   run verify abc123 "$HASH"
   [ "$status" -eq 0 ]
   [[ "$output" == *"isolatie: OK"* ]]
+  [[ "$output" == *"guard: OK"* ]]
   [[ "$output" == *"commit: abc123"* ]]
 }
 
@@ -161,4 +190,30 @@ verify() { bash "$BUNDLE/scripts/verify-stack.sh" "$@"; }
 @test "ontbrekende argumenten zijn een gebruiksfout" {
   run verify abc123
   [ "$status" -eq 2 ]
+}
+
+@test "ontbrekende firewallregel is exit 65" {
+  : > "$REGELS"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"guardfout"* ]]
+}
+
+@test "DinD-API bereikbaar vanaf de host is exit 65" {
+  touch "$BATS_TEST_TMPDIR/probe-connect"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"172.30.0.2:2375"* ]]
+}
+
+@test "geen draaiende DinD-container is exit 65 (fail-closed)" {
+  : > "$BATS_TEST_TMPDIR/dind-id"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 65 ]
+}
+
+@test "ontbrekende dind-guard-unit op de host is exit 63" {
+  rm "$SYSTEMD_DIR/forgejo-runner-dind-guard.service"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 63 ]
 }
