@@ -41,8 +41,9 @@ Gemeten:
   en `doctortoets` geeft `DOCTOR OK`.
 - `/api/v1/admin/actions/runners` geeft op 17.0-test een vorm die `capture-forgejo-records.sh` accepteert
   en twee records; `/runners/jobs` geeft `null` of een lijst (`CONTRACT OK`).
-- De proefinstance heeft geen verbinding naar buiten (op naam: exit 6; op IP: exit 7), niet naar de host
-  (exit 7) en niet naar de productieforge (exit 7), en geen gepubliceerde poorten.
+- De proefinstance heeft geen verbinding naar buiten (op naam: exit 6; op IP: exit 7) en niet naar de
+  productieforge (exit 7), en geen gepubliceerde poorten; de host heeft op het geïsoleerde proefnetwerk geen
+  adres (§5.2).
 - R4 zet de instance terug op 15.0.9 met de data intact, `$CF` byte-gelijk aan `PRE_CF`, de werkboom van
   de compose-map schoon, `DOCTOR OK` ten opzichte van het log van vóór het venster, en de gemigreerde
   database bewaard als `forgejo_failed_17_0`.
@@ -214,7 +215,7 @@ uid=1000 gid=1000 groups=1000
 (alle vier leeg / RH bestaat niet)
 
 ===== R.0
-8ff6a95a1923e62d04c4f60a8e827fb46ec207195148f54d75cb4fc39e7a6d2b
+ec37c61fd283dac47f0227a0be6cb1d74b0f998af0859890f11c8d4f8e9eb54a
 true isolated
 exit=0
 
@@ -222,18 +223,17 @@ exit=0
 PROEFKOPIE OK
 
 ===== R.2
-99074da85352f5a31fbff34166b19152a451eec40e7848860136536ce45ddf70
+02de6afda0aea8f5bcb8e29c5ef65ca8883a7348dc52740beefb18dac38e30b2
 PROEF-DB OK
 
 ===== R.3
 blok-exit=0
 codeberg.org/forgejo-experimental/forgejo:17.0-test
-e25e81e21b003f475964555f879cff8331324ef870533c3194904352d51b1608
+7a850e8c471fc838d3621cd986725b5587b8bcda61430229454ce2685fe68650
 migratie + start: 5s
 {"version":"17.0.0-dev-577-c4d05ee1a9+gitea-1.22.0"}
 curl-dns-exit=6
 curl-ip-exit=7
-curl-host-exit=7
 curl-prod-exit=7
 [mirror] ENABLED = false
 [mailer] ENABLED = false
@@ -255,13 +255,13 @@ CONTRACT OK: 2 runners, 0 jobs
 
 ===== R.5 setup + runner
 PROEF-SETUP OK voor janpeter
-time="2026-09-30T12:08:56Z" level=info msg="Starting job"
-time="2026-09-30T12:08:56Z" level=info msg="runner: proef-runner, with version: v12.10.1, with labels: [proef], ephemeral: false, declared successfully"
-time="2026-09-30T12:08:56Z" level=info msg="single task poller launched"
-time="2026-09-30T12:08:56Z" level=info msg="single task poller received no task from http://fj17-rh:3000/, trying again"
-time="2026-09-30T12:08:58Z" level=info msg="single task poller successfully fetched one task from http://fj17-rh:3000/"
-time="2026-09-30T12:08:58Z" level=info msg="task 1 repo is janpeter/proef-smoke https://data.forgejo.org http://fj17-rh:3000/"
-time="2026-09-30T12:08:58Z" level=info msg="single task poller is shutting down"
+time="2026-09-30T12:21:32Z" level=info msg="Starting job"
+time="2026-09-30T12:21:32Z" level=info msg="runner: proef-runner, with version: v12.10.1, with labels: [proef], ephemeral: false, declared successfully"
+time="2026-09-30T12:21:32Z" level=info msg="single task poller launched"
+time="2026-09-30T12:21:32Z" level=info msg="single task poller received no task from http://fj17-rh:3000/, trying again"
+time="2026-09-30T12:21:34Z" level=info msg="single task poller successfully fetched one task from http://fj17-rh:3000/"
+time="2026-09-30T12:21:34Z" level=info msg="task 1 repo is janpeter/proef-smoke https://data.forgejo.org http://fj17-rh:3000/"
+time="2026-09-30T12:21:34Z" level=info msg="single task poller is shutting down"
 runner-exit=0
 
 ===== R.5 runstatus
@@ -303,8 +303,8 @@ flush-exit=0
 Exited (0) Less than a second ago
 
 ===== 2.7
-a72f43eb8c2c0bfaf3b7254781fcf66c15b52695a0c116da57f2b77b2de1bff6  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
-403111
+1c6c7909b1d173c2b515ade11bbf2ec6e541cba5ac03122e81f73d40aab23bc3  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
+403316
 KOUD ROLLBACKPUNT OK
 
 ===== 4.2
@@ -335,7 +335,7 @@ data: repo 200, pakket 'pakketinhoud'
 exit=0
 
 ===== R4.3
-ALTER DATABASE postgres scrum4me template1 template0 forgejo_failed_15_0_9 forgejo_failed_17_0 forgejo 
+ALTER DATABASE postgres scrum4me template1 template0 forgejo_failed_15_0_9 forgejo forgejo_failed_17_0 
 
 ===== R4.4
 exit=0
@@ -368,8 +368,8 @@ flush-exit=0
 Exited (0) Less than a second ago
 
 ===== 2.7
-5642c0806588e09c347136ce402bb1511a7f0a69fb5cb8c6cbd08dc0176141b0  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
-403213
+c4b278dd197d922607776de5a5ed754f60d1dece82033497d3ebb89c73e14b55  /srv/backups/manual/forgejo-pre-17.0/forgejo-pre-17.dump
+403417
 KOUD ROLLBACKPUNT OK
 
 ===== 4.2
@@ -402,18 +402,18 @@ commit-exit=0
 (einde git status)
 
 ===== databases
-postgres scrum4me template1 template0 forgejo_failed_15_0_9 forgejo_failed_17_0 forgejo 
+postgres scrum4me template1 template0 forgejo_failed_15_0_9 forgejo forgejo_failed_17_0 
 ```
 
 Lezing: 0.4 geeft `doctor exit 0` en 28 checks zonder niet-OK-regels; de R4-databasenaam is vrij. Fase R
 begint met een schone lei en loopt van R.0 t/m R.7 zonder rood: het netwerk is `true isolated`,
-`PROEFKOPIE OK`, `PROEF-DB OK`, de versie van het 17-image, vier isolatieprobes (6, 7, 7, 7), geen
-poorten, `[mirror]` en `[mailer]` op `ENABLED = false`, `PROEFTOKEN OK`, `DOCTOR OK`, `trust-exit=10`,
-`CONTRACT OK`, `runner-exit=0`, run `success`, schone logs; na R.7 geen container, netwerk of volume met
-`fj17` in de naam en `GEEN NIEUW DANGLING VOLUME`. Het venster geeft `VOORLOG VOLLEDIG`,
-`KOUD ROLLBACKPUNT OK`, `TAGWISSEL OK`, de juiste image, ongewijzigde legacy-containers en `DOCTOR OK`.
-R4 herstelt 15.0.9 met `DOCTOR OK` ten opzichte van het log van vóór het venster. De tweede upgrade en de
-commit volgens de hostregel slagen.
+`PROEFKOPIE OK`, `PROEF-DB OK`, de versie van het 17-image, drie probes (6, 7, 7: buiten op naam, buiten
+op IP, de productieforge), geen poorten, `[mirror]` en `[mailer]` op `ENABLED = false`, `PROEFTOKEN OK`,
+`DOCTOR OK`, `trust-exit=10`, `CONTRACT OK`, `runner-exit=0`, run `success`, schone logs; na R.7 geen
+container, netwerk of volume met `fj17` in de naam en `GEEN NIEUW DANGLING VOLUME`. Het venster geeft
+`VOORLOG VOLLEDIG`, `KOUD ROLLBACKPUNT OK`, `TAGWISSEL OK`, de juiste image, ongewijzigde
+legacy-containers en `DOCTOR OK`. R4 herstelt 15.0.9 met `DOCTOR OK` ten opzichte van het log van vóór het
+venster. De tweede upgrade en de commit volgens de hostregel slagen.
 
 ## 5. Proeven bij de bevindingen uit de plan-review
 
@@ -515,6 +515,66 @@ docker 29.8.1
 Lezing: met alleen `--internal` is de host bereikbaar (exit 0); met `gateway_mode_ipv4=isolated` niet
 (exit 7), terwijl de naam van de andere container nog wordt gevonden (exit 7 = gevonden, poort dicht; 6
 zou "niet gevonden" zijn) en buiten onbereikbaar blijft.
+
+De directe meting: heeft de host een adres op de bridge van het proefnetwerk?
+
+```sh
+#!/usr/bin/env bash
+# als janpeter in de wegwerp-"host": heeft de host een adres op de bridge van het proefnetwerk? (de directe meting van "de host is onbereikbaar")
+hostadres() { local br; br=br-$(docker network inspect "$1" --format '{{.Id}}' | cut -c1-12); echo "bridge $br: $(ip -4 -o addr show dev "$br" | awk '{print $4}' | tr '\n' ' ')(einde adressen)"; }
+echo "=== A. --internal zonder isolated"; docker network create --internal br-a-net >/dev/null; hostadres br-a-net; docker network rm br-a-net >/dev/null
+echo "=== B. --internal + isolated";      docker network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated br-b-net >/dev/null; hostadres br-b-net
+docker network inspect br-b-net --format '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}'; docker network rm br-b-net >/dev/null
+```
+
+```text
+=== A. --internal zonder isolated
+bridge br-f766bed15011: 172.21.0.1/16 (einde adressen)
+=== B. --internal + isolated
+bridge br-2c43ecabae6c: (einde adressen)
+true isolated
+```
+
+En waarom een probe naar "het eerste adres van het subnet" in de geïsoleerde modus niets over de host
+zegt (plan-review ronde 3): zonder gateway krijgt een container dat adres. De eerste twee regels per
+netwerk laten ook zien welke probevorm een bereikbaar hostproces herkent (`nc -z` en `curl http` wel,
+`curl telnet://` niet: die geeft 28, ook als de verbinding er is).
+
+```sh
+#!/usr/bin/env bash
+# als janpeter in de wegwerp-"host": welke probevorm onderscheidt "hostproces bereikbaar" van "niet bereikbaar"?
+# Een hostproces (python-luisteraar op 0.0.0.0:8022, zoals sshd op 22 op de echte host) wordt benaderd via het eerste adres van het subnet.
+IMG=codeberg.org/forgejo-experimental/forgejo:17.0-test
+python3 -m http.server 8022 --bind 0.0.0.0 >/dev/null 2>&1 & HP=$!; sleep 1
+proef() {
+  G1=$(docker network inspect "$1" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' | sed -E 's|\.[0-9]+/[0-9]+$|.1|')
+  docker run --rm --network "$1" --entrypoint /bin/sh "$IMG" -c "
+    nc -z -w 5 $G1 8022; echo \"nc -z exit=\$?\"
+    curl -s -m 5 -o /dev/null telnet://$G1:8022 </dev/null; echo \"curl telnet exit=\$?\"
+    curl -s -m 5 -o /dev/null http://$G1:8022/; echo \"curl http exit=\$?\"
+    nc -z -w 5 $G1 8023; echo \"nc -z naar een poort waar niets luistert exit=\$?\""
+}
+echo "=== A. --internal zonder isolated (host bereikbaar)"; docker network create --internal pr-a >/dev/null; proef pr-a; docker network rm pr-a >/dev/null
+echo "=== B. --internal + isolated"; docker network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated pr-b >/dev/null; proef pr-b
+echo "--- krijgt een container in isolated-modus het .1-adres?"; for i in 1 2 3; do docker run -d --name pr-c$i --network pr-b --entrypoint /bin/sh "$IMG" -c 'sleep 60' >/dev/null; done
+docker network inspect pr-b --format '{{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}'; docker rm -f pr-c1 pr-c2 pr-c3 >/dev/null; docker network rm pr-b >/dev/null
+kill $HP 2>/dev/null
+```
+
+```text
+=== A. --internal zonder isolated (host bereikbaar)
+nc -z exit=0
+curl telnet exit=28
+curl http exit=0
+nc -z naar een poort waar niets luistert exit=1
+=== B. --internal + isolated
+nc -z exit=1
+curl telnet exit=7
+curl http exit=7
+nc -z naar een poort waar niets luistert exit=1
+--- krijgt een container in isolated-modus het .1-adres?
+pr-c2=172.21.0.2/16 pr-c3=172.21.0.3/16 pr-c1=172.21.0.1/16 
+```
 
 ### 5.3 Proeftoken fail-closed en de dangling-diagnostiek (ronde 2)
 
