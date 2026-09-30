@@ -30,8 +30,12 @@ LOCK_FILE="${LOCK_FILE:-/var/lock/forgejo-mirror-sync.lock}"
 load_env() {
   [ -r "$ENV_FORGEJO" ] || die "kan $ENV_FORGEJO niet lezen (perms? sudo?)"
   [ -r "$ENV_GITHUB" ]  || die "kan $ENV_GITHUB niet lezen (perms? sudo?)"
-  # shellcheck disable=SC1090
-  set -a; . "$ENV_FORGEJO"; . "$ENV_GITHUB"; set +a
+  set -a
+  # shellcheck source=/dev/null
+  . "$ENV_FORGEJO"
+  # shellcheck source=/dev/null
+  . "$ENV_GITHUB"
+  set +a
   : "${FORGEJO_BASE_URL:?FORGEJO_BASE_URL niet gezet}"
   : "${FORGEJO_USERNAME:?FORGEJO_USERNAME niet gezet}"
   : "${FORGEJO_TOKEN:?FORGEJO_TOKEN niet gezet}"
@@ -56,7 +60,7 @@ run() {
   fi
 
   local total=0 mirrored=0 skipped_wf=0 skipped_other=0 errors=0
-  local repo_json owner repo default_branch
+  local repo_json owner repo default_branch wf repo_token
 
   while IFS= read -r repo_json; do
     [ -z "$repo_json" ] && continue
@@ -67,8 +71,15 @@ run() {
 
     log "─── ${owner}/${repo} (branch=${default_branch}) ───"
 
-    if has_workflows "$owner" "$repo"; then
-      if [ "$(gh_token_for_repo "$repo")" = "$GH_TOKEN" ]; then
+    # Ongeldige repo-naam (geen geldige GH_TOKEN_<REPO>-variabelenaam): alleen deze repo weigeren.
+    repo_token=$(gh_token_for_repo "$repo") || { errors=$((errors + 1)); continue; }
+
+    wf=0; has_workflows "$owner" "$repo" || wf=$?
+    if [ "$wf" -ge 2 ]; then
+      errors=$((errors + 1)); continue
+    fi
+    if [ "$wf" -eq 0 ]; then
+      if [ "$repo_token" = "$GH_TOKEN" ]; then
         log "SKIP ${owner}/${repo}: bevat .github/workflows (default PAT mist Workflows-scope; zet GH_TOKEN_$(printf '%s' "$repo" | tr '[:lower:]-' '[:upper:]_') om dit te overrulen)"
         skipped_wf=$((skipped_wf + 1)); continue
       fi
@@ -98,7 +109,9 @@ run() {
         fi
       fi
       mirrored=$((mirrored + 1))
-      update_state "${owner}/${repo}" "$(date -u +%FT%TZ)"
+      # State is informatief (niets leest state.json): een schrijffout mag de run niet afbreken.
+      update_state "${owner}/${repo}" "$(date -u +%FT%TZ)" \
+        || { log -l WARN "state-update voor ${owner}/${repo} mislukt (${STATE_FILE:-/var/lib/forgejo-mirror/state.json})"; errors=$((errors + 1)); }
     else
       errors=$((errors + 1))
     fi
