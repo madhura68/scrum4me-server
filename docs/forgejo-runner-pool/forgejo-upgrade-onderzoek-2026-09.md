@@ -3,6 +3,7 @@
 **Datum:** 9 september 2026  
 **Vraag (JP):** wat betekent het om Forgejo te updaten, en kunnen we dat combineren met de upgrade van de runners naar versie 13? Forgejo 16.0.3 is beschikbaar; wij draaien `15.0.2+gitea-1.22.0`.  
 **Status:** onderzoeksrecord met aanbeveling. Het uitvoerbare plan voor de eerste stap staat in [implementatieplan-forgejo-15.0.9.md](implementatieplan-forgejo-15.0.9.md) (op 30 september 2026 omgezet van 15.0.7 naar 15.0.9; waar dit onderzoek 15.0.7 noemt, geldt nu de nieuwste LTS-patch 15.0.9).  
+**Vervolg (JP, 28–30 september 2026):** na 15.0.9 gaat de forge eind oktober naar **17.0**, niet naar 16 (end-of-life 29 oktober) en niet verder op de LTS-lijn; dat vervangt aanbeveling 3 van §5. Zie [forgejo-17-onderzoek-2026-09.md](forgejo-17-onderzoek-2026-09.md) en [implementatieplan-forgejo-17.0.md](implementatieplan-forgejo-17.0.md).  
 **Antwoord in één zin:** Forgejo 16 en Runner 13 zijn technisch onafhankelijk (geen van beide vereist de ander); combineer ze niet in één wijziging, patch nu naar 15.0.7 (LTS), laat fase 2 (Runner 13) zoals ontworpen ná stap H lopen, en ga alleen naar 16 bij een bewuste keuze voor de kwartaaltrein.
 
 ## 1. Gemeten uitgangssituatie op `scrum4me-server`
