@@ -1,9 +1,8 @@
 # forgejo-runner/tests/test_cycle_scenarios.py
 """Runtime-scenario's uit de audit van 2026-09-30 (T-161, PBI-33/ST-047).
 
-Tijden zijn fake-klokseconden (stap 1 s, retry_interval 30, CONFIRM 30). Tests met
-@expectedFailure beschrijven het GEWENSTE gedrag; ze horen te slagen zodra PBI-34/35
-het implementeren (dan verdwijnt de decorator)."""
+Tijden zijn fake-klokseconden (stap 1 s, retry_interval 30, CONFIRM 30). C, D en E
+waren @expectedFailure; delta R15 (PBI-34/35) implementeert ze, de decorators zijn vervallen."""
 import signal, tempfile, unittest
 from unittest import mock
 from _harness import build_runtime, run_for, OK_PROBE, BAD_PROBE, State
@@ -57,8 +56,7 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(ctl.state, State.WAITING)
         self.assertEqual(starts(rec, "runner"), 1)
 
-    # C — AUDIT-006; gewenst gedrag volgens ontwerpdelta (PBI-32), faalt tot PBI-34/35
-    @unittest.expectedFailure
+    # C — AUDIT-006; gedrag volgens delta R15
     def test_C_runner_faalt_steeds_backoff_en_alarm_per_falen(self):
         rt, ctl, rec, clock = build_runtime(self.tmp)
         rec.auto["runner"] = 1                               # runner sterft direct, rc=1
@@ -67,8 +65,7 @@ class Scenarios(unittest.TestCase):
         self.assertLessEqual(n, 3)                           # backoff 1,2,4… minuten
         self.assertGreaterEqual(len(events(rt, "alarm")), n) # een alarm per falen
 
-    # D — AUDIT-005; gewenst gedrag volgens ontwerpdelta (PBI-32), faalt tot PBI-34/35
-    @unittest.expectedFailure
+    # D — AUDIT-005; gedrag volgens delta R15
     def test_D_pull_faalt_eenmaal_backoff_retry_en_runner_start(self):
         rt, ctl, rec, clock = build_runtime(self.tmp)
         rec.auto["pull"] = 1
@@ -78,8 +75,7 @@ class Scenarios(unittest.TestCase):
         run_for(rt, clock, 3600, on_tick=on_tick)
         self.assertGreaterEqual(starts(rec, "runner"), 1)
 
-    # E — AUDIT-004; gewenst gedrag volgens ontwerpdelta (PBI-32), faalt tot PBI-34/35
-    @unittest.expectedFailure
+    # E — AUDIT-004; gedrag volgens delta R15
     def test_E_scrub_blijft_hangen_wordt_beeindigd_alarm_en_quarantaine(self):
         rt, ctl, rec, clock = build_runtime(self.tmp)
         rec.auto["scrub"] = None                             # poll levert nooit een rc
