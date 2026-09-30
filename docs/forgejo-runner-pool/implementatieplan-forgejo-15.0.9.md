@@ -1,6 +1,6 @@
 # Implementatieplan — Forgejo 15.0.2 → 15.0.9 op `scrum4me-server`
 
-> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-review loopt.** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
+> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-review GO (ronde 1, `mac:codex`).** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
 
 > **Voor uitvoerders:** dit is een **operator-gedreven onderhoudsactie** op een productiehost, geen code-implementatie. Voer fase voor fase uit met de gate ná elke fase; bij een rode gate: **STOP** (stoppen, journal/uitvoer vastleggen, JP melden — niet forceren, niet de gate versoepelen). Elke fase heeft een terugweg (zie Rollback). Commando's zonder host-label draaien **op `scrum4me-server`** als `janpeter` (docker-groep, `sudo` waar aangegeven); `[max2]`-stappen draaien op `max2`; `[mac]`-stappen op de mac met persoonlijk `FORGEJO_TOKEN`; `[JP]`-stappen zijn JP-only (beheerinterface, besluiten).
 
@@ -204,7 +204,7 @@ Fail-closed op drie niveaus: een niet-2xx-fetch stopt via `set -e` in de **losst
 
 **Gate 4:** versie 15.0.9 via 3010, via Caddy en via `forgejo --version`; doctor zonder nieuwe bevindingen; geen `[E]`; legacy container-ID's ongewijzigd; JP-functioneel groen. Anders **Rollback R4**. Beslisregel: is Gate 4 op **T+20** niet groen, dan begint R4 meteen, zodat het venster inclusief herstel binnen 30 min blijft.
 
-**Restrisico writes (aftekenen door JP bij de venster-goedkeuring):** het verse rollbackpunt (4.1) dekt alle 15.0.2-writes t/m Fase 3. Writes die ná 4.3 (recreate op 15.0.9, eenmalige onomkeerbare migratie) en vóór Gate 4-acceptatie worden geaccepteerd, zijn bij R4 **niet** herstelbaar — een 15.0.9-migratie is niet terug te draaien naar 15.0.2. Dat venster is enkele minuten en operator-only; de write-fence (1.4) houdt het leeg. JP tekent dit restrisico expliciet af.
+**Restrisico writes (aftekenen door JP bij de venster-goedkeuring):** het verse rollbackpunt (4.1) dekt alle 15.0.2-writes t/m Fase 3. Writes die ná 4.3 (recreate op 15.0.9, eenmalige onomkeerbare migratie) en vóór Gate 4-acceptatie worden geaccepteerd, zijn bij R4 **niet** herstelbaar — een 15.0.9-migratie is niet terug te draaien naar 15.0.2. Zijn alle schrijvers uit 0.14 gepauzeerd, dan is dat venster enkele minuten en operator-only en houdt de write-fence (1.4) het leeg; voor schrijvers die JP in 0.14 heeft geaccepteerd, kunnen hun writes sinds 4.3 bij R4 verloren gaan. JP tekent dit restrisico expliciet af.
 
 ---
 
@@ -220,9 +220,9 @@ Fase 5 geldt voor **beide** uitkomsten van het venster. Zet `VNOW` op de versie 
     ```
     (bewijst dat de trust-API-endpoints op `VNOW` werken; `-1` bij `ok:false` valt automatisch door de STOP). Daarna `sudo systemctl start forgejo-runner-cycle.service; sudo journalctl -u forgejo-runner-cycle.service --since "$T0" --no-pager` → `SOURCE_WAIT` → tweemaal `READY` → `cyclus: scrub ok=True` → `cyclus: runner gestart`. `[mac]` capture → `max2-forgejo-runner-02` `idle`.
 - **5.3 Smoke (runbook §6).** Tijdelijke `smoke-green.yml` (`on: [workflow_dispatch]`, `runs-on: ubuntu-latest`, `run: echo "smoke groen"; exit 0`) op `janpeter/scrum4me-shared` (staat in de trust-allowlist), dispatchen, terminale status **success**; noteer runnummer en welke runner hem draaide (Forgejo-UI of `docker ps` op de host die hem kreeg). Workflow daarna weer verwijderen. Eén groene run volstaat: het doel is het Forgejo↔runner-protocol op `VNOW`; de online/idle-status van het andere record uit 5.1/5.2 is het protocolbewijs voor die runner.
-- **5.4 Venster sluiten.** `TEND=$(date -u +%FT%TZ)`; downtime = `TSTOP` (2.6) tot de listener die daadwerkelijk opkwam (4.4 bij upgrade; de `up -d`/`docker start` uit R2/R3/R4 bij rollback — dan zijn er twee losse downtime-intervallen, rond Fase 3 én rond de rollback, leg ze allebei vast); totale duur `T0`→`TEND` ≤ 30 min. Leg de uitkomst (`upgraded`/`rolled_back`) en de intervallen vast in `venster.md`.
+- **5.4 Venster sluiten.** Hervat de schrijvers die voor dit venster volgens 0.14 zijn gepauzeerd — alleen die, zowel na een upgrade als na een rollback — controleer dat ze terug zijn in hun toestand van vóór het venster en teken dat af in de 0.14-lijst in `venster.md`. `TEND=$(date -u +%FT%TZ)`; downtime = `TSTOP` (2.6) tot de listener die daadwerkelijk opkwam (4.4 bij upgrade; de `up -d`/`docker start` uit R2/R3/R4 bij rollback — dan zijn er twee losse downtime-intervallen, rond Fase 3 én rond de rollback, leg ze allebei vast); totale duur `T0`→`TEND` ≤ 30 min. Leg de uitkomst (`upgraded`/`rolled_back`) en de intervallen vast in `venster.md`.
 
-**Gate 5:** beide records `idle` op `VNOW` (15.0.9 bij upgrade, 15.0.2 bij rollback); trust-verdict `ok:true` met `measured_at` ná `T0`; controller in `WAITING`; smoke `success`; uitkomst en tijden vastgelegd.
+**Gate 5:** beide records `idle` op `VNOW` (15.0.9 bij upgrade, 15.0.2 bij rollback); trust-verdict `ok:true` met `measured_at` ná `T0`; controller in `WAITING`; smoke `success`; gepauzeerde schrijvers hervat (5.4); uitkomst en tijden vastgelegd.
 
 ---
 
@@ -365,5 +365,15 @@ De plan-fase is na **vier rondes** dubbel GO (commit `21d103e`). De trechter lie
 
 **Ongewijzigd sinds de GO:** drain en nulbewijs (2.1–2.3), rotatie (2.5b), rollbackpunten (2.7, 4.1), R4 stappen 1–4, Fase 5.
 
-### Delta-ronde 1 — 2026-09-30
-- **Reviewer:** één cross-model reviewer (codex), JP-armd. Verdict volgt.
+### Delta-ronde 1 — 2026-09-30 — **GO** ✅
+- **Reviewer:** `mac:codex` (JP-armd, cross-model tegenover de claude-auteur van de delta), op commit `d759185`; de vier gepinde documenten op sha256 gecontroleerd. **0 BLOCKER · 0 MAJOR · 2 MINOR.**
+- **Per delta:** D1–D6, D8 en D9 *holds*; D7 *partially holds* (de twee MINORs hieronder). Geen schrappingskandidaat: de hashcontrole vervangt de verboden losse kopie, de git-stappen volgen de hostregel, de schrijversinventaris corrigeert een aantoonbaar onjuiste aanname; het schrappen van de compose-tak met een STOP vooraf is passend.
+- **Eigen verificatie van de reviewer:** het 4.2-blok uit de gepinde tekst geëxtraheerd en uitgevoerd met zeven gevallen (normale wissel 0; extra wijziging, niet-matchende regel, dubbele imageregel en mislukte schrijfactie elk 1; normale terugweg 0; terugweg met vreemde wijziging 1); de losstaande subshell herintroduceert de `set -e`-fout van ronde 3 niet. Bevestigd tegen de boom: de evidence voor D3 (`2026-09-28-compose-git-init.md:39–50,444–447`), de allowlist en hook voor D6 (`scripts/compose-git-init:79–109`, `scripts/compose-git-pre-commit:72–105`), de mirror-README voor D7, en dat de ongewijzigde delen (2.1–2.3, 2.5b, 2.7, 4.1, R4 stappen 1–4, Fase 5) na normalisatie van de versie gelijk zijn aan de GO-basis. De smoke van 5.3 (`workflow_dispatch` op `scrum4me-shared`) wordt door ISS-18/ISS-42 niet ongeldig (`trust_scope.py:310–374`, `trusted-actions-scope.yml:145–149`).
+- **Beide MINORs bevestigd tegen de tekst en verwerkt (geen afgewezen):**
+  - *5.4 noemde het hervatten van gepauzeerde schrijvers niet* → 5.4 begint nu met hervatten en aftekenen in de 0.14-lijst, bij upgrade én rollback; Gate 5 eist het.
+  - *De restrisiconoot bij Gate 4 noemde het venster onvoorwaardelijk operator-only* → de zin geldt nu alleen als alle schrijvers zijn gepauzeerd; voor door JP geaccepteerde schrijvers staat erbij dat hun writes sinds 4.3 bij R4 verloren kunnen gaan.
+- **Verdict:** `mac:codex` GO. De reviewer noteert expliciet: technisch GO wijzigt de scope niet en autoriseert geen uitvoering, merge of deployment.
+
+## Delta-conclusie
+
+De omzetting naar 15.0.9 heeft na één delta-ronde GO; de twee MINORs zijn verwerkt. Het plan is daarmee klaar voor de **JP-gate** (Uitvoerhandoff stap 2). Ceremonie en uitvoering volgen elk alleen op een afzonderlijke opdracht van JP.
