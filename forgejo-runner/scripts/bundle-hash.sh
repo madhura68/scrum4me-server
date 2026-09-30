@@ -8,6 +8,10 @@
 # (draagt de per-host UUID), BUNDLE_COMMIT (het uitrolrecord), controller.toml,
 # het deploy-verdict trust-verdict.json, credentials/, de operatie-marker onder
 # state/ en Python-bytecode. tests/ draait niet mee op de hosts.
+#
+# Met tweede argument --list geeft het script de gehashte paden (NUL-gescheiden,
+# gesorteerd) in plaats van de hash; verify-stack.sh gebruikt dat voor de
+# eigenaarscontrole, zodat beide dezelfde bestandsverzameling zien.
 set -euo pipefail
 
 BUNDLE="${1:-}"
@@ -23,22 +27,29 @@ else
   HASHER=(shasum -a 256)
 fi
 
+MODUS="${2:-}"
 cd "$BUNDLE"
 # -prune (niet enkel `! -path`) op de niet-bundel-mappen, zodat find er niet in
 # afdaalt. Anders geeft de 0700 credentials/-map "Permission denied" wanneer
 # verify-stack als niet-root draait, en dat laat onder `set -o pipefail` de hele
 # hash falen. De VERZAMELING gehashte bestanden blijft exact gelijk aan voorheen.
-find . \
-  \( -type d \( -path './tests' -o -path './credentials' -o -path './state' -o -name '__pycache__' \) -prune \) \
-  -o \( -type f \
-        ! -name '.env' \
-        ! -name 'runner-config.yml' \
-        ! -name 'BUNDLE_COMMIT' \
-        ! -name 'controller.toml' \
-        ! -name 'trust-verdict.json' \
-        ! -name '*.pyc' \
-        -print0 \) \
-  | LC_ALL=C sort -z \
+verzamel() {
+  find . \
+    \( -type d \( -path './tests' -o -path './credentials' -o -path './state' -o -name '__pycache__' \) -prune \) \
+    -o \( -type f \
+          ! -name '.env' \
+          ! -name 'runner-config.yml' \
+          ! -name 'BUNDLE_COMMIT' \
+          ! -name 'controller.toml' \
+          ! -name 'trust-verdict.json' \
+          ! -name '*.pyc' \
+          -print0 \) \
+    | LC_ALL=C sort -z
+}
+
+[ "$MODUS" != "--list" ] || { verzamel; exit 0; }
+
+verzamel \
   | while IFS= read -r -d '' pad; do
       printf '%s\0' "$pad"
       cat "$pad"
