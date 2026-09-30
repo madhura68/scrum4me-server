@@ -252,3 +252,104 @@ mutations() { grep -cE '^(POST|PATCH|DELETE|PUT) ' "$LOGDIR/calls.log" || true; 
   grep -q 'fetch --tags' "$LOGDIR/git.log"
   ! grep -Eq '://[^/ ]*@' "$LOGDIR/git.log"
 }
+
+# ───────────────────── logica-fixes (T-171) ─────────────────────
+
+@test "kapotte state-file: alle repos worden toch verwerkt; warning + errors" {
+  set_repos alpha beta; healthy_repo alpha; healthy_repo beta
+  mkdir -p "$(dirname "$STATE_FILE")"; printf 'geen json' > "$STATE_FILE"
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"total=2 mirrored=2"* ]]
+  [[ "$output" == *"errors=2"* ]]
+  [[ "$output" == *"state-update voor janpeter/alpha mislukt"* ]]
+  grep -q 'janpeter/beta/branches/main' "$LOGDIR/calls.log"
+  [ "$(cat "$STATE_FILE")" = "geen json" ]
+}
+
+@test "onschrijfbare state-map: alle repos worden toch verwerkt" {
+  [ "$(id -u)" -ne 0 ] || skip "root negeert directory-permissies"
+  set_repos alpha beta; healthy_repo alpha; healthy_repo beta
+  mkdir -p "$(dirname "$STATE_FILE")"; chmod 555 "$(dirname "$STATE_FILE")"
+  run bash "$SCRIPT"
+  chmod 755 "$(dirname "$STATE_FILE")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"mirrored=2"* ]]
+  [[ "$output" == *"errors=2"* ]]
+}
+
+@test "state-update is atomair: geen tempfile-restanten in de state-map" {
+  set_repos alpha; healthy_repo alpha
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [ -f "$STATE_FILE" ]
+  [ -z "$(ls -A "$(dirname "$STATE_FILE")" | grep -v '^state.json$')" ]
+}
+
+@test "workflow-check geeft 500: die repo is een fout, de andere loopt door" {
+  set_repos alpha beta; healthy_repo alpha; healthy_repo beta
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/contents/.github/workflows" '{}' 500
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"workflow-check janpeter/alpha faalt (HTTP 500)"* ]]
+  [[ "$output" == *"mirrored=1"* ]]
+  [[ "$output" == *"errors=1"* ]]
+  ! grep -q 'gh.test/repos/ghuser/alpha' "$LOGDIR/calls.log"
+  grep -q 'janpeter/beta/branches/main' "$LOGDIR/calls.log"
+}
+
+@test "workflow-check 404 telt als 'geen workflows' (repo wordt gespiegeld)" {
+  set_repos alpha; healthy_repo alpha
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/contents/.github/workflows" '{}' 404
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mirrored=1"* ]]
+}
+
+@test "verify_tags pagineert: >1 pagina aan weerszijden geeft tags-match, geen fallback" {
+  set_repos alpha; healthy_repo alpha
+  all=$(jq -nc '[range(1;102) | {name: ("v" + tostring)}]')
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=1" "$(jq -c '.[0:50]' <<<"$all")"
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=2" "$(jq -c '.[50:100]' <<<"$all")"
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=3" "$(jq -c '.[100:]' <<<"$all")"
+  fx GET "$GH/repos/ghuser/alpha/tags?per_page=100&page=1" "$(jq -c '.[0:100]' <<<"$all")"
+  fx GET "$GH/repos/ghuser/alpha/tags?per_page=100&page=2" "$(jq -c '.[100:]' <<<"$all")"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tags-match janpeter/alpha (101 tags)"* ]]
+  ! grep -q 'push --tags' "$LOGDIR/git.log"
+  grep -q 'janpeter/alpha/tags?limit=50&page=3' "$LOGDIR/calls.log"
+  grep -q 'ghuser/alpha/tags?per_page=100&page=2' "$LOGDIR/calls.log"
+}
+
+@test "verify_tags pagineert: tag alleen op pagina 2 van GitHub ontbreekt aan Forgejo-kant -> fallback" {
+  set_repos alpha; healthy_repo alpha
+  all=$(jq -nc '[range(1;102) | {name: ("v" + tostring)}]')
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=1" "$(jq -c '.[0:50]' <<<"$all")"
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=2" "$(jq -c '.[50:100]' <<<"$all")"
+  fx GET "$FJ/api/v1/repos/janpeter/alpha/tags?limit=50&page=3" '[]'
+  fx GET "$GH/repos/ghuser/alpha/tags?per_page=100&page=1" "$(jq -c '.[0:100]' <<<"$all")"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q 'push --tags' "$LOGDIR/git.log"
+}
+
+@test "repo-naam met punt: per repo geweigerd, de rest loopt door" {
+  set_repos foo.bar beta; healthy_repo beta
+  run bash "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"repo-naam 'foo.bar' bevat tekens buiten [A-Za-z0-9_-]"* ]]
+  [[ "$output" == *"mirrored=1"* ]]
+  [[ "$output" == *"errors=1"* ]]
+  ! grep -q 'gh.test/repos/ghuser/foo.bar' "$LOGDIR/calls.log"
+}
+
+@test "gh_token_for_repo: override, default en ongeldige naam" {
+  run bash -c "source '$LIB'; export GH_TOKEN=def GH_TOKEN_MY_REPO=ovr; gh_token_for_repo my-repo; echo; gh_token_for_repo other"
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "ovr" ]]
+  [[ "${lines[1]}" == "def" ]]
+  run bash -c "source '$LIB'; GH_TOKEN=def; gh_token_for_repo 'a b'"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"bevat tekens buiten [A-Za-z0-9_-]"* ]]
+}

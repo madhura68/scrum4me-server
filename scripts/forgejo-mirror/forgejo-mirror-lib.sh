@@ -88,9 +88,17 @@ fj_code() {
 # is fout onder `set -u` — de lege local GH_TOKEN schaduwt de global, dus de
 # ${!key:-$GH_TOKEN}-fallback in de functie leest leeg → unbound → 401.
 # Bash dynamic scoping zorgt dat gh()/gh_code() daarna de override pakken.
+#
+# Repo-namen buiten [A-Za-z0-9_-] (bv. met een punt) geven geen geldige variabelenaam:
+# `${!key}` zou de hele run laten crashen. Die weigeren we per repo, met een duidelijke
+# logregel en return 1; callers moeten dat afvangen (`|| return 1`).
 gh_token_for_repo() {
-  local repo="$1"
-  local key="GH_TOKEN_$(printf '%s' "$repo" | tr '[:lower:]-' '[:upper:]_')"
+  local repo="$1" key
+  if ! [[ "$repo" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    log -l ERROR "repo-naam '${repo}' bevat tekens buiten [A-Za-z0-9_-]; GH_TOKEN_<REPO>-override niet af te leiden, repo overgeslagen"
+    return 1
+  fi
+  key="GH_TOKEN_$(printf '%s' "$repo" | tr '[:lower:]-' '[:upper:]_')"
   printf '%s' "${!key:-$GH_TOKEN}"
 }
 
@@ -157,10 +165,17 @@ enumerate_repos() {
 
 # ───────────────────────── workflow detection ───────────────────────
 
+# Return: 0 = workflows aanwezig (HTTP 200), 1 = geen workflows (HTTP 404),
+# 2 = onbekend (elke andere code of een curl-fout; gelogd). Alleen 404 telt als
+# "geen workflows": een 500/401 mag niet stilzwijgend als "geen" doorgaan.
 has_workflows() {
   local owner="$1" repo="$2" code
-  code=$(fj_code GET "/repos/${owner}/${repo}/contents/.github/workflows")
-  [ "$code" = "200" ]
+  code=$(fj_code GET "/repos/${owner}/${repo}/contents/.github/workflows") || code="curl-fout"
+  case "$code" in
+    200) return 0 ;;
+    404) return 1 ;;
+    *)   log -l ERROR "workflow-check ${owner}/${repo} faalt (HTTP $code)"; return 2 ;;
+  esac
 }
 
 # ───────────────────── GitHub counterpart bestaat ───────────────────
@@ -170,7 +185,7 @@ has_workflows() {
 # counterpart bestaat, 1 als 'ie ontbreekt (+log met instructie).
 ensure_github_counterpart() {
   local owner="$1" repo="$2" code
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   code=$(gh_code GET "/repos/${GH_USERNAME}/${repo}")
   if [ "$code" = "200" ]; then
@@ -190,7 +205,7 @@ ensure_github_counterpart() {
 # Seen on 2026-09-30 for When2Watch (GitHub default still codex/when2watch-increment-1).
 ensure_github_default_branch() {
   local owner="$1" repo="$2" expected="$3" actual
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   actual=$(gh GET "/repos/${GH_USERNAME}/${repo}" | jq -r '.default_branch // empty') || actual=""
   if [ -z "$actual" ]; then
@@ -210,7 +225,7 @@ ensure_push_mirror() {
   local owner="$1" repo="$2" branch="$3"
   local interval="${MIRROR_INTERVAL:-24h}"
   local remote="https://github.com/${GH_USERNAME}/${repo}.git"
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
 
   # Forgejo normaliseert "24h" → "24h0m0s" intern; vergelijk in genormaliseerde vorm.
@@ -323,7 +338,7 @@ poll_sync_completion() {
 
 verify_sha() {
   local owner="$1" repo="$2" branch="$3" fjsha ghsha
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   if [ "${DRY_RUN:-0}" = "1" ]; then
     log "DRY_RUN: skip verify_sha ${owner}/${repo}@${branch} (geen echte push gedaan)"
@@ -345,18 +360,37 @@ verify_sha() {
   return 1
 }
 
+# Alle tagnamen, gepagineerd, gesorteerd en kommagescheiden.
+#   _all_tag_names <fj|gh> <pad> <page-size-param> <page-size>
+# Gebruikt GH_TOKEN van de aanroeper (dynamic scoping). Return 1 bij een API-fout.
+_all_tag_names() {
+  local api="$1" path="$2" param="$3" size="$4" page=1 body n names=""
+  while :; do
+    body=$("$api" GET "${path}?${param}=${size}&page=${page}") || return 1
+    n=$(printf '%s' "$body" | jq 'length') || return 1
+    [ "$n" -eq 0 ] && break
+    names+=$(printf '%s' "$body" | jq -r '.[].name')$'\n'
+    [ "$n" -lt "$size" ] && break
+    page=$((page + 1))
+  done
+  printf '%s' "$names" | LC_ALL=C sort | sed '/^$/d' | paste -sd, -
+}
+
 verify_tags() {
   local owner="$1" repo="$2" fjtags ghtags
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   if [ "${DRY_RUN:-0}" = "1" ]; then
     log "DRY_RUN: skip verify_tags ${owner}/${repo}"
     return 0
   fi
-  fjtags=$(fj GET "/repos/${owner}/${repo}/tags" | jq -r '[.[].name] | sort | join(",")')
-  ghtags=$(gh GET "/repos/${GH_USERNAME}/${repo}/tags" | jq -r '[.[].name] | sort | join(",")')
+  # API-fout → niet vergelijkbaar → behandelen als mismatch (tags_fallback is idempotent).
+  fjtags=$(_all_tag_names fj "/repos/${owner}/${repo}/tags" limit 50) \
+    || { log -l WARN "tags van Forgejo ${owner}/${repo} niet op te halen"; return 1; }
+  ghtags=$(_all_tag_names gh "/repos/${GH_USERNAME}/${repo}/tags" per_page 100) \
+    || { log -l WARN "tags van GitHub ${GH_USERNAME}/${repo} niet op te halen"; return 1; }
   if [ "$fjtags" = "$ghtags" ]; then
-    log "tags-match ${owner}/${repo} ($(echo "$fjtags" | tr ',' '\n' | wc -l) tags)"
+    log "tags-match ${owner}/${repo} ($(printf '%s' "$fjtags" | tr ',' '\n' | grep -c . || true) tags)"
     return 0
   fi
   log -l WARN "tags-mismatch ${owner}/${repo}: forgejo=[$fjtags] github=[$ghtags]"
@@ -416,7 +450,7 @@ _tags_fallback_run() {  # gebruikt GH_TOKEN van de aanroeper (dynamic scoping)
 
 tags_fallback() {
   local owner="$1" repo="$2"
-  local _repo_token; _repo_token=$(gh_token_for_repo "$repo")  # resolve VÓÓR de local-shadow
+  local _repo_token; _repo_token=$(gh_token_for_repo "$repo") || return 1  # resolve VÓÓR de local-shadow
   local GH_TOKEN="$_repo_token"
   local clonedir="${MIRROR_CLONE_DIR:-/srv/scrum4me/repos/mirrors}/${owner}-${repo}.git"
   local fj_url="${FORGEJO_BASE_URL%/}/${owner}/${repo}.git"
@@ -450,9 +484,11 @@ update_state() {
     log "DRY_RUN: zou state-file updaten ($key → $ts)"
     return 0
   fi
+  # Nieuwe inhoud in een tempfile in dezelfde map (atomaire mv op hetzelfde filesystem).
+  # Elke fout → return 1; de caller beslist (niet-fataal: state.json wordt nergens gelezen).
   local cur tmp
   cur=$( [ -f "$sf" ] && cat "$sf" || echo '{}' )
-  tmp=$(mktemp)
+  tmp=$(mktemp "$dir/.state.XXXXXX") || return 1
   printf '%s' "$cur" | jq --arg k "$key" --arg t "$ts" '.[$k] = $t' > "$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$sf"
+  mv "$tmp" "$sf" || { rm -f "$tmp"; return 1; }
 }
