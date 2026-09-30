@@ -46,6 +46,7 @@ teardown() { rm -rf "$FAKE"; }
 }
 
 @test "alles groen: exit 0, skips met reden, expected failure apart geteld" {
+  command -v shellcheck >/dev/null || skip "shellcheck ontbreekt op deze host"
   run bash "$VERIFY"
   [ "$status" -eq 0 ]
   [[ "$output" == *"RESULTAAT: GESLAAGD"* ]]
@@ -86,6 +87,7 @@ BATS
 }
 
 @test "een shellcheck-bevinding: exit != 0" {
+  command -v shellcheck >/dev/null || skip "shellcheck ontbreekt op deze host"
   printf '#!/usr/bin/env bash\necho $y\n' >"$FAKE/scripts/slecht.sh"
   run bash "$VERIFY" --only shellcheck
   [ "$status" -ne 0 ]

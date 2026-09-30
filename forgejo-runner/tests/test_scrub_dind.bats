@@ -148,6 +148,7 @@ scrub() { bash "$SCRIPT" --endpoint tcp://127.0.0.1:2375 --allow "$ALLOW" "$@"; 
 
 @test "is POSIX sh, want docker:dind is Alpine zonder bash" {
   head -1 "$SCRIPT" | grep -qE '^#!/bin/sh$'
+  command -v shellcheck >/dev/null || skip "shellcheck ontbreekt op deze host"
   shellcheck -s sh "$SCRIPT"
 }
 

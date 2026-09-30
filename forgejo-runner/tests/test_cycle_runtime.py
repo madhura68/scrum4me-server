@@ -298,7 +298,11 @@ class TestMain(unittest.TestCase):
         self.assertIn("dind.project", err.getvalue())
     def test_check_nonexistent_paths_all_listed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p = write_toml(tmp)  # VALID_TOML: /opt-paden bestaan hier niet
+            # Paden onder een niet-bestaande map in tmp: de /opt-paden uit VALID_TOML
+            # bestaan wél op een uitgerolde host (max2), dan faalt deze test daar.
+            weg = os.path.join(tmp, "bestaat-niet")
+            data = VALID_TOML.replace(b"/opt/forgejo-runner", weg.encode()).replace(b"/tmp/ctl", (weg + "/ctl").encode())
+            p = write_toml(tmp, data)
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 self.assertEqual(cr.main(["--config", p, "--check"]), 2)
