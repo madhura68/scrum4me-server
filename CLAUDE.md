@@ -1,6 +1,6 @@
 # CLAUDE.md — scrum4me-server
 
-Host-repo voor de Ubuntu-machine `scrum4me-server` én **canonieke bron** van de gedeelde Forgejo-Runner-poolbundel die op zowel `scrum4me-server` als `max2` draait. Op deze host draaien Forgejo 15.0.2 en Postgres zelf; een reboot hier is daarom ook control-plane-onderhoud voor de runnerpool.
+Host-repo voor de Ubuntu-machine `scrum4me-server` én **canonieke bron** van de gedeelde Forgejo-Runner-poolbundel die op zowel `scrum4me-server` als `max2` draait. Op deze host draaien Forgejo 15.0.9 en Postgres zelf; een reboot hier is daarom ook control-plane-onderhoud voor de runnerpool.
 
 ## Scrum4Me-product
 
@@ -50,6 +50,8 @@ Canonieke bron van de gedeelde bundel plus de host-overlay voor `scrum4me-server
 | §7.7 van dat ontwerp | Trustscope voor global runners; wat een harde versus zachte trustafwijking is |
 | §9 van dat ontwerp | Definitie van een stabiele pool — de facto DoD zolang Scrum4Me er geen heeft |
 | [docs/forgejo-runner-pool/reviews/](docs/forgejo-runner-pool/reviews/) | Alle reviewrondes: R1–R10, delta-review R11 en delta-review R12 |
+| [docs/forgejo-runner-pool/forgejo-upgrade-onderzoek-2026-09.md](docs/forgejo-runner-pool/forgejo-upgrade-onderzoek-2026-09.md) | Wat een Forgejo-upgrade op deze host betekent: gemeten uitgangssituatie, de LTS-lijn 15.0 tegenover nieuwere versies, het secretlek van 9 september |
+| [docs/forgejo-runner-pool/implementatieplan-forgejo-15.0.9.md](docs/forgejo-runner-pool/implementatieplan-forgejo-15.0.9.md) | Het uitgevoerde plan voor 15.0.2 → 15.0.9 (30 september 2026), met drain, rollbackpunten en de doctor-functies; bewijs onder `evidence/forgejo-15.0.9/` |
 
 ## Infra-issues melden
 

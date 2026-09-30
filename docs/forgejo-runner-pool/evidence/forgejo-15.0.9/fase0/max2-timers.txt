@@ -1,0 +1,7 @@
+NEXT                             LEFT LAST                              PASSED UNIT                       ACTIVATES
+Wed 2026-09-30 18:04:39 CEST 2h 52min Wed 2026-09-30 12:02:46 CEST 3h 9min ago forgejo-runner-trust.timer forgejo-runner-trust.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+                Time zone: Europe/Amsterdam (CEST, +0200)
+2026-09-30T15:11:55+0200

@@ -1,0 +1,35 @@
+===== 5.2 [max2] trust-verdict vernieuwen (2026-09-30T13:35:23Z) =====
+Result=success
+trust vers op VNOW
+trust-keten exit: 0
+===== controller starten (2026-09-30T13:35:29Z) =====
+Sep 30 15:35:29 max2 systemd[1]: Started forgejo-runner-cycle.service - Forgejo Runner cyclecontroller (een job per runnerproces).
+Sep 30 15:35:30 max2 python3[2191581]: 2026-09-30 15:35:30,045 INFO trustgate groen
+Sep 30 15:35:30 max2 python3[2191776]: containers: OK
+Sep 30 15:35:30 max2 python3[2191776]: volumes: OK
+Sep 30 15:35:30 max2 python3[2191776]: netwerken: OK
+Sep 30 15:35:30 max2 python3[2191776]: images: OK
+Sep 30 15:35:30 max2 python3[2191776]: buildcache: OK
+Sep 30 15:35:30 max2 python3[2191776]: duur_seconden: 0
+Sep 30 15:35:31 max2 python3[2191581]: 2026-09-30 15:35:31,256 INFO cyclus: scrub ok=True
+Sep 30 15:35:32 max2 python3[2192103]: docker.io/catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43: Pulling from catthehacker/ubuntu
+Sep 30 15:35:32 max2 python3[2192103]: Digest: sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+Sep 30 15:35:32 max2 python3[2192103]: Status: Image is up to date for catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+Sep 30 15:35:32 max2 python3[2192103]: docker.io/catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+Sep 30 15:36:00 max2 python3[2191581]: 2026-09-30 15:36:00,607 INFO cyclus: runner gestart
+Sep 30 15:36:00 max2 python3[2193172]:  Container forgejo-runner-dind-1 Running
+Sep 30 15:36:00 max2 python3[2193172]:  Container forgejo-runner-dind-1 Waiting
+Sep 30 15:36:01 max2 python3[2193172]:  Container forgejo-runner-dind-1 Healthy
+Sep 30 15:36:01 max2 python3[2193172]:  Container forgejo-runner-runner-run-8aca7b6662ac Creating
+Sep 30 15:36:01 max2 python3[2193172]:  Container forgejo-runner-runner-run-8aca7b6662ac Created
+Sep 30 15:36:01 max2 python3[2193172]: time="2026-09-30T13:36:01Z" level=info msg="Starting job"
+Sep 30 15:36:01 max2 python3[2193172]: time="2026-09-30T13:36:01Z" level=info msg="runner: max2-forgejo-runner-02, with version: v12.10.1, with labels: [ubuntu-latest], ephemeral: false, declared successfully"
+Sep 30 15:36:01 max2 python3[2193172]: time="2026-09-30T13:36:01Z" level=info msg="single task poller launched"
+Sep 30 15:36:01 max2 python3[2193172]: time="2026-09-30T13:36:01Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:03 max2 python3[2193172]: time="2026-09-30T13:36:03Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:05 max2 python3[2193172]: time="2026-09-30T13:36:05Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:07 max2 python3[2193172]: time="2026-09-30T13:36:07Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:09 max2 python3[2193172]: time="2026-09-30T13:36:09Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:11 max2 python3[2193172]: time="2026-09-30T13:36:11Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+Sep 30 15:36:13 max2 python3[2193172]: time="2026-09-30T13:36:13Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+active

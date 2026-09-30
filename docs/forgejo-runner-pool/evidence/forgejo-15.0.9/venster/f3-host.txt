@@ -1,0 +1,12 @@
+
+===== 3.1 opbrengen op 15.0.2 (2026-09-30T13:29:41Z) =====
+scrum4me-forgejo
+na 2 pogingen: {"version":"15.0.2+gitea-1.22.0"}
+-- [E]/[F]/panic in startlog (verwacht leeg):
+-- einde
+
+===== 3.4 secrets (2026-09-30T13:29:43Z) =====
+-- jwt/secret in log (verwacht leeg):
+-- einde
+vingerafdruk = POST_SECRETS
+REVERSE_PROXY_TRUSTED_PROXIES = 127.0.0.0/8,::1/128,172.18.0.0/16

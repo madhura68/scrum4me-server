@@ -1,6 +1,6 @@
 # Implementatieplan — Forgejo 15.0.2 → 15.0.9 op `scrum4me-server`
 
-> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-review GO na vijf rondes (30 sep, `mac:codex`). JP-gate gepasseerd op 30 sep; tweede delta (D12–D14, drie hostfeiten) GO in één ronde (`mac:codex`, commit `60b7795`). Uitvoering is door JP opgedragen.** De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
+> **Status (30 september 2026): omgezet van 15.0.7 naar 15.0.9; delta-review GO na vijf rondes (30 sep, `mac:codex`). JP-gate gepasseerd op 30 sep; tweede delta (D12–D14, drie hostfeiten) GO in één ronde (`mac:codex`, commit `60b7795`). **Uitgevoerd op 30 september 2026, uitkomst `upgraded`: de forge draait `15.0.9+gitea-1.22.0`** (zie "Uitvoering 30 september 2026" onderaan en [evidence/forgejo-15.0.9/venster.md](evidence/forgejo-15.0.9/venster.md)). De plan-review gaf op 9 september dubbel GO voor doel 15.0.7 (commit `21d103e`, PR #26); dat plan is niet uitgevoerd. JP-besluit 30 september: eerst 15.0.9 (LTS), eind oktober 17.0 via een eigen plan. Wat er sinds de GO is gewijzigd en waarom staat onder "Delta 30 september 2026" in het Review record.
 
 > **Voor uitvoerders:** dit is een **operator-gedreven onderhoudsactie** op een productiehost, geen code-implementatie. Voer fase voor fase uit met de gate ná elke fase; bij een rode gate: **STOP** (stoppen, journal/uitvoer vastleggen, JP melden — niet forceren, niet de gate versoepelen). Elke fase heeft een terugweg (zie Rollback). Commando's zonder host-label draaien **op `scrum4me-server`** als `janpeter` (docker-groep, `sudo` waar aangegeven); `[max2]`-stappen draaien op `max2`; `[mac]`-stappen op de mac met persoonlijk `FORGEJO_TOKEN`; `[JP]`-stappen zijn JP-only (beheerinterface, besluiten).
 
@@ -482,4 +482,18 @@ Geen commando uit het venster (Fase 2–5) of uit de Rollback is gewijzigd. Eén
 - **Eigen verificatie van de reviewer:** de tekst van Fase 2 tot Fase 6, de hele Rollback-sectie en alle shellblokken zijn byte-gelijk aan de GO-basis; de verwijzingen 0.6/0.7 → 1.4 en 1.1 → Gate 1/6.1/6.4 kloppen; de mirror-README bevestigt 02:30 UTC ± 5 min. De hostfeiten zijn beoordeeld op de meegestuurde ruwe uitvoer; de reviewer heeft de host niet benaderd.
 - **Kanttekeningen zonder bevinding (overgenomen als aandachtspunt, geen planwijziging):** de implementaties van `dpkg-db-backup` en `restic-stats-cache` zijn niet uitgeschreven; de NAS-retentie is een selectie van snapshots, geen vaste bewaartermijn; de duur van de B2-Object-Lock is niet aangetoond, dus er is geen precieze vernietigingsdatum voor de kopie in B2; bij de ceremonie moeten de taken doel, gates, context en de gepinde planbron dragen.
 - **Verdict:** `mac:codex` GO. Het plan wordt uitgevoerd op opdracht van JP (30 sep); de `[JP]`-stappen en -besluiten blijven van JP.
+
+## Uitvoering 30 september 2026
+
+Uitgevoerd op opdracht van JP, direct na het GO van de tweede delta, vanaf commit `f2ed635`. **Uitkomst `upgraded`**: `15.0.9+gitea-1.22.0` via poort 3010, via Caddy en via `forgejo --version`; trusted proxies expliciet; beide JWT-secrets geroteerd; pool hersteld en smoke groen. Venster `T0` 13:25:02Z → `TEND` 13:41:29Z (16 min 27 s); downtime 3 min 51 s en 10 s. Er is niet teruggerold.
+
+Bewijs: [venster.md](evidence/forgejo-15.0.9/venster.md) (tijden, besluiten van JP, afwijkingen), [backup-manifest.md](evidence/forgejo-15.0.9/backup-manifest.md) (rollbackpunt, vernietigingsdatum 7 oktober 2026), [smoke.md](evidence/forgejo-15.0.9/smoke.md), `versies.txt`, de doctor-logs en de ruwe uitvoer per fase onder `evidence/forgejo-15.0.9/`.
+
+Wat de uitvoering over het plan leerde (voor het 17.0-plan, niet als wijziging van dit plan):
+
+- **`doctortoets` wordt rood op een waarschuwing waarvan alleen een getal verandert.** De waarschuwing over verweesde repo-archieven ging van 261 naar 32 doordat de herstart in Fase 3 archieven opruimde; de toets zag dat als een nieuwe melding. De regel was in een minuut verklaard, maar het 17.0-plan gebruikt dezelfde functies en zal hier ook op struikelen.
+- **De baseline van 0.4 bevatte een `ERROR` die een artefact van doctor zelf was** (`/usr/local/bin/gitea` tegenover `/usr/local/bin/forgejo`; in de image hetzelfde programma). De doctor van 15.0.9 meldt hem niet meer.
+- **Stap 2.1 is in de praktijk ook uitvoerbaar door de runnercontainer te stoppen.** JP deed dat; Gate 2 verwacht de container dan ten onrechte `running`.
+- **De journaalregels `SOURCE_WAIT` en `READY` uit 5.2 komen in het controllerjournaal niet voor**; zichtbaar zijn `trustgate groen`, `cyclus: scrub ok=True` en `cyclus: runner gestart`.
+- **De smoke op `main` van `scrum4me-shared` start ook de gewone CI** (twee push-runs), en de branch is beschermd met een push-whitelist.
 

@@ -1,0 +1,3 @@
+scope	id	name	status	version	ephemeral	labels
+global	3	scrum4me-srv-runner	offline	v12.10.1	False	ubuntu-latest
+global	5	max2-forgejo-runner-02	offline	v12.10.1	False	ubuntu-latest

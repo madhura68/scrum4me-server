@@ -1,0 +1,7 @@
+===== 0.10 hulpmeting (read-only): oauth2-applicaties en grants =====
+1|0|tea|f
+2|0|git-credential-oauth|f
+3|0|Git Credential Manager|f
+grants: 0
+lfs-objecten: 0
+login sources: 0
