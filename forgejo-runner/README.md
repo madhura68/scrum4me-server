@@ -61,7 +61,8 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 
    Bestaande stack met de oude, automatisch benoemde bridge: de vaste naam
    `fr-dind0` vraagt een nieuw netwerk. Stop `forgejo-runner-cycle.service`
-   (drain eerst), draai `docker compose down` (het volume
+   pas als aantoonbaar geen job loopt (zie "Een lopende job niet onderbreken"
+   hieronder), draai `docker compose down` (het volume
    `forgejo-runner-dind-data` blijft bestaan) en `docker compose up -d`, en start
    daarna de cycle-unit. `verify-stack.sh` faalt met exit 65 als de guardregel
    ontbreekt of de DinD-API vanaf de host bereikbaar is.
@@ -111,11 +112,37 @@ hun eigen installatiestappen.
 ## Terugdraaien
 
 Stop en disable eerst `forgejo-runner-trust.timer`, anders publiceert die tijdens
-het terugdraaien een vers verdict en laat hij de gate onbedoeld groen. Zet de
-cycle-unit daarna in `DRAINING`, wacht tot een geaccepteerde job terminaal is en
-leg het Forgejo-side nulbewijs voor assigned/running jobs vast. Stop en disable
-daarna de unit en verwijder alleen de runner- en DinD-containers. Laat het volume
+het terugdraaien een vers verdict en laat hij de gate onbedoeld groen. Wacht
+daarna tot er aantoonbaar geen job loopt (zie "Een lopende job niet
+onderbreken") en leg het Forgejo-side nulbewijs voor assigned/running jobs vast.
+Stop en disable daarna de unit en verwijder alleen de runner- en DinD-containers. Laat het volume
 `forgejo-runner-dind-data` staan voor onderzoek. Herstart nooit de host-Dockerdaemon.
+
+### Een lopende job niet onderbreken
+
+`systemctl stop forgejo-runner-cycle.service` is **geen drain**. De controller
+zet bij SIGTERM wel `DRAINING`, maar stuurt de runner direct SIGTERM door, en
+die breekt een lopende job af. Gemeten op `max2` op 1 oktober 2026: task 10249
+(`janpeter/Scrum4Me`, "DB Access Production Sentinel") liep 77 s toen de unit
+stopte. De journal meldde `cyclus: runner exit rc=130` en Forgejo zette de job
+op `failure`. De `child_stop_grace_seconds` (200 s) wordt dus niet benut voor een
+nette afronding. Een niet-onderbrekende drain bestaat nog niet; ook het
+maintenance-record is niet armbaar.
+
+Tot die er is, stop je de unit alleen als alle drie de controles waar zijn:
+
+1. de laatste journalregels van de unit zijn `single task poller received no
+   task …` en er is na de laatste `runner gestart` geen `task <id> repo is …`
+   gelogd: `journalctl -u forgejo-runner-cycle -n 20 --no-pager`;
+2. binnen DinD draait geen job- of servicecontainer:
+   `docker compose exec -T dind docker -H tcp://127.0.0.1:2375 ps -q` is leeg;
+3. het Forgejo-side nulbewijs (§7.9) toont voor deze runner geen assigned of
+   running job.
+
+Stop dan direct. Er blijft een venster van één poll-interval (`fetch_interval`,
+2 s) waarin de runner alsnog een job kan oppakken. Controleer na de stop in de
+journal dat de laatste exit niet `rc=130` is na een `task … repo is …`-regel.
+Gebeurde dat toch, herstart die job dan in Forgejo.
 
 ## Wat hier bewust niet gebeurt
 
