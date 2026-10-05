@@ -126,6 +126,13 @@ repositories:
     actions_enabled: true
     workflow_source: null
     writers: [janpeter]
+  # my-mods: nieuwe repo (2026-10-04 22:42) met Actions aan en nog geen workflows
+  # op enige branch. Zonder deze entry was de trustmeting HARD en lag de
+  # max2-runner stil (vanaf de run van 2026-10-05 00:00). Nog geen risky triggers.
+  - full_name: janpeter/my-mods
+    actions_enabled: true
+    workflow_source: null
+    writers: [janpeter]
   - full_name: janpeter/private-mcp
     actions_enabled: true
     workflow_source: null
