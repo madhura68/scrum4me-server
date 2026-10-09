@@ -1,5 +1,5 @@
 ---
-last_updated: "2026-09-28"
+last_updated: "2026-10-09"
 idea: IDEA-221
 ---
 
@@ -427,10 +427,34 @@ opnieuw bij de eerste rotatie** (fase 0) en werk ze dan uit tot het niveau van B
 - **Locaties:** mac-production-secrets. Na T-76 ook ops-dashboard op srv en max2 (hergebruik,
   JP-besluit 2026-09-25).
 
-#### `ops_readonly`, `scrum4me_app`
+#### `scrum4me_app`
 
-- `scrum4me_app`: het wachtwoord staat niet op srv. Locaties nog onbekend.
-- `ops_readonly`: locaties nog onbekend.
+- Het wachtwoord staat niet op srv. Locaties nog onbekend.
+
+#### `ops_readonly` — gemeten bij de rotatie voor ISS-51 (2026-10-09)
+
+- **Ontsluit:** SELECT op 78 tabellen in `public` van DB `scrum4me`. LOGIN, geen superuser.
+  pg_hba valt op de catch-all `scram-sha-256`, dus de rol is bereikbaar vanaf LAN en Tailscale.
+  Een gelekt wachtwoord geeft daarmee leestoegang tot de hele DB.
+- **Consumers** (allemaal `SCRUM4ME_DATABASE_URL` van de ops-dashboard):
+  - srv: `/srv/scrum4me/ops-dashboard/.env` (host `postgres`), plus de build-kopie
+    `.next/standalone/.env`. Die kopie gebruikt de container niet, want `.dockerignore`
+    sluit `.env` uit, maar hij bevat wel de waarde: herschrijf hem mee.
+  - max2: `/srv/scrum4me/ops-dashboard/.env` (host `192.168.0.154`), env_file van `scrum4me-ops-dashboard`.
+  - mac: de ops-dashboard-env. JP werkt die zelf bij.
+- **Sessies:** de dashboards verbinden alleen bij gebruik (worker-insights, hub-settings). Een
+  lege canary vóór de flip is dus normaal.
+- **Herladen:** `sudo -u ops-agent docker compose -f /srv/scrum4me/compose/docker-compose.yml up -d --no-deps --force-recreate ops-dashboard`
+  op srv en max2. Als janpeter faalt dit op het leesrecht van `compose/.env`.
+- **Bewijs:** `probe` op srv werkt niet, want de host `postgres` is een compose-naam. Gebruik de
+  max2-env (`--expect ok` en `reject` op de `.bak`). Voor de containers: een `pg`-client via
+  stdin in de container (`docker exec -i -w /app scrum4me-ops-dashboard node -`) met
+  `begin read only; select current_user`.
+- **Oud wachtwoord ≠ 64-hex** (48 tekens tot 2026-10-09). `scan` met `old` werkt dan niet;
+  vergelijk de bestanden op sha256 via een pipe.
+- **Residu:** worker-logs (`/srv/scrum4me/worker-logs/{dispatch,codex}`) en de `tasks`-tabel
+  bevatten het regex-patroon `ops_readonly:[^@]+@`. Dat is geen waarde: `scan` geeft daar
+  `placeholder/regex`.
 
 #### `scrum4me_dispatch`, `s4m_dispatch_projector`
 
