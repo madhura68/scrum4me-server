@@ -70,8 +70,37 @@ droogloop met `DRIFT_NO_NOTIFY=1`, na de installatie:
 
 Het aantal destructieve bevindingen is niet gestegen: 0 op beide hosts.
 
-## Nog open: stap 9
+## Stap 9: nachtelijke runs van 10 oktober
 
-De eerstvolgende runs van `ops-agent-drift` (2026-10-10 rond 00:07 CEST op beide hosts) en van de
-deploy-flows vallen na deze PR. Die vergelijking volgt apart. Uit de lezing van 28 september: geen
-ops-agent-commando draait git in een live compose-map, en geen build-context wijst naar zo'n map.
+**Uitkomst: groen.** Geen rapport noemt iets wat met de git-repo's in de compose-mappen te maken heeft.
+
+| Host | `ops-agent-drift`, 2026-10-09 | `ops-agent-drift`, 2026-10-10 | Verschil |
+|---|---|---|---|
+| max2 (00:14 / 00:08) | 1 bestand, 2 hunks (`commands.yml`) | 1 bestand, 2 hunks (`commands.yml`) | geen; ook 2026-10-08 gelijk |
+| scrum4me-server (00:01 / 00:10) | 14 bestanden, 17 hunks: 5 config, 5 repo-vs-runtime, 4 installed-build | 5 bestanden, 5 hunks: 0 config, 0 repo-vs-runtime, 5 installed-build | verklaard, zie hieronder |
+
+**scrum4me-server.** Op 2026-10-09 rond 09:36 CEST is de runtime-baseline gesynchroniseerd met
+`apply-drift-runtime.sh` (opdracht JP; momentopname `/srv/_attic/2026-10-09/drift-baseline-voor-sync.tar`, 600).
+Rond 09:40 kwam het ontbrekende commentaarblok van 4 regels in de live `/etc/ops-agent/commands.yml`. Inode,
+eigenaar en mode bleven gelijk en de geparste YAML is identiek, dus zonder restart (momentopname
+`/srv/_attic/2026-10-09/ops-agent-commands-voor-commentaar.tar`, 600). Daardoor gingen config en repo-vs-runtime
+naar 0. De overgebleven vijf rijen zijn allemaal `build:`: de installatie onder `/opt/ops-agent` loopt achter op de
+bron. Die laag stond er de nachten ervoor al (4 rijen). De vijfde rij (`wrappers/skills/verify-worker-skills.sh`)
+komt doordat de bron-checkout naar `main@c9b6722` is gegaan. Oplossen vraagt een herinstallatie via
+`deploy/ops-agent/setup.sh` met een eigen restartvenster; dat valt buiten deze taak. De handmatige controle van
+2026-10-09 meldde "no drift" omdat `OPS_AGENT_SRC_DIR` niet gezet was en de build-laag dus werd overgeslagen.
+
+**Werkbomen, 2026-10-10 ochtend.**
+
+| Host | Map | `git status --porcelain` | HEAD |
+|---|---|---|---|
+| scrum4me-server | `/srv/scrum4me/compose` | leeg | `939fcf8` "Bump CLI-pins: Claude Code 2.1.287, Codex 0.160.0" (2026-10-09 12:01, 1 bestand) |
+| scrum4me-server | `/srv/scrum4me/forgejo` | leeg | `89a1b4a` (eerste commit) |
+| max2 | `/srv/scrum4me/compose` | leeg | `93e4137` (eerste commit) |
+
+De commit `939fcf8` is de eerste gewone wijziging via de nieuwe route: een commit, en geen kopie ernaast.
+Onder `/srv` staat op beide hosts geen losse compose-kopie.
+
+**Deploy-flows.** Sinds de installatie (FlowRun in `ops_dashboard` op scrum4me-server, laatste 30 uur):
+`update_scrum4me_workers` op `srv` om 2026-10-09 08:18 en 18:28 CEST, beide `success`, exit 0. Ze draaiden in
+`/srv/scrum4me/compose` met `.git` aanwezig. Op max2 liep in dat venster geen flow.

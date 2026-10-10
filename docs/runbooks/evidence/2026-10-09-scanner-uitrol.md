@@ -7,7 +7,7 @@ Hoort bij T-138 (scrum4me-server PBI-23, ST-037), max2 ISS-16 en ISS-5, en bij s
 bestand uit `ExecStart` is op beide hosts `4b2f739bea7578f947c5178986f10b85436858d5c15d3b69487b6d47e339a233`.
 Dat is de bron in Ops-dashboard op `0e38abc` (merge van PR 270, T-132), en via scrum4me-docker `d523e6a`
 (merge van PR 126, T-136). Een droogloop van de geïnstalleerde scanner gaf op beide hosts exitcode 0 en
-dezelfde hash in de eerste logregel. **Nog open:** de eerstvolgende nachtelijke run (stap 8 van de taak).
+dezelfde hash in de eerste logregel. De nachtelijke run van 2026-10-10 is op beide hosts geslaagd (zie onderaan).
 
 Ontwerp gelijk aan de pin `c5c60a9a…`. Er is geen container herstart, geen compose-bestand gewijzigd en geen
 systemd-unit gewijzigd.
@@ -86,8 +86,32 @@ exit=0
 exit=0
 ```
 
-## Nog te doen
+## Nachtelijke run van 10 oktober
 
-- Stap 8: na de runs van 2026-10-10 (00:37 CEST max2, 00:49 CEST scrum4me-server) het journal van
-  `compose-collision-check.service` lezen. De run moet geslaagd zijn en op beide hosts `4b2f739bea75` loggen.
-  Daarna `/tmp/check-compose-collision.sh.voor-t138` op scrum4me-server verwijderen.
+**Uitkomst: groen.** Beide runs slaagden, logden dezelfde hash en vonden geen destructieve bevinding.
+
+```text
+max2             2026-10-10 00:36:23  scanner sha256 (first 12 hex chars): 4b2f739bea75
+                                      scanning 11 compose file(s) under /srv
+                                      clean: no destructive finding (1 warning(s) …)
+scrum4me-server  2026-10-10 00:40:13  scanner sha256 (first 12 hex chars): 4b2f739bea75
+                                      scanning 11 compose file(s) under /srv
+                                      clean: no destructive finding (2 warning(s) …)
+```
+
+Ter vergelijking: de run op max2 van 2026-10-09 00:41 (oude scanner) scande 25 bestanden, meldde 1 destructieve
+bevinding (project `when2watch` uit 16 mappen) en pushte een melding. De run van 2026-10-10 pushte niets.
+
+`/tmp/check-compose-collision.sh.voor-t138` op scrum4me-server is na deze run verwijderd.
+
+## Vervolg op 2026-10-09: drift-baseline en live commentaar (opdracht JP)
+
+- Rond 09:36 CEST: de runtime-baseline is gesynchroniseerd met het volledige `apply-drift-runtime.sh` vanaf
+  `main@c9b6722` (schoon, gelijk met upstream). Momentopname vooraf: `/srv/_attic/2026-10-09/drift-baseline-voor-sync.tar`
+  met SHA256SUMS, 600, teruggelezen. Scripts en units bleven gelijk (sha256 voor = na) en beide timers zijn actief.
+- Rond 09:40 CEST: het commentaarblok van 4 regels uit de repo-baseline is ook live in `/etc/ops-agent/commands.yml`
+  gezet. Vlak vooraf hertoetst dat het verschil precies die 4 regels was. Het bestand is in place geschreven
+  (inode, `root:root` en 644 gelijk) en de geparste YAML is voor en na identiek (124 commando's), dus geen restart.
+  Momentopname: `/srv/_attic/2026-10-09/ops-agent-commands-voor-commentaar.tar`, 600.
+- Gevolg: config-drift en repo-vs-runtime-drift op scrum4me-server zijn 0. Wat overblijft is de build-laag
+  (zie `2026-10-09-compose-git-init.md`, stap 9).
