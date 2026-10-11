@@ -68,6 +68,15 @@ setup() {
   grep -q '^After=forgejo-runner-dind-guard.service' "$UNIT"
 }
 
+@test "dind-guard-unit staat vóór docker.service en hangt er niet hard aan (R16 review)" {
+  # Een DinD met restart: always komt na een herstart terug zodra Docker start;
+  # de regel moet er dan al liggen. Geen Requires=/BindsTo= van Docker op de
+  # guard: een falende guard zou Docker en alle hostcontainers stoppen.
+  grep -q '^Before=docker.service' "$GUARD_UNIT"
+  run grep -E '^(Requires|BindsTo|PartOf|Wants)=.*docker' "$GUARD_UNIT"
+  [ "$status" -ne 0 ]
+}
+
 @test "dind-guard-unit is een oneshot die dind-guard.sh apply draait" {
   grep -q '^Type=oneshot' "$GUARD_UNIT"
   grep -q '^RemainAfterExit=yes' "$GUARD_UNIT"

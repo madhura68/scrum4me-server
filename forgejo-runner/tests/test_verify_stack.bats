@@ -180,6 +180,32 @@ verify() { bash "$BUNDLE/scripts/verify-stack.sh" "$@"; }
   [[ "$output" == *"bundelmap"* ]]
 }
 
+@test "schrijfbare map met gehashte bestanden is exit 64, ook als bestanden en bytes kloppen" {
+  # Wie de map kan schrijven kan een root-eigendom-bestand erin hernoemen of
+  # vervangen; de bestandscontrole alleen vangt dat niet (R16 review, ronde 1).
+  echo "0 775" > "$BATS_TEST_TMPDIR/stat/scripts"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"scripts"* ]]
+}
+
+@test "map van een andere eigenaar is exit 64" {
+  echo "1000 755" > "$BATS_TEST_TMPDIR/stat/scripts"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"scripts"* ]]
+}
+
+@test "ook een diepere tussenmap zonder eigen bestanden wordt gecontroleerd" {
+  mkdir -p "$BUNDLE/scripts/lib/x"
+  echo "m" > "$BUNDLE/scripts/lib/x/m.sh"
+  HASH="$(bash "$HASHER" "$BUNDLE")"
+  echo "0 777" > "$BATS_TEST_TMPDIR/stat/lib"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"lib"* ]]
+}
+
 @test "root-eigendom met modus 644 en 755 is groen" {
   echo "0 644" > "$BATS_TEST_TMPDIR/stat/compose.yaml"
   echo "0 755" > "$BATS_TEST_TMPDIR/stat/bundle-hash.sh"
@@ -210,6 +236,28 @@ verify() { bash "$BUNDLE/scripts/verify-stack.sh" "$@"; }
   : > "$BATS_TEST_TMPDIR/dind-id"
   run verify abc123 "$HASH"
   [ "$status" -eq 65 ]
+}
+
+@test "een ss die zelf faalt is exit 62 en geen groene isolatie (R16 review)" {
+  # Zonder gemeten uitvoer is er niets bewezen; falen mag niet lezen als "geen listener".
+  printf '#!/usr/bin/env bash\nexit 3\n' > "$FAKE_BIN/ss"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 62 ]
+  [[ "$output" == *"ss faalde"* ]]
+}
+
+@test "een proef die zelf niet kan draaien (timeout exit 125) is exit 65, geen geslaagde guard" {
+  printf '#!/usr/bin/env bash\nexit 125\n' > "$FAKE_BIN/timeout"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 65 ]
+  [[ "$output" == *"kon niet draaien"* ]]
+}
+
+@test "een verbinding die blijft hangen (timeout exit 124) telt als niet bereikbaar" {
+  printf '#!/usr/bin/env bash\nexit 124\n' > "$FAKE_BIN/timeout"
+  run verify abc123 "$HASH"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"guard: OK"* ]]
 }
 
 @test "ontbrekende dind-guard-unit op de host is exit 63" {

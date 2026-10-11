@@ -6,7 +6,7 @@
 
 **Eerste bruikbare resultaat:** `-03` online, exact de labels van `labels.txt`, isolatie tussen stacks bewezen vóór de controller jobs aanneemt, drie jobs gelijktijdig verdeeld, en een gemeten mediane wachttijd van Scrum4Me daarna. **Niet-doelen:** Runner 13 en zijn canary, rootless DinD, een poolscheduler, een commandokanaal tussen stacks, een hostbrede scrubvergrendeling, een nieuw drain-subsysteem in de controller, een wijziging aan `scrum4me-server` of aan stack `02` (behalve de ene `.env`-toevoeging van fase 2b).
 
-**Spec:** `migratieontwerp.md` §13 "Delta R17" (normatief), met §3–§12 zoals daar gewijzigd. Bronbestanden: `forgejo-runner/compose.yaml`, `controller.toml.example`, `forgejo-runner-cycle.service`, `forgejo-runner-dind-guard.service`, `scripts/{dind-guard,verify-stack,preflight,cycle_adapters,cycle_runtime}.*`.
+**Spec:** `migratieontwerp.md` §13 "Delta R17" (normatief), met §3–§12 zoals daar gewijzigd. Bronbestanden: `forgejo-runner/compose.yaml`, `controller.toml.example`, `forgejo-runner-cycle.service`, `forgejo-runner-dind-guard.service`, `scripts/{dind-guard,verify-stack,preflight,cycle_adapters,cycle_runtime}.*`. Regelverwijzingen naar bronbestanden in dit plan (zoals `verify-stack.sh:73-78`) gelden voor `main` op `609bbbc7`; na de R16-fixes (PR #116) schuiven die van `verify-stack.sh` en de guard-unit op: controleer ze tegen de boom.
 
 ## Global constraints
 
@@ -22,7 +22,7 @@
 
 | # | Voorwaarde | Geldt vóór | Bewijs |
 |---|---|---|---|
-| P1 | R16 heeft GO en R17 bouwt op die tekst | GO op R17 | reviewrecord in §13 |
+| P1 | R16 heeft GO en R17 bouwt op die tekst | GO op R17 | reviewrecord in §13; **vervuld**: R16 GO in ronde 4 op 11 oktober 2026 |
 | P2 | ISS-49 (DinD-guard): bewezen werkend voor `fr-dind0` in fase 2b stap 6 (G3a); voor `fr-dind1` bewezen vóór `enable --now` van de controller van `-03` (G3b) | fase 3, stap 7 | gedragsproef per bridge |
 | 2b | Fase 2b muteert de levende host (bundel, iptables, units, `.env`) en vraagt een afzonderlijke opdracht van JP met P1 en de goedgekeurde bundelcommit uit fase 1 | fase 2b | opdracht van JP |
 | P4 | 24-uursmeting U2 afgerond (tot 2026-10-12 05:03 UTC) en besluitrecord U4 met D7 genomen: de *projectie* van de N = 2-belasting. Een caps-wijziging binnen §7.8 kan N = 2 op geheugen niet groen maken (de ondergrenzen alleen, 10 GiB, overschrijden het budget van 9,79 GiB); de echte opties zijn een waiver, meer hostgeheugen of vrijgemaakte `MemAvailable`, of een §7.8-methodewijziging met een eigen delta | fase 3 | U4-record |

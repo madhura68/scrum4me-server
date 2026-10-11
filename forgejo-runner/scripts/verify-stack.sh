@@ -47,16 +47,32 @@ eigendom_ok() {
 }
 eigendom_ok "$BUNDLE" || {
   printf 'eigendomsfout: bundelmap %s is niet van root of is groep/wereld-schrijfbaar\n' "$BUNDLE" >&2 ; exit 64 ; }
+# Ook iedere map die gehashte bestanden bevat telt (R16 review): wie een map kan
+# schrijven kan een root-eigendom-bestand erin hernoemen of vervangen, ook als het
+# bestand zelf en zijn bytes kloppen. Zonder externe tools (bash 3.2 op macOS).
+GEZIEN=$'\n'
 while IFS= read -r -d '' pad; do
   eigendom_ok "$BUNDLE/$pad" || {
     printf 'eigendomsfout: %s is niet van root of is groep/wereld-schrijfbaar\n' "$pad" >&2 ; exit 64 ; }
+  map="${pad%/*}"
+  while [ "$map" != "." ] && [ "$map" != "$pad" ]; do
+    case "$GEZIEN" in *$'\n'"$map"$'\n'*) break ;; esac
+    GEZIEN="$GEZIEN$map"$'\n'
+    eigendom_ok "$BUNDLE/$map" || {
+      printf 'eigendomsfout: map %s is niet van root of is groep/wereld-schrijfbaar\n' "$map" >&2 ; exit 64 ; }
+    map="${map%/*}"
+  done
 done < <(bash "$SCRIPT_DIR/bundle-hash.sh" "$BUNDLE" --list)
 
 # Isolatie: geen hostlistener op de Docker-API-poorten (§7.5). Het patroon
 # eist een poortgrens, zodat 23750 niet als 2375 telt.
 command -v ss >/dev/null 2>&1 || {
   printf 'isolatiefout: ss ontbreekt, isolatie niet te controleren\n' >&2 ; exit 62 ; }
-if ss -ltn 2>/dev/null | grep -qE ':(2375|2376)([^0-9]|$)'; then
+# De uitvoer van ss wordt eerst gemeten: een ss die zelf faalt is geen bewijs
+# van "niets luistert" (R16 review).
+SS_UIT="$(ss -ltn 2>/dev/null)" || {
+  printf 'isolatiefout: ss faalde, isolatie niet te controleren\n' >&2 ; exit 62 ; }
+if printf '%s\n' "$SS_UIT" | grep -qE ':(2375|2376)([^0-9]|$)'; then
   printf 'isolatiefout: er luistert iets op 2375 of 2376\n' >&2 ; exit 62
 fi
 
@@ -78,10 +94,17 @@ DIND_IPS=""
   printf 'guardfout: geen draaiende DinD-container met IP gevonden, bereikbaarheid niet te proeven\n' >&2 ; exit 65 ; }
 for ip in $DIND_IPS; do
   for poort in 2375 2376; do
+    # Exit 0 = verbonden (bereikbaar), 1 = verbinding geweigerd, 124 = niet binnen
+    # 3 s tot stand gekomen. Iedere andere uitkomst (125-127: timeout of bash kon
+    # niet draaien, 137: gedood) is geen meting van de guard (R16 review).
+    rc=0
     # shellcheck disable=SC2016  # $0/$1 zijn de argumenten van de kind-bash
-    if timeout 3 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$ip" "$poort" 2>/dev/null; then
-      printf 'guardfout: DinD-API bereikbaar vanaf de host op %s:%s\n' "$ip" "$poort" >&2 ; exit 65
-    fi
+    timeout 3 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$ip" "$poort" 2>/dev/null || rc=$?
+    case "$rc" in
+      0) printf 'guardfout: DinD-API bereikbaar vanaf de host op %s:%s\n' "$ip" "$poort" >&2 ; exit 65 ;;
+      1|124) : ;;
+      *) printf 'guardfout: de bereikbaarheidsproef op %s:%s kon niet draaien (exit %s), guard niet te bewijzen\n' "$ip" "$poort" "$rc" >&2 ; exit 65 ;;
+    esac
   done
 done
 

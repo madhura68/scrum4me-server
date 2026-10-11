@@ -118,12 +118,29 @@ def _zonder_commentaar(tekst):
     return "\n".join(regels)
 
 
+# Een element dat met een alias (*), anker (&), tag (!), block-scalar (| >) of
+# flow-mapping ({) begint, aan het begin van de waarde of na `[`, `,`, `{` of
+# witruimte (dus ook als lijstelement, R16 review). Een label bevat die tekens
+# nooit aan het begin van een element.
+_NIET_LETTERLIJK = re.compile(r"(^|[\[,{\s])[*&!|>{]")
+
+
 def _onleesbare_runs_on(tekst):
     """True als een `runs-on:` niet uit letterlijke labels bestaat.
 
     Letterlijk is: een gewone scalar of een lijst van gewone scalars. Alles met
-    `${{`, een anker/alias/tag, een block-scalar of een lege waarde zonder
-    lijstitems eronder is niet te herleiden en telt als onleesbaar."""
+    `${{`, een anker/alias/tag (ook als lijstelement), een block-scalar of een
+    lege waarde zonder lijstitems eronder is niet te herleiden en telt als
+    onleesbaar.
+
+    GRENS (ontwerp §7.7, ISS-61): dit is een regel-voor-regel tekstscan, geen
+    YAML-parser, en dus een detector voor vergissingen, geen grens tegen een
+    opsteller die met opzet versluiert. Niet gedekt: een andere schrijfwijze
+    van de sleutel `runs-on` zelf (gequote sleutel met escape-reeks, `? runs-on`,
+    aliassleutel, sleutel over een regelgrens) en vervolgregels van een niet-
+    lege waarde (meerregelige gequote scalar, een sluithaak of ` #` binnen een
+    quote). Een sluitende oplossing vraagt een echte parser; dat is een eigen
+    ontwerpbesluit en geen reden om hier per geval een regex bij te zetten."""
     regels = tekst.splitlines()
     for i, regel in enumerate(regels):
         m = re.search(r"runs-on[\"']?\s*:(.*)$", regel)
@@ -143,7 +160,15 @@ def _onleesbare_runs_on(tekst):
             if not rest:
                 return True
             waarde = " ".join(rest)
-        if "${{" in waarde or waarde[0] in "*&!|>{":
+        # Een flowlijst die niet op dezelfde regel sluit is niet volledig gelezen:
+        # de vervolgregels van een niet-lege waarde worden niet verzameld, dus
+        # conservatief onleesbaar (R16 review, ronde 2).
+        if waarde.startswith("[") and "]" not in waarde:
+            return True
+        # Een backslash is een YAML-escape in een dubbel-gequote scalar (de
+        # letter u als backslash, u, 0075): de labelnaam staat dan nergens
+        # letterlijk. Een label bevat nooit een backslash.
+        if "${{" in waarde or "\\" in waarde or _NIET_LETTERLIJK.search(waarde):
             return True
     return False
 
@@ -156,6 +181,11 @@ def scan_workflow(tekst, shared_labels):
     Over-detectie kost hooguit een handmatige goedkeuring in de allowlist;
     onder-detectie laat onbetrouwbare code toe. Daarom een tekstscan die eerder
     te veel dan te weinig markeert.
+
+    GRENS (ontwerp §7.7, ISS-61): ook de triggerdetectie is een rauwe
+    substringscan. Een triggernaam met een escape-reeks of regelvoortzetting
+    wordt niet gevonden, waarna de runs-on-fallback niet draait. De scan vangt
+    vergissingen, geen versluiering door een goedgekeurde schrijver.
     """
     gevonden = []
     for trigger in RISKY_TRIGGERS:
