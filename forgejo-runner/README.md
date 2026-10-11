@@ -79,6 +79,21 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    `forgejo-runner-dind-data` blijft bestaan) en `docker compose up -d`, en start
    daarna de cycle-unit. `verify-stack.sh` faalt met exit 65 als de guardregel
    ontbreekt of de DinD-API vanaf de host bereikbaar is.
+
+7b. Alleen voor een host met een extra stack (R17 §5): installeer ook de
+   template-unit, **zonder** `enable` of `start`. Stap 7 installeert en activeert
+   uitsluitend de vier vaste units; een instantie als `forgejo-runner-cycle@03`
+   wordt pas ingeschakeld nadat de per-stack-map, de DinD van die stack en het
+   isolatiebewijs er zijn (zie het implementatieplan, fase 3).
+   ```sh
+   sudo install -o root -g root -m 0644 /opt/forgejo-runner/forgejo-runner-cycle@.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   ```
+   De template leest per instantie `/opt/forgejo-runner-stacks/<id>/controller.toml`
+   en heeft geen `ExecStartPre=`: een instantie zonder die map faalt in het
+   hoofdproces (exit 2) in plaats van in een herstartlus. `verify-stack.sh` vergelijkt
+   de template byte-gelijk met de bundelkopie zodra er een instantie is ingeschakeld
+   (exit 63).
 8. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven; de
    bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit.
 9. Leg de credential voor de trustscan neer als
