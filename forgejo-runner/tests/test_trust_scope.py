@@ -968,6 +968,18 @@ class TestOnleesbareRunsOn(unittest.TestCase):
         # handmatige goedkeuring dan onder-detectie (zie scan_workflow).
         self.assertTrue(self._gebruikt("    runs-on: [eigen-runner,\n      andere]\n"))
 
+    # Zelfde klasse als de alias met geëscapete waarde, zonder alias: een
+    # dubbel-gequote scalar met een escape-reeks bevat de labelnaam nergens
+    # letterlijk. Een backslash hoort in geen enkel label.
+    def test_geescapete_scalar_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on: "\\u0075buntu-latest"\n'))
+
+    def test_geescapete_scalar_in_flowlijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on: ["\\x75buntu-latest"]\n'))
+
+    def test_geescapete_scalar_in_blokvormige_lijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on:\n      - "\\u0075buntu-latest"\n'))
+
     def test_afgesloten_flowlijst_op_een_regel_blijft_niet_gedeeld(self):
         self.assertFalse(self._gebruikt("    runs-on: [eigen-runner, andere]\n"))
 

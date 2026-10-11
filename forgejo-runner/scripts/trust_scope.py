@@ -156,7 +156,10 @@ def _onleesbare_runs_on(tekst):
         # conservatief onleesbaar (R16 review, ronde 2).
         if waarde.startswith("[") and "]" not in waarde:
             return True
-        if "${{" in waarde or _NIET_LETTERLIJK.search(waarde):
+        # Een backslash is een YAML-escape in een dubbel-gequote scalar
+        # ("ubuntu-latest"): de labelnaam staat dan nergens letterlijk.
+        # Een label bevat nooit een backslash.
+        if "${{" in waarde or "\\" in waarde or _NIET_LETTERLIJK.search(waarde):
             return True
     return False
 
