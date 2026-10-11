@@ -95,7 +95,10 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    de template byte-gelijk met de bundelkopie zodra er een instantie is ingeschakeld
    (exit 63).
 8. `bash scripts/verify-stack.sh <commit> <bundelhash>` moet exit 0 geven; de
-   bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit.
+   bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit. Op een host
+   met meer dan één stack komt daar `--stacks "02 03"` achter, en vóór de eerste start
+   van een nieuwe stack `--stacks "02 03" --pre-start` (zie "Meerdere stacks op een
+   host").
 9. Leg de credential voor de trustscan neer als
    `/opt/forgejo-runner/credentials/trust-scan.env`, mode `0600`, eigendom `root`,
    met exact één regel `FORGEJO_TOKEN=<waarde>`. De waarde is een Forgejo
@@ -136,6 +139,63 @@ docker-rollback-retention (`scripts/docker-rollback-retention/`) horen niet bij
 de bundel: ze staan buiten `forgejo-runner/`, tellen niet mee in de bundelhash en
 worden niet door `verify-stack.sh` gecontroleerd. Ze worden per host beheerd met
 hun eigen installatiestappen.
+
+## Meerdere stacks op een host (R17)
+
+Een host kan meer dan één stack draaien (`max2`: stack `02` en `03`); `scrum4me-server`
+houdt er één. Iedere stack is een eigen runnerrecord met eigen DinD, bridge, volume,
+token en cyclecontroller. Ze delen alleen deze bundel (read-only), `allowed-job-images.txt`,
+`labels.txt`, `trusted-actions-scope.yml` en het hostverdict. De bundel, het compose-sjabloon,
+de labels en de caps zijn identiek voor iedere stack; een stack met andere caps of labels
+is niet toegestaan. **Een compose-bestand wordt nooit gekopieerd om een stack te maken.**
+
+| | stack `02` (bestaand) | stack `<id>` (nieuw) |
+|---|---|---|
+| runnernaam | `max2-forgejo-runner-02` | `max2-forgejo-runner-<id>` |
+| compose-projectnaam | `forgejo-runner` | `forgejo-runner-<id>` |
+| DinD-volume | `forgejo-runner-dind-data` | `forgejo-runner-<id>-dind-data` |
+| bridge (max. 15 tekens) | `fr-dind0` | `fr-dind1` (`03`), `fr-dind2` (`04`) |
+| tokenbestand | `/opt/forgejo-runner/credentials/forgejo-token` | `/opt/forgejo-runner-stacks/<id>/credentials/forgejo-token` |
+| per-stack-map | `/opt/forgejo-runner/` (de bundelmap) | `/opt/forgejo-runner-stacks/<id>/` |
+| controllerunit | `forgejo-runner-cycle.service` | `forgejo-runner-cycle@<id>.service` |
+
+De per-stack-map staat bewust **buiten** de bundelmap en dus buiten de bundelhash. Ze bevat
+`.env` (de vier verplichte `STACK_*`-waarden plus de gedeelde pins en caps; schrijf haar
+uit de tabel hierboven, kopieer haar nooit uit `.env.example`, dat de waarden van stack
+`02` draagt), `controller.toml` (met `project`, een eigen `marker_path` onder `state/` en
+`env_file = "<per-stack-map>/.env"`), `runner-config.yml`, `state/` en `credentials/`.
+Eigendom: de map, `.env`, `controller.toml`, `runner-config.yml` en `state/` zijn root en niet
+groep- of wereldschrijfbaar (ze voeden root-`docker compose`); `credentials/` is root 0700 en
+alleen `credentials/forgejo-token` is van de runner-UID, mode 0600 (het token wordt als enkel
+bestand gemount). `verify-stack.sh --stacks` toetst dit (exit 64) en de uniciteit van
+projectnaam, bridge, volume, tokenpad, tokeninhoud en `marker_path` plus gelijke pins en caps
+over de stacks (exit 66).
+
+Compose-aanroepen voor een stack geven altijd de projectnaam en het env-bestand mee, en
+worden eerst met `ps` gecontroleerd; een vorm zonder `-p` raakt stack `02`:
+
+```sh
+docker compose -p forgejo-runner-03 -f /opt/forgejo-runner/compose.yaml \
+  --env-file /opt/forgejo-runner-stacks/03/.env ps
+```
+
+**Uitrolvolgorde van een extra stack** (volledig uitgeschreven in het implementatieplan,
+fase 3): per-stack-map en config klaarzetten; `verify-stack.sh --stacks "02 03" --pre-start`;
+alleen de DinD van de nieuwe stack starten met de controller gestopt
+(`up -d dind` met het per-stack-env); het runtime-deel van `verify-stack.sh --stacks "02 03"`,
+de guardproef op de nieuwe bridge en de cross-stackproef; pas daarna
+`systemctl enable --now forgejo-runner-cycle@<id>.service`. Zodra de controller `WAITING`
+bereikt neemt hij gewone jobs aan: al het isolatiebewijs hoort dus vóór die stap.
+
+**Terugdraaien van één stack**, zonder drain: (1) het runnerrecord van die stack in Forgejo
+pauzeren; (2) de drie controles van "Een lopende job niet onderbreken", uitgeschreven voor
+deze stack (`journalctl -u forgejo-runner-cycle@<id>` en `docker compose -p
+forgejo-runner-<id> … --env-file <per-stack-env> exec -T dind …`; een vorm zonder `-p` of
+`-u` raakt stack `02` en kan een vals "idle" geven); (3) `systemctl stop` en `disable` van
+`forgejo-runner-cycle@<id>.service`; (4) `… ps` tonen en bevestigen, dan `… down` zonder
+`-v` (het volume blijft); (5) het runnerrecord op disabled; (6) token en per-stack-map
+blijven tot de rollbackperiode sluit. Stack `02`, de andere runners en de bundel blijven
+ongemoeid.
 
 ## Terugdraaien
 
