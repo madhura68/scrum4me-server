@@ -265,7 +265,7 @@ De trustscope-gate inventariseert vóór deployment:
 - fork- en PR-beleid dat onbetrouwbare code kan laten uitvoeren;
 - deploy keys met schrijfrecht (R16, AUDIT-012). Een schrijf-deploy-key kan buiten iedere goedgekeurde identiteit om een workflow pushen. Zo'n sleutel is een harde afwijking, tenzij JP hem per repository bij fingerprint bevestigt in `deploy_keys_acknowledged`; dan is hij `accepted`. De vorm is fail-closed zoals bij `risky_triggers_acknowledged`. Op 30 september 2026 had alleen `DigiPlein` er één (`ops-agent-digiplein-deploy`); JP heeft die bevestigd.
 
-Twee inventarisregels maken de gate fail-closed waar hij eerder stil groen kon zijn (R16, AUDIT-012). Iedere gepagineerde lijst wordt opgehaald tot een lege pagina of het door `X-Total-Count` gemelde totaal; een afwijking van dat totaal is onleesbaar. Een kleinere serverpaginagrootte kapt dus niets meer af (gemeten maximum vandaag: 50). En een workflow met een risicovolle trigger waarvan een `runs-on` geen letterlijk label is (een expressie, anker, alias, tag of lege waarde, ook als element van een lijst) telt als gebruiker van het gedeelde label, want hij kan er tijdens het draaien op uitkomen. Een labelnaam in YAML-commentaar telt niet meer als gebruik.
+Twee inventarisregels maken de gate fail-closed waar hij eerder stil groen kon zijn (R16, AUDIT-012). Iedere gepagineerde lijst wordt opgehaald tot een lege pagina of het door `X-Total-Count` gemelde totaal; een afwijking van dat totaal is onleesbaar. Een kleinere serverpaginagrootte kapt dus niets meer af (gemeten maximum vandaag: 50). En een workflow met een risicovolle trigger waarvan een `runs-on` geen letterlijk label is (een expressie, anker, alias, tag of lege waarde, ook als element van een lijst; een flowlijst die niet op dezelfde regel sluit is niet volledig gelezen en telt ook) telt als gebruiker van het gedeelde label, want hij kan er tijdens het draaien op uitkomen. Een labelnaam in YAML-commentaar telt niet meer als gebruik.
 
 De gate bepaalt de effectieve workflowbron mechanisch en faalt gesloten als het bestaan, de inhoud of de fallback niet ondubbelzinnig uitleesbaar is. De readinesslaag onderscheidt eerst bronbeschikbaarheid, authenticatie/protocol en inhoudelijke trust. Iedere uitkomst valt verplicht in precies één van vier takken; er bestaat geen default-fallback:
 
@@ -832,6 +832,14 @@ Verdict: **GO**. Dit GO betreft de ontwerpdelta; implementatie, de nieuwe scenar
 **Correctie op de rondebody.** De rondebody zei dat het evidence-bestand de DinD op `:::2375` toont. Dat staat in het onderzoek van ISS-49 (1 oktober 2026), niet in het evidence-bestand. De reviewer vond geen routeerbaar IPv6-adres en voegde terecht geen blocker toe.
 
 **Scope-delta ronde 1:** toegevoegd: één `Before=`-regel in een unit, een mapcontrole en twee foutafhandelingen in `verify-stack.sh`, één regex in `trust_scope.py`, twaalf tests (zeven bats, vijf Python) en vier tekstalinea's; geen nieuw onderdeel, geen TLS, geen scrubherontwerp, geen R17. Het eerste bruikbare resultaat (GO op R16 als voorwaarde voor R17) verschuift niet. De fixes zijn nog niet op de hosts uitgerold; ze volgen met de R17-bundel (fase 2b) of een eerdere bundeluitrol.
+
+**Ronde 2 — 11 oktober 2026 — NO-GO (verwerkt).** Reviewer: Codex-dispatchjob (request `f5c2503d-77ba-4e39-8232-b844fc60175e`, root_message_id `ccac806d-9871-4d6f-abb7-7ecf2caba90f`, idempotency-key `39cc8a5c-c1b6-4ce3-8c9f-5efe0fb13d90`). Pins: dit document op `6811cc57554c1fd337726620c9131ba6beab4fc3` (sha256 `141063fdb0ef27ba…`); evidence ongewijzigd. Telling: 0 BLOCKER / 1 MAJOR / 0 MINOR. Oordeel over ronde 1: bevinding 1 hield stand onder het expliciete restrisico, 2 hield stand, 4 hield stand voor de gespecificeerde meetfouten, 3 hield gedeeltelijk stand. Beide niet-genomen remedies (A: Docker laten afhangen van de guard; B: een `systemctl`-controle) zijn door de reviewer als redelijk aanvaard.
+
+| # | Bevinding | Oordeel | Remedie |
+|---|---|---|---|
+| 5 | MAJOR: een alias op een vervolgregel van een meerregelige flowlijst (`runs-on: [` met `*pool` op de volgende regel) ontsnapt, omdat vervolgregels alleen bij een lege waarde worden verzameld | geaccepteerd (`trust_scope.py`: de waarde is dan `[`; de regex ziet niets) | een flowlijst die niet op dezelfde regel sluit telt conservatief als onleesbaar (de module kiest bewust voor over-detectie; de kosten zijn een handmatige goedkeuring); drie tests (alias op vervolgregel, letterlijke meerregelige lijst, gesloten lijst blijft vrij); §7.7-tekst |
+
+**Scope-delta ronde 2:** toegevoegd: één voorwaarde in `_onleesbare_runs_on`, drie tests, één halve zin in §7.7; niets nieuws.
 
 ## 14. Acceptatie van dit ontwerp
 

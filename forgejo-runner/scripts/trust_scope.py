@@ -151,6 +151,11 @@ def _onleesbare_runs_on(tekst):
             if not rest:
                 return True
             waarde = " ".join(rest)
+        # Een flowlijst die niet op dezelfde regel sluit is niet volledig gelezen:
+        # de vervolgregels van een niet-lege waarde worden niet verzameld, dus
+        # conservatief onleesbaar (R16 review, ronde 2).
+        if waarde.startswith("[") and "]" not in waarde:
+            return True
         if "${{" in waarde or _NIET_LETTERLIJK.search(waarde):
             return True
     return False

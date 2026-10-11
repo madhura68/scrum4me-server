@@ -958,6 +958,19 @@ class TestOnleesbareRunsOn(unittest.TestCase):
     def test_tag_op_lijstelement_telt_als_gedeeld(self):
         self.assertTrue(self._gebruikt("    runs-on: [!!str eigen-runner]\n"))
 
+    def test_alias_in_meerregelige_flowlijst_telt_als_gedeeld(self):
+        # R16 review ronde 2: de vervolgregels van een niet-lege waarde worden
+        # niet verzameld, dus een alias op de volgende regel ontsnapte.
+        self.assertTrue(self._gebruikt("    runs-on: [\n      *pool\n    ]\n", prefix=self.ESCAPED))
+
+    def test_onafgesloten_flowlijst_telt_conservatief_als_gedeeld(self):
+        # Ook een letterlijke lijst die over meer regels loopt: liever een
+        # handmatige goedkeuring dan onder-detectie (zie scan_workflow).
+        self.assertTrue(self._gebruikt("    runs-on: [eigen-runner,\n      andere]\n"))
+
+    def test_afgesloten_flowlijst_op_een_regel_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on: [eigen-runner, andere]\n"))
+
     def test_letterlijke_blokvormige_lijst_blijft_niet_gedeeld(self):
         self.assertFalse(self._gebruikt("    runs-on:\n      - eigen-runner\n      - self-hosted\n"))
 
