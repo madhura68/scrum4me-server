@@ -118,12 +118,20 @@ def _zonder_commentaar(tekst):
     return "\n".join(regels)
 
 
+# Een element dat met een alias (*), anker (&), tag (!), block-scalar (| >) of
+# flow-mapping ({) begint, aan het begin van de waarde of na `[`, `,`, `{` of
+# witruimte (dus ook als lijstelement, R16 review). Een label bevat die tekens
+# nooit aan het begin van een element.
+_NIET_LETTERLIJK = re.compile(r"(^|[\[,{\s])[*&!|>{]")
+
+
 def _onleesbare_runs_on(tekst):
     """True als een `runs-on:` niet uit letterlijke labels bestaat.
 
     Letterlijk is: een gewone scalar of een lijst van gewone scalars. Alles met
-    `${{`, een anker/alias/tag, een block-scalar of een lege waarde zonder
-    lijstitems eronder is niet te herleiden en telt als onleesbaar."""
+    `${{`, een anker/alias/tag (ook als lijstelement), een block-scalar of een
+    lege waarde zonder lijstitems eronder is niet te herleiden en telt als
+    onleesbaar."""
     regels = tekst.splitlines()
     for i, regel in enumerate(regels):
         m = re.search(r"runs-on[\"']?\s*:(.*)$", regel)
@@ -143,7 +151,7 @@ def _onleesbare_runs_on(tekst):
             if not rest:
                 return True
             waarde = " ".join(rest)
-        if "${{" in waarde or waarde[0] in "*&!|>{":
+        if "${{" in waarde or _NIET_LETTERLIJK.search(waarde):
             return True
     return False
 

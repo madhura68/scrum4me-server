@@ -941,6 +941,26 @@ class TestOnleesbareRunsOn(unittest.TestCase):
     def test_anker_telt_als_gedeeld(self):
         self.assertTrue(self._gebruikt("    runs-on: *runner\n"))
 
+    # R16 review: een alias, anker of tag als lijstelement is niet te herleiden.
+    # Het anker draagt hier het label als escape-reeks, zodat de letterlijke
+    # labelnaam nergens in de tekst staat en alleen de runs-on-regel dit kan vangen.
+    ESCAPED = 'env:\n  POOL: &pool "\\u0075buntu-latest"\non:\n  pull_request:\njobs:\n  a:\n'
+
+    def test_alias_in_flowlijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [*pool]\n", prefix=self.ESCAPED))
+
+    def test_alias_in_blokvormige_lijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on:\n      - *pool\n", prefix=self.ESCAPED))
+
+    def test_alias_als_tweede_lijstelement_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [eigen-runner, *pool]\n", prefix=self.ESCAPED))
+
+    def test_tag_op_lijstelement_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [!!str eigen-runner]\n"))
+
+    def test_letterlijke_blokvormige_lijst_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on:\n      - eigen-runner\n      - self-hosted\n"))
+
     def test_lege_runs_on_telt_als_gedeeld(self):
         self.assertTrue(self._gebruikt("    runs-on:\n    steps: []\n"))
 

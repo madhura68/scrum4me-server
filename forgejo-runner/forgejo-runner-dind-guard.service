@@ -5,6 +5,10 @@ Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/
 # Docker hoeft dus niet te draaien om hem te zetten.
 After=network-pre.target
 Wants=network-pre.target
+# De DinD heeft restart: always en komt na een herstart terug zodra Docker start.
+# Een start vóór docker.service legt de regel er dus eerst. Alleen ordening, geen
+# Requires=: een falende guard mag Docker en alle hostcontainers niet stoppen.
+Before=docker.service
 
 [Service]
 Type=oneshot

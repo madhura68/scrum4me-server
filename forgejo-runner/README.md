@@ -29,8 +29,9 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
 2. Kopieer de bundel naar `/opt/forgejo-runner/` op de host, als `root:root`
    met de modi uit de repo (bestanden `0644`, scripts `0755`), en nooit als een
    onbevoorrechte gebruiker: root-units voeren deze bestanden uit en
-   `verify-stack.sh` weigert (exit 64) een bundelmap of bundelbestand dat niet
-   van uid 0 is of groep/wereld-schrijfbaar is (AUDIT-033). Bijvoorbeeld vanuit
+   `verify-stack.sh` weigert (exit 64) een bundelmap, een map met bundelbestanden
+   (zoals `scripts/`) of een bundelbestand dat niet van uid 0 is of
+   groep/wereld-schrijfbaar is (AUDIT-033). Bijvoorbeeld vanuit
    deze map: `sudo rsync -rlpt --chown=root:root --exclude tests/ --exclude
    credentials/ --exclude state/ ./ /opt/forgejo-runner/` (`-p` behoudt de
    repo-modi; `credentials/` en `state/` blijven hostlokaal). Een enkel
@@ -44,7 +45,10 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    runner weigert een token met een newline). Het token komt nooit uit deze repo.
 6. `cp .env.example .env` en `docker compose up -d`: dat start uitsluitend DinD; de
    runner staat onder het profiel `cycle` en wordt alleen door de cyclecontroller
-   gestart.
+   gestart. **Op een eerste uitrol: installeer en activeer eerst de guard**
+   (stap 7, tot en met `systemctl enable --now forgejo-runner-dind-guard.service`)
+   en draai pas daarna `docker compose up -d`: de DinD-API is zonder guard vanaf
+   de host bereikbaar (ISS-49).
 7. Installeer de units en laad systemd opnieuw, exact zo (byte-gelijk aan de
    bundelkopie; `verify-stack.sh` vergelijkt ze en faalt met exit 63 bij een
    ontbrekende of afwijkende unit):
