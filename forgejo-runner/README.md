@@ -68,7 +68,7 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    sudo systemctl daemon-reload
    ```
    Daarna `systemctl enable --now forgejo-runner-dind-guard.service` (de
-   firewallguard die hostverkeer naar de DinD-API op bridge `fr-dind0` weigert,
+   firewallguard die hostverkeer naar de DinD-API op iedere stackbridge `fr-dind+` weigert,
    T-188) en dan `systemctl enable --now forgejo-runner-cycle.service`; die
    laatste vereist de guard-unit.
 

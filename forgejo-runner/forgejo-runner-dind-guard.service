@@ -1,5 +1,5 @@
 [Unit]
-Description=Forgejo Runner DinD-guard: blokkeer hostverkeer naar de DinD-API op fr-dind0 (T-188)
+Description=Forgejo Runner DinD-guard: blokkeer hostverkeer naar de DinD-API op alle stackbridges fr-dind+ (T-188, R17)
 Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
 # De regel hangt aan de interfacenaam en is geldig voordat de bridge bestaat;
 # Docker hoeft dus niet te draaien om hem te zetten.

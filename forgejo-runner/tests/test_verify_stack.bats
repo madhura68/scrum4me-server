@@ -44,7 +44,7 @@ EOF
   # met IP 172.30.0.2) en timeout (exit 0 = de verbinding lukte, 1 = geweigerd).
   export REGELS="$BATS_TEST_TMPDIR/regels"
   for p in 2375 2376; do
-    echo "OUTPUT -o fr-dind0 -p tcp --dport $p -j REJECT --reject-with tcp-reset" >> "$REGELS"
+    echo "OUTPUT -o fr-dind+ -p tcp --dport $p -j REJECT --reject-with tcp-reset" >> "$REGELS"
   done
   cat > "$FAKE_BIN/iptables" <<'FAKE'
 #!/usr/bin/env bash
