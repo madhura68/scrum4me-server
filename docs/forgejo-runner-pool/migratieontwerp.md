@@ -1,7 +1,7 @@
 # Migratieontwerp — bestaande Forgejo Runner uitbreiden naar een tweemachinepool
 
 **Datum:** 31 augustus 2026  
-**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026; post-GO delta R16 (audit-opvolging increment 4) in review sinds 30 september 2026 — zie §13  
+**Status:** ontwerp GO — delta-review R12 (repo-tracking en vier bevindingen) goedgekeurd in ronde 3; post-GO delta R15 (audit-opvolging) GO in ronde 2 op 30 september 2026; post-GO delta R16 (audit-opvolging increment 4) GO in ronde 4 op 11 oktober 2026 — zie §13  
 **Doelhosts:** `scrum4me-server` en `max2`  
 **Fase 1:** stabiele pool met Forgejo Runner 12.10.1  
 **Fase 2:** afzonderlijke rolling upgrade naar Forgejo Runner 13
@@ -808,7 +808,7 @@ Scope: kleiner — de lokale nulbewijsregel vervalt; AUDIT-007 blijft een bekend
 
 Verdict: **GO**. Dit GO betreft de ontwerpdelta; implementatie, de nieuwe scenario's en de handmatige max2-praktijkproef volgen, en uitrol blijft afzonderlijk geautoriseerd.
 
-### Delta R16 — audit-opvolging increment 4 (AUDIT-009/-010/-012/-023/-024/-033) — in review — 30 september 2026
+### Delta R16 — audit-opvolging increment 4 (AUDIT-009/-010/-012/-023/-024/-033) — GO in ronde 4 (11 oktober 2026) — 30 september 2026
 
 **Aanleiding:** de backlog-PBI's 40–45 en 26 uit de audit-opvolging (opdracht JP 30 september 2026). De meting voor PBI-40 vond een nieuw, hoog risico: de ongeauthenticeerde privileged DinD-API was op `max2` voor iedere lokale gebruiker bereikbaar (ISS-49).
 
@@ -859,6 +859,14 @@ Verdict: **GO**. Dit GO betreft de ontwerpdelta; implementatie, de nieuwe scenar
 **Waarom versmallen en niet uitbreiden.** De drie MAJORs vragen een scan die tegen een kwaadwillende opsteller bestand is; dat kan een regel-voor-regel tekstscan niet zijn. De opsteller van een workflow op de default branch is een goedgekeurde schrijver (§7.7, eerste alinea: een andere schrijver is hard) en kan de gedeelde privileged runner sowieso met een gewone workflow gebruiken (§7.6). De scan blijft zijn waarde houden als detector voor vergissingen: wat hij vangt, vangt hij conservatief. De sluitende oplossing is een echte YAML-parser, een eigen ontwerpbesluit (ISS-61).
 
 **Scope-delta ronde 3:** verwijderd: de belofte dat de scan ook bewust versluierde workflows vangt; toegevoegd: één alinea "Grens van deze scan" in §7.7, twee docstrings, issue ISS-61. Geen nieuwe code; het eerste bruikbare resultaat (GO op R16 als voorwaarde voor R17) verschuift niet.
+
+**Ronde 4 — 11 oktober 2026 — GO.** Reviewer: Codex-dispatchjob (request `ffced5bd-7236-4de5-857e-5f2df5a588a4`, root_message_id `4245e941-68cc-41a2-abfc-d0e661b1488d`, idempotency-key `7be499d9-ac69-42d5-b64c-d0cb4ec8fd21`). Pins: dit document op `6068ea55b66807607aadf04a24f1fab516ab2a0e` (sha256 `849ef001ee83fe6e…`). Telling: 0 BLOCKER / 0 MAJOR / 1 MINOR. De reviewer oordeelde: (A) de versmalde claim is eerlijk en voldoende voor het gestelde doel; (B) de feitelijke verwijzingen kloppen met de boom (writers-lus in `classify`, §7.7 eerste alinea, §7.6, de ISS-9-alinea die zegt dat de fork-/PR-goedkeuring niet wordt getoetst); (C) het record is intern compleet en consistent. Dit GO is technisch en betreft alleen de R16-delta; het autoriseert geen uitvoering, merge of deployment, en R17-uitvoering vraagt daarnaast de besluiten en voorwaarden van het R17-plan.
+
+| # | Bevinding | Oordeel | Remedie |
+|---|---|---|---|
+| 10 | MINOR: de oorspronkelijke DispatchResults van ronde 1-3 zijn niet als bewijs meegeleverd, dus de exacte request-id's en historische attributie zijn voor een latere lezer niet zelfstandig te toetsen | geaccepteerd | deze regel: de request-id's, tellingen en pins in dit record komen uit de dispatchtool (`get_dispatch` en `queue_status` op de genoemde id's) en uit de antwoorden van de reviewer; de volledige DispatchResults staan niet in de repo en zijn dus **gemeld, niet zelfstandig geverifieerd** |
+
+Na het GO op `6068ea55` is alleen nog de status in de kop en in de titel van dit R16-onderdeel en dit ronde-4-record toegevoegd; er is niets aan de scan, de guard of de gates gewijzigd. Het enige wat open blijft is ISS-61 (een sluitende classificatie), bewust buiten R16.
 
 ## 14. Acceptatie van dit ontwerp
 
