@@ -941,6 +941,51 @@ class TestOnleesbareRunsOn(unittest.TestCase):
     def test_anker_telt_als_gedeeld(self):
         self.assertTrue(self._gebruikt("    runs-on: *runner\n"))
 
+    # R16 review: een alias, anker of tag als lijstelement is niet te herleiden.
+    # Het anker draagt hier het label als escape-reeks, zodat de letterlijke
+    # labelnaam nergens in de tekst staat en alleen de runs-on-regel dit kan vangen.
+    ESCAPED = 'env:\n  POOL: &pool "\\u0075buntu-latest"\non:\n  pull_request:\njobs:\n  a:\n'
+
+    def test_alias_in_flowlijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [*pool]\n", prefix=self.ESCAPED))
+
+    def test_alias_in_blokvormige_lijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on:\n      - *pool\n", prefix=self.ESCAPED))
+
+    def test_alias_als_tweede_lijstelement_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [eigen-runner, *pool]\n", prefix=self.ESCAPED))
+
+    def test_tag_op_lijstelement_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt("    runs-on: [!!str eigen-runner]\n"))
+
+    def test_alias_in_meerregelige_flowlijst_telt_als_gedeeld(self):
+        # R16 review ronde 2: de vervolgregels van een niet-lege waarde worden
+        # niet verzameld, dus een alias op de volgende regel ontsnapte.
+        self.assertTrue(self._gebruikt("    runs-on: [\n      *pool\n    ]\n", prefix=self.ESCAPED))
+
+    def test_onafgesloten_flowlijst_telt_conservatief_als_gedeeld(self):
+        # Ook een letterlijke lijst die over meer regels loopt: liever een
+        # handmatige goedkeuring dan onder-detectie (zie scan_workflow).
+        self.assertTrue(self._gebruikt("    runs-on: [eigen-runner,\n      andere]\n"))
+
+    # Zelfde klasse als de alias met geëscapete waarde, zonder alias: een
+    # dubbel-gequote scalar met een escape-reeks bevat de labelnaam nergens
+    # letterlijk. Een backslash hoort in geen enkel label.
+    def test_geescapete_scalar_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on: "\\u0075buntu-latest"\n'))
+
+    def test_geescapete_scalar_in_flowlijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on: ["\\x75buntu-latest"]\n'))
+
+    def test_geescapete_scalar_in_blokvormige_lijst_telt_als_gedeeld(self):
+        self.assertTrue(self._gebruikt('    runs-on:\n      - "\\u0075buntu-latest"\n'))
+
+    def test_afgesloten_flowlijst_op_een_regel_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on: [eigen-runner, andere]\n"))
+
+    def test_letterlijke_blokvormige_lijst_blijft_niet_gedeeld(self):
+        self.assertFalse(self._gebruikt("    runs-on:\n      - eigen-runner\n      - self-hosted\n"))
+
     def test_lege_runs_on_telt_als_gedeeld(self):
         self.assertTrue(self._gebruikt("    runs-on:\n    steps: []\n"))
 
