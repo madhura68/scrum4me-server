@@ -98,7 +98,9 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    bundelhash komt van `bash scripts/bundle-hash.sh .` op dezelfde commit. Op een host
    met meer dan één stack komt daar `--stacks "02 03"` achter, en vóór de eerste start
    van een nieuwe stack `--stacks "02 03" --pre-start` (zie "Meerdere stacks op een
-   host").
+   host"). Met `--stacks` draait het script als root: het leest de tokenbestanden
+   (runner-UID, mode 0600) om ze onderling te vergelijken, zonder iets te printen; als
+   niet-root geeft het een exit 66 over een onleesbaar tokenbestand.
 9. Leg de credential voor de trustscan neer als
    `/opt/forgejo-runner/credentials/trust-scan.env`, mode `0600`, eigendom `root`,
    met exact één regel `FORGEJO_TOKEN=<waarde>`. De waarde is een Forgejo
