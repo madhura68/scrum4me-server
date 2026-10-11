@@ -49,6 +49,15 @@ De `max2`-repo bevat geen kopie; zie §6.1 van het migratieontwerp
    (stap 7, tot en met `systemctl enable --now forgejo-runner-dind-guard.service`)
    en draai pas daarna `docker compose up -d`: de DinD-API is zonder guard vanaf
    de host bereikbaar (ISS-49).
+
+   Per stack zijn vier variabelen verplicht, zonder standaardwaarde:
+   `STACK_BRIDGE`, `STACK_VOLUME`, `STACK_CONFIG` en `STACK_TOKEN` (R17, §5). Stack
+   `02` draagt ze in `.env` (de waarden staan al in `.env.example`); een tweede
+   stack krijgt een eigen env-bestand onder `/opt/forgejo-runner-stacks/<id>/` en
+   een eigen projectnaam. Ontbreekt een variabele, dan faalt **iedere**
+   compose-aanroep, ook `stop`, `down` en `exec`: geef bij een stack met een eigen
+   env-bestand dus bij ieder subcommando `--env-file <pad>` en `-p <projectnaam>`
+   mee.
 7. Installeer de units en laad systemd opnieuw, exact zo (byte-gelijk aan de
    bundelkopie; `verify-stack.sh` vergelijkt ze en faalt met exit 63 bij een
    ontbrekende of afwijkende unit):
