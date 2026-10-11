@@ -570,5 +570,138 @@ class TestAllowedImagesFailClosed(unittest.TestCase):
             self.assertFalse(rt._blocked)                  # recoverable gate, not the sticky _block
 
 
+class TestEnvFile(unittest.TestCase):
+    """M52 T2 (R17 §5): optionele sleutel dind.env_file. Gezet: iedere compose-aanroep van
+    de controller krijgt `--env-file <pad>` (na -p). Niet gezet: argv ongewijzigd (stack 02)."""
+    ENV = "/opt/forgejo-runner-stacks/03/.env"
+    BASIS = ["docker", "compose", "-f", "/c", "-p", "p"]
+
+    def setUp(self):
+        self.spawned = []
+        self.popen = lambda argv, **kw: self.spawned.append((argv, kw)) or FakePopen(argv)
+
+    def _toml(self, tmp, regel):
+        data = VALID_TOML.replace(b'project = "forgejo-runner"', b'project = "forgejo-runner"\n' + regel)
+        return write_toml(tmp, data)
+
+    def test_config_default_is_leeg(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(cr.load_config(write_toml(tmp)).env_file, "")
+
+    def test_config_leest_env_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = cr.load_config(self._toml(tmp, f'env_file = "{self.ENV}"'.encode()))
+        self.assertEqual(cfg.env_file, self.ENV)
+
+    def test_config_lege_env_file_is_een_fout(self):
+        # Fail-closed: een stil weggevallen env-bestand laat compose terugvallen op de .env
+        # van de projectmap, en dat is die van stack 02 (R17 §5, S1-bewijs).
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError) as ctx:
+                cr.load_config(self._toml(tmp, b'env_file = ""'))
+        self.assertIn("dind.env_file", str(ctx.exception))
+
+    def test_runner_argv_met_env_file(self):
+        ca.RunnerLifecycle("/c", "p", popen=self.popen, env_file=self.ENV).start()
+        self.assertEqual(self.spawned[-1][0],
+            self.BASIS + ["--env-file", self.ENV, "--profile", "cycle", "run", "--rm", "runner"])
+
+    def test_pull_argv_met_env_file(self):
+        ca.PullOp("/c", "p", popen=self.popen, env_file=self.ENV).start("img@sha256:" + "a" * 64)
+        argv = self.spawned[-1][0]
+        self.assertEqual(argv[:9], self.BASIS + ["--env-file", self.ENV, "exec"])
+        self.assertIn("pull", argv)
+
+    def test_scrub_argv_met_env_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = os.path.join(tmp, "scrub.sh")
+            with open(sc, "wb") as f: f.write(b"#!/bin/sh\n")
+            ca.ScrubOp("/c", "p", sc, "/etc/forgejo-runner/allowed-job-images.txt",
+                       popen=self.popen, env_file=self.ENV).start()
+        argv = self.spawned[-1][0]
+        self.assertEqual(argv[:9], self.BASIS + ["--env-file", self.ENV, "exec"])
+
+    def test_dind_up_en_exec_met_env_file(self):
+        seen = []
+        d = ca.DindHealth("/c", "p", run=lambda a, t: seen.append(a) or _cp(), env_file=self.ENV)
+        d.ensure_up(); d.healthy()
+        self.assertEqual(seen[0], self.BASIS + ["--env-file", self.ENV, "up", "-d", "dind"])
+        self.assertEqual(seen[1][:8], self.BASIS + ["--env-file", self.ENV])
+        self.assertIn("exec", seen[1])
+
+    def test_reconcile_restart_dind_met_env_file(self):
+        seen = []
+        rec = ca.Reconcile("/c", "p", "/m", run=lambda a, t: seen.append(a) or _cp(), env_file=self.ENV)
+        rec.restart_dind()
+        self.assertEqual(seen[0], self.BASIS + ["--env-file", self.ENV, "kill", "dind"])
+        self.assertEqual(seen[1], self.BASIS + ["--env-file", self.ENV, "up", "-d", "dind"])
+
+    def test_zonder_env_file_geen_vlag(self):
+        # Stack 02 zet de sleutel niet: de argv blijft zoals voor R17.
+        seen = []
+        ca.DindHealth("/c", "p", run=lambda a, t: seen.append(a) or _cp()).ensure_up()
+        ca.Reconcile("/c", "p", "/m", run=lambda a, t: seen.append(a) or _cp()).restart_dind()
+        ca.RunnerLifecycle("/c", "p", popen=self.popen).start()
+        for argv in seen + [self.spawned[-1][0]]:
+            self.assertNotIn("--env-file", argv)
+
+    def test_build_adapters_geeft_env_file_aan_alle_compose_adapters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = cr.load_config(self._toml(tmp, f'env_file = "{self.ENV}"'.encode()))
+        _clock, ad = cr._build_adapters(cfg)
+        for naam in ("dind", "runner", "pull", "scrub", "reconcile"):
+            argv = getattr(ad, naam)._b
+            self.assertEqual(argv[argv.index("--env-file") + 1], self.ENV, naam)
+
+    def _check(self, tmp, env_file=None, extra=b""):
+        regel = b"" if env_file is None else f'env_file = "{env_file}"'.encode()
+        p = _check_toml(tmp)
+        t = open(p, "rb").read().replace(b'project = "forgejo-runner"', b'project = "forgejo-runner"\n' + regel)
+        open(p, "wb").write(t + extra)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = cr.main(["--config", p, "--check"])
+        return rc, err.getvalue()
+
+    def test_check_met_leesbaar_env_file_slaagt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.path.join(tmp, "stack.env"); open(env, "w").close()
+            self.assertEqual(self._check(tmp, env), (0, ""))
+
+    def test_check_onbestaand_env_file_geeft_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, err = self._check(tmp, os.path.join(tmp, "weg.env"))
+        self.assertEqual(rc, 2)
+        self.assertIn("env_file is geen bestaand bestand", err)
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read mode 000")
+    def test_check_onleesbaar_env_file_geeft_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.path.join(tmp, "stack.env"); open(env, "w").close(); os.chmod(env, 0)
+            rc, err = self._check(tmp, env)
+        self.assertEqual(rc, 2)
+        self.assertIn("env_file is niet leesbaar", err)
+
+    def test_check_env_file_onder_protecthome_geeft_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, err = self._check(tmp, "/root/stack.env")
+        self.assertEqual(rc, 2)
+        self.assertIn("env_file staat onder een pad dat ProtectHome", err)
+
+    def test_check_zonder_env_file_blijft_slagen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._check(tmp), (0, ""))
+
+    def test_check_onbestaande_instantie_geeft_exit_2(self):
+        # forgejo-runner-cycle@99.service wijst naar /opt/forgejo-runner-stacks/99/controller.toml;
+        # bestaat die map niet, dan faalt load_config en geeft --check exit 2.
+        with tempfile.TemporaryDirectory() as tmp:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = cr.main(["--config", os.path.join(tmp, "stacks", "99", "controller.toml"), "--check"])
+        self.assertEqual(rc, 2)
+        self.assertIn("config-fout:", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

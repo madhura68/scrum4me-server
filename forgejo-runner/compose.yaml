@@ -2,6 +2,14 @@
 # Gedeelde runner- en DinD-stack. Byte-identiek op beide hosts.
 # De runnerservice staat onder het profiel "cycle": `docker compose up -d` start
 # uitsluitend DinD, en alleen de cyclecontroller maakt per job een runner aan.
+#
+# Meerdere stacks per host (R17, §5): de vier STACK_*-variabelen (bridge, volume,
+# configpad, tokenpad) zijn VERPLICHT en hebben bewust geen standaardwaarde; een
+# vergeten variabele zou een nieuwe stack stil op het volume van stack 02 laten
+# uitkomen. Iedere stack krijgt zijn waarden uit een eigen env-bestand
+# (`--env-file`, en `-p <projectnaam>`); stack 02 zet ze in /opt/forgejo-runner/.env.
+# Zonder die waarden faalt iedere compose-aanroep, ook stop en down: geef dus bij
+# ieder subcommando `--env-file` mee.
 
 services:
   dind:
@@ -49,8 +57,8 @@ services:
     networks:
       - runner-control
     volumes:
-      - ./runner-config.yml:/etc/forgejo-runner/config.yml:ro
-      - /opt/forgejo-runner/credentials/forgejo-token:/run/forgejo-runner-credentials/forgejo-token:ro
+      - ${STACK_CONFIG:?STACK_CONFIG ontbreekt (per-stack-env)}:/etc/forgejo-runner/config.yml:ro
+      - ${STACK_TOKEN:?STACK_TOKEN ontbreekt (per-stack-env)}:/run/forgejo-runner-credentials/forgejo-token:ro
     cpus: ${RUNNER_CPUS}
     mem_limit: ${RUNNER_MEM}
     pids_limit: ${RUNNER_PIDS}
@@ -65,11 +73,11 @@ networks:
     driver: bridge
     internal: false           # DinD moet images kunnen pullen; geen hostpoorten
     driver_opts:
-      # Vaste bridgenaam (<= 15 tekens): dind-guard.sh blokkeert hostverkeer naar
-      # 2375/2376 op deze interface (T-188). Wijzigen vereist het netwerk opnieuw
-      # te maken (README "Uitrollen").
-      com.docker.network.bridge.name: fr-dind0
+      # Vaste bridgenaam per stack (<= 15 tekens, patroon fr-dind<N>): dind-guard.sh
+      # blokkeert hostverkeer naar 2375/2376 op deze interface (T-188). Wijzigen
+      # vereist het netwerk opnieuw te maken (README "Uitrollen").
+      com.docker.network.bridge.name: ${STACK_BRIDGE:?STACK_BRIDGE ontbreekt (per-stack-env)}
 
 volumes:
   dind-data:
-    name: forgejo-runner-dind-data
+    name: ${STACK_VOLUME:?STACK_VOLUME ontbreekt (per-stack-env)}

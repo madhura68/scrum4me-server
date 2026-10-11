@@ -1,0 +1,33 @@
+[Unit]
+Description=Forgejo Runner cyclecontroller, stack %i (een job per runnerproces)
+Documentation=https://git.jp-visser.nl/janpeter/scrum4me-server/src/branch/main/docs/forgejo-runner-pool/migratieontwerp.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+# De controller draait nooit zonder de firewallguard op de DinD-API (T-188).
+Requires=forgejo-runner-dind-guard.service
+After=forgejo-runner-dind-guard.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/forgejo-runner
+# Template voor een extra stack (R17 §5): %i is de stack-id, de configuratie staat
+# onder /opt/forgejo-runner-stacks/%i/. Bewust geen ExecStartPre: een falende
+# pre-check geeft met Restart=on-failure een eindeloze herstartlus. Een instantie
+# zonder per-stack-map faalt al in het hoofdproces (exit 2 van load_config).
+ExecStart=/usr/bin/python3 /opt/forgejo-runner/scripts/forgejo_runner_cycle.py --config /opt/forgejo-runner-stacks/%i/controller.toml
+# De toestand van de controller leeft in het geheugen. Een restart begint
+# altijd opnieuw in SOURCE_WAIT en doorloopt alle gates, dus hij omzeilt nooit
+# een gate. Een fence, een quarantaine of een backoffteller overleeft een
+# restart níet; alleen de operatiemarker en de check op achtergebleven
+# runnercontainers doen dat (ontwerp R15).
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=300
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

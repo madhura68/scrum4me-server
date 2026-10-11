@@ -16,6 +16,12 @@ probe_timeout_seconds = 5
 compose_file = "/opt/forgejo-runner/compose.yaml"
 project      = "forgejo-runner"
 marker_path  = "/opt/forgejo-runner/state/cycle-op.marker"  # §6.4: apart, persistent controlepad — NIET het docker-datavolume
+# Optioneel (R17 §5): per-stack-env voor iedere compose-aanroep van de controller
+# (`--env-file <pad>`). Stack 02 laat dit weg en gebruikt de .env van de projectmap;
+# een tweede stack zet hier zijn eigen bestand, bv.
+# env_file = "/opt/forgejo-runner-stacks/03/.env"
+# Een gezette maar lege waarde, een onleesbaar pad of een pad onder /root, /home of
+# /run/user is een fout (exit 2 van --check).
 
 [runner]
 allowed_images_file = "/opt/forgejo-runner/allowed-job-images.txt"

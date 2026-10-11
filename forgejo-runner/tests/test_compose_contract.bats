@@ -10,6 +10,13 @@ setup() {
   LABELS="$REPO_ROOT/forgejo-runner/labels.txt"
   IMAGES="$REPO_ROOT/forgejo-runner/allowed-job-images.txt"
   ENV_EXAMPLE="$REPO_ROOT/forgejo-runner/.env.example"
+  # Compose van vóór R17, bevroren: de referentie voor Gate G1 (byte-gelijke config).
+  FIXTURE_OLD="$REPO_ROOT/forgejo-runner/tests/fixtures/compose.pre-n-stacks.yaml"
+  # De vier per-stack-waarden van stack 02 (R17 §5). In compose.yaml zijn ze
+  # verplicht en hebben ze geen standaardwaarde; stack 02 zet ze in zijn .env.
+  STACK02=(STACK_BRIDGE=fr-dind0 STACK_VOLUME=forgejo-runner-dind-data
+           STACK_CONFIG=./runner-config.yml
+           STACK_TOKEN=/opt/forgejo-runner/credentials/forgejo-token)
 }
 
 # Regels zonder commentaar of lege regels; de bestanden dragen uitleg bovenin.
@@ -46,8 +53,56 @@ sys.exit(0 if ('privileged: true' in dind and 'privileged' not in runner) else 1
   grep -q 'restart: always' "$COMPOSE"
 }
 
-@test "het dind-volume heeft de expliciete naam" {
-  grep -q 'name: forgejo-runner-dind-data' "$COMPOSE"
+@test "het dind-volume heeft een expliciete naam uit STACK_VOLUME, zonder standaardwaarde" {
+  grep -qE 'name: \$\{STACK_VOLUME:\?' "$COMPOSE"
+}
+
+@test "de vier per-stack-variabelen zijn verplicht en hebben geen standaardwaarde (R17 §5)" {
+  # Een standaardwaarde zou een vergeten variabele bij een nieuwe stack stil op
+  # het volume, de bridge of het token van stack 02 laten uitkomen.
+  run grep -cE '\$\{STACK_(BRIDGE|VOLUME|CONFIG|TOKEN):\?' "$COMPOSE"
+  [ "$output" = "4" ]
+  run grep -E '\$\{STACK_[A-Z]+(:-|-|:=|=)' "$COMPOSE"
+  [ "$status" -ne 0 ]
+}
+
+@test "met de vier stack-02-waarden is config byte-gelijk aan die van het compose-bestand van vóór R17 (Gate G1)" {
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || skip "docker compose ontbreekt"
+  D="$BATS_TEST_TMPDIR/proj"
+  mkdir -p "$D"
+  cp "$FIXTURE_OLD" "$D/compose.old.yaml"
+  cp "$COMPOSE" "$D/compose.new.yaml"
+  cp "$ENV_EXAMPLE" "$D/.env"
+  for profiel in none cycle; do
+    args=(-p forgejo-runner --project-directory "$D")
+    [ "$profiel" = none ] || args+=(--profile "$profiel")
+    oud="$(docker compose "${args[@]}" -f "$D/compose.old.yaml" config)"
+    nieuw="$(docker compose "${args[@]}" -f "$D/compose.new.yaml" config)"
+    [ -n "$oud" ]
+    [ "$oud" = "$nieuw" ] || { diff <(echo "$oud") <(echo "$nieuw") || true; false; }
+  done
+}
+
+@test "ontbreekt een van de vier per-stack-variabelen, dan faalt config en noemt de variabele" {
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || skip "docker compose ontbreekt"
+  D="$BATS_TEST_TMPDIR/proj"
+  mkdir -p "$D"
+  cp "$COMPOSE" "$D/compose.yaml"
+  # Ook als de projectmap een volledige .env heeft: met --env-file wordt die niet gelezen.
+  cp "$ENV_EXAMPLE" "$D/.env"
+  for var in STACK_BRIDGE STACK_VOLUME STACK_CONFIG STACK_TOKEN; do
+    grep -v "^$var=" "$ENV_EXAMPLE" > "$D/zonder.env"
+    run docker compose --profile cycle -p forgejo-runner-03 -f "$D/compose.yaml" --env-file "$D/zonder.env" config -q
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"$var"* ]] || { echo "$var niet genoemd: $output"; false; }
+  done
+}
+
+@test "de env-example draagt de vier waarden van stack 02" {
+  grep -qxF 'STACK_BRIDGE=fr-dind0' "$ENV_EXAMPLE"
+  grep -qxF 'STACK_VOLUME=forgejo-runner-dind-data' "$ENV_EXAMPLE"
+  grep -qxF 'STACK_CONFIG=./runner-config.yml' "$ENV_EXAMPLE"
+  grep -qxF 'STACK_TOKEN=/opt/forgejo-runner/credentials/forgejo-token' "$ENV_EXAMPLE"
 }
 
 @test "de runner krijgt het juiste docker-endpoint" {
@@ -106,15 +161,17 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
 
 @test "de env-example bevat geen tokens, wachtwoorden of UUID's" {
   # Toets de WAARDEN, niet de uitleg: commentaar mag het woord "token" noemen.
-  run grep -iE '^[A-Z_]*(TOKEN|PASSWORD|SECRET|UUID)[A-Z_]*=|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' <(inhoud "$ENV_EXAMPLE")
+  # STACK_TOKEN is het PAD van het tokenbestand (R17 §5), geen token: alleen
+  # dat ene pad is toegestaan, iedere andere waarde blijft een bevinding.
+  run grep -iE '^[A-Z_]*(TOKEN|PASSWORD|SECRET|UUID)[A-Z_]*=|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' <(inhoud "$ENV_EXAMPLE" | grep -vxF 'STACK_TOKEN=/opt/forgejo-runner/credentials/forgejo-token')
   [ "$status" -ne 0 ]
-  # En alleen imagepins en caps mogen erin staan.
-  run grep -vE '^(RUNNER_IMAGE|DIND_IMAGE|JOB_IMAGE|RUNNER_CPUS|RUNNER_MEM|RUNNER_PIDS|DIND_CPU_QUOTA|DIND_MEM|DIND_PIDS)=' <(inhoud "$ENV_EXAMPLE")
+  # En alleen imagepins, caps en de vier per-stack-waarden mogen erin staan.
+  run grep -vE '^(RUNNER_IMAGE|DIND_IMAGE|JOB_IMAGE|RUNNER_CPUS|RUNNER_MEM|RUNNER_PIDS|DIND_CPU_QUOTA|DIND_MEM|DIND_PIDS|STACK_BRIDGE|STACK_VOLUME|STACK_CONFIG|STACK_TOKEN)=' <(inhoud "$ENV_EXAMPLE")
   [ "$status" -ne 0 ]
 }
 
 @test "runner draagt one-job --wait; dind mount de allowlist read-only" {
-  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+  run env "${STACK02[@]}" COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
       DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "one-job"
@@ -128,7 +185,7 @@ sys.exit(0 if 'profiles:' in runner and 'cycle' in runner else 1)
   # configured" -> exit 1 -> de runner komt nooit online. De oude exec-test las die
   # "0 connections"-fout juist als succes. Dit contract eist -c + het configpad IN
   # het command (niet enkel in de volume-mount).
-  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+  run env "${STACK02[@]}" COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
       DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c '
@@ -146,7 +203,7 @@ assert "one-job" in cmd and "--wait" in cmd, f"one-job/--wait ontbreekt: {cmd}"
   # en Docker weigert NanoCpus > aantal cores bij container-create (11,5 > 8 op
   # scrum4me-server → "range of CPUs is from 0.01 to 8.00"). cpu_period/cpu_quota
   # wordt niet tegen NumCPU gevalideerd en is dus host-portabel.
-  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+  run env "${STACK02[@]}" COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
       DIND_CPU_QUOTA=1150000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c '
@@ -162,7 +219,7 @@ assert not bad, f"dind gebruikt nog een NanoCpus-vorm (cpus/nano_cpus): {bad}"
 }
 
 @test "het runner-control-netwerk heeft de vaste bridgenaam fr-dind0 (dind-guard, T-188)" {
-  run env COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
+  run env "${STACK02[@]}" COMPOSE_PROFILES=cycle RUNNER_IMAGE=x DIND_IMAGE=y RUNNER_CPUS=1 RUNNER_MEM=1g RUNNER_PIDS=100 \
       DIND_CPU_QUOTA=100000 DIND_MEM=1g DIND_PIDS=100 docker compose -f compose.yaml config --format json
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c '

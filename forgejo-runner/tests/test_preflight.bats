@@ -112,3 +112,86 @@ ruime_host() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"schijf: OK"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# --stacks N (R17 §7.8, M52 T6): de som en de schijfregel worden N x per stack
+# ---------------------------------------------------------------------------
+
+# Stap-A-gegevens van max2 (28 vCPU, 21.029.359.616 bytes beschikbaar) met de caps van de
+# bundel (runner 1,0 vCPU/1 GiB, DinD 11,5 vCPU/5 GiB).
+max2_stap_a() {
+  printf 'vcpu\t28\n'                              > "$FACTS"
+  printf 'mem_total_bytes\t32000000000\n'         >> "$FACTS"
+  printf 'mem_available_bytes\t21029359616\n'     >> "$FACTS"
+  printf 'docker_root_dir\t/var/lib/docker\n'     >> "$FACTS"
+  printf 'docker_root_free_bytes\t500000000000\n' >> "$FACTS"
+  printf 'docker_root_free_pct\t60\n'             >> "$FACTS"
+  printf 'docker_root_free_inodes_pct\t80\n'      >> "$FACTS"
+  cat > "$CAPS" <<'EOS'
+RUNNER_CPU=1.0
+RUNNER_MEM_BYTES=1073741824
+DIND_CPU=11.5
+DIND_MEM_BYTES=5368709120
+EOS
+}
+
+@test "zonder --stacks is de uitvoer byte-gelijk aan die van vóór R17" {
+  max2_stap_a
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES"
+  [ "$status" -eq 0 ]
+  [ "$output" = "vcpu: OK — som 12.5 binnen 50% van 28
+geheugen: OK — som 6442450944 binnen 50% van 21029359616
+schijf: OK — 60% vrij en 500000000000 bytes >= 23622320128 nodig
+inodes: OK — 80% vrij" ]
+}
+
+@test "--stacks 1 geeft dezelfde uitvoer als zonder --stacks" {
+  max2_stap_a
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES"
+  zonder="$output"
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES" --stacks 1
+  [ "$status" -eq 0 ]
+  [ "$output" = "$zonder" ]
+}
+
+@test "max2 met twee stacks is rood op vCPU én geheugen (exit 40, beide redenen genoemd)" {
+  max2_stap_a
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES" --stacks 2
+  [ "$status" -eq 40 ]
+  [[ "$output" == *"vcpu: FAIL"* ]]
+  [[ "$output" == *"geheugen: FAIL"* ]]
+  [[ "$output" == *"(2 stacks)"* ]]
+  [[ "$output" == *"schijf: OK"* ]]
+}
+
+@test "max2 met drie stacks is rood" {
+  max2_stap_a
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES" --stacks 3
+  [ "$status" -eq 40 ]
+  [[ "$output" == *"vcpu: FAIL"* ]]
+  [[ "$output" == *"geheugen: FAIL"* ]]
+}
+
+@test "de schijfregel is N x (images plus 20 GiB): twee stacks vragen het dubbele" {
+  max2_stap_a
+  # Vrij 30 GB: genoeg voor een stack (23,6 GB nodig), te weinig voor twee (47,2 GB).
+  sed -i.bak 's/^docker_root_free_bytes.*/docker_root_free_bytes	30000000000/' "$FACTS"
+  # Ruime caps zodat alleen de schijfregel kan falen.
+  printf 'RUNNER_CPU=0.1\nRUNNER_MEM_BYTES=1000\nDIND_CPU=0.1\nDIND_MEM_BYTES=1000\n' > "$CAPS"
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES" --stacks 1
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --images "$IMAGES" --stacks 2
+  [ "$status" -eq 40 ]
+  [[ "$output" == *"schijf: FAIL"* ]]
+  [[ "$output" == *"47244640256 nodig"* ]]
+}
+
+@test "een ongeldige waarde voor --stacks is een gebruiksfout" {
+  max2_stap_a
+  for waarde in 0 -1 abc 1.5 ""; do
+    run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --stacks "$waarde"
+    [ "$status" -eq 2 ]
+  done
+  run bash "$SCRIPT" --facts "$FACTS" --caps "$CAPS" --stacks
+  [ "$status" -eq 2 ]
+}

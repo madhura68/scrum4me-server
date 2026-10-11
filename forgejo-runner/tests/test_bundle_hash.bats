@@ -93,6 +93,19 @@ setup() {
   [ "${#h1}" -eq 64 ]
 }
 
+@test "de bundellijst bevat de template-unit en het stackcontrolescript en geen per-stack-bestand (R17)" {
+  # De per-stack-mappen staan buiten de bundelmap (/opt/forgejo-runner-stacks/<id>/); de
+  # hostlokale bestanden van stack 02 blijven buiten de hash zoals voorheen.
+  lijst="$(bash "$SCRIPT" "$REPO_ROOT/forgejo-runner" --list | tr '\0' '\n')"
+  grep -qxF './forgejo-runner-cycle@.service' <<< "$lijst"
+  grep -qxF './scripts/stack_invariants.py' <<< "$lijst"
+  grep -qxF './.env.example' <<< "$lijst"
+  run grep -E '(^|/)(\.env|controller\.toml|runner-config\.yml|BUNDLE_COMMIT|trust-verdict\.json)$' <<< "$lijst"
+  [ "$status" -ne 0 ]
+  run grep -E '^\./(credentials|state|tests)/' <<< "$lijst"
+  [ "$status" -ne 0 ]
+}
+
 @test "een ontbrekende map is een gebruiksfout" {
   run bash "$SCRIPT" "$BATS_TEST_TMPDIR/bestaat-niet"
   [ "$status" -eq 2 ]
