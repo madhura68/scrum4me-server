@@ -131,7 +131,16 @@ def _onleesbare_runs_on(tekst):
     Letterlijk is: een gewone scalar of een lijst van gewone scalars. Alles met
     `${{`, een anker/alias/tag (ook als lijstelement), een block-scalar of een
     lege waarde zonder lijstitems eronder is niet te herleiden en telt als
-    onleesbaar."""
+    onleesbaar.
+
+    GRENS (ontwerp §7.7, ISS-61): dit is een regel-voor-regel tekstscan, geen
+    YAML-parser, en dus een detector voor vergissingen, geen grens tegen een
+    opsteller die met opzet versluiert. Niet gedekt: een andere schrijfwijze
+    van de sleutel `runs-on` zelf (gequote sleutel met escape-reeks, `? runs-on`,
+    aliassleutel, sleutel over een regelgrens) en vervolgregels van een niet-
+    lege waarde (meerregelige gequote scalar, een sluithaak of ` #` binnen een
+    quote). Een sluitende oplossing vraagt een echte parser; dat is een eigen
+    ontwerpbesluit en geen reden om hier per geval een regex bij te zetten."""
     regels = tekst.splitlines()
     for i, regel in enumerate(regels):
         m = re.search(r"runs-on[\"']?\s*:(.*)$", regel)
@@ -172,6 +181,11 @@ def scan_workflow(tekst, shared_labels):
     Over-detectie kost hooguit een handmatige goedkeuring in de allowlist;
     onder-detectie laat onbetrouwbare code toe. Daarom een tekstscan die eerder
     te veel dan te weinig markeert.
+
+    GRENS (ontwerp §7.7, ISS-61): ook de triggerdetectie is een rauwe
+    substringscan. Een triggernaam met een escape-reeks of regelvoortzetting
+    wordt niet gevonden, waarna de runs-on-fallback niet draait. De scan vangt
+    vergissingen, geen versluiering door een goedgekeurde schrijver.
     """
     gevonden = []
     for trigger in RISKY_TRIGGERS:
