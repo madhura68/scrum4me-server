@@ -41,6 +41,7 @@ class Config:
     log_level: str
     scrub_deadline: float = 300.0
     pull_deadline: float = 900.0
+    env_file: str = ""  # R17 §5: per-stack-env voor compose; leeg = stack 02 (project-.env)
 
 
 def _req(d, section, key):
@@ -53,6 +54,11 @@ def _req(d, section, key):
 def load_config(path):
     with open(path, "rb") as fh:
         d = tomllib.load(fh)
+    env_file = d.get("dind", {}).get("env_file", "")
+    if "env_file" in d.get("dind", {}) and not str(env_file).strip():
+        # Fail-closed: zonder --env-file valt compose terug op de .env van de projectmap,
+        # en dat is die van stack 02. Een gezette maar lege sleutel is dus een fout.
+        raise ValueError("controller.toml: dind.env_file is leeg")
     return Config(
         forgejo_base_url=str(_req(d, "forgejo", "base_url")),
         probe_timeout=float(_req(d, "forgejo", "probe_timeout_seconds")),
@@ -71,6 +77,7 @@ def load_config(path):
         log_level=str(d.get("log", {}).get("level", "INFO")),
         scrub_deadline=float(d["runner"].get("scrub_deadline_seconds", 300)),
         pull_deadline=float(d["runner"].get("pull_deadline_seconds", 900)),
+        env_file=str(env_file),
     )
 
 
@@ -89,7 +96,10 @@ def validate_config(cfg):
     Bewust niet in load_config: die draait ook bij echte start, waar de
     trust-verdict-map en bestanden door timers/installatie ontstaan."""
     problems = []
-    for naam in ("compose_file", "allowed_images_file", "labels_file", "allowlist_file"):
+    bestanden = ["compose_file", "allowed_images_file", "labels_file", "allowlist_file"]
+    if cfg.env_file:
+        bestanden.append("env_file")
+    for naam in bestanden:
         pad = getattr(cfg, naam)
         # ISS-47: forgejo-runner-cycle.service has ProtectHome=true, so these trees are
         # invisible to the service even when --check (run by an operator) can see them.
@@ -583,22 +593,14 @@ def _build_adapters(cfg):
 
     scrub = os.path.join(os.path.dirname(__file__), "scrub-dind.sh")
     allow = "/etc/forgejo-runner/allowed-job-images.txt"
+    kw = {"timeout": cfg.subprocess_timeout, "env_file": cfg.env_file}
     return Clock(), Adapters(
         probe=TransportProbe(cfg.forgejo_base_url, cfg.probe_timeout),
-        dind=DindHealth(cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout),
-        runner=RunnerLifecycle(
-            cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout
-        ),
-        pull=PullOp(cfg.compose_file, cfg.project, timeout=cfg.subprocess_timeout),
-        scrub=ScrubOp(
-            cfg.compose_file, cfg.project, scrub, allow, timeout=cfg.subprocess_timeout
-        ),
-        reconcile=Reconcile(
-            cfg.compose_file,
-            cfg.project,
-            cfg.marker_path,
-            timeout=cfg.subprocess_timeout,
-        ),
+        dind=DindHealth(cfg.compose_file, cfg.project, **kw),
+        runner=RunnerLifecycle(cfg.compose_file, cfg.project, **kw),
+        pull=PullOp(cfg.compose_file, cfg.project, **kw),
+        scrub=ScrubOp(cfg.compose_file, cfg.project, scrub, allow, **kw),
+        reconcile=Reconcile(cfg.compose_file, cfg.project, cfg.marker_path, **kw),
         trust=TrustVerdictReader(
             cfg.trust_verdict_path, cfg.labels_file, cfg.allowlist_file
         ),

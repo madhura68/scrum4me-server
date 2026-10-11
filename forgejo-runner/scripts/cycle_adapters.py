@@ -68,9 +68,19 @@ def _run(argv, timeout):
 
 class _Compose:
     def __init__(
-        self, compose_file, project, popen=subprocess.Popen, run=_run, timeout=30.0
+        self,
+        compose_file,
+        project,
+        popen=subprocess.Popen,
+        run=_run,
+        timeout=30.0,
+        env_file="",
     ):
         self._b = ["docker", "compose", "-f", compose_file, "-p", project]
+        # R17 §5: een stack met een eigen per-stack-env geeft dat bestand aan iedere
+        # compose-aanroep mee. Leeg (stack 02) laat de argv ongewijzigd.
+        if env_file:
+            self._b += ["--env-file", env_file]
         self._popen = popen
         self._run = run
         self._t = timeout
