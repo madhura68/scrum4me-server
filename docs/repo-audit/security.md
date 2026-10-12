@@ -470,7 +470,9 @@ Things that are present and are not secrets, but are worth knowing:
   2026-10-12 (decision, not measured by the audit):** fork-PR approval is fixed Forgejo behaviour, not a
   per-repository setting (Forgejo v15.0 docs, "Security of Pull Requests"); every author with only read
   access needs approval. Fork PRs are approved only with `Approve once`, never `Approve always`. Write
-  access bypasses approval. See `migratieontwerp.md` §7.7 and delta R18. The PR-head half stays open.
+  access bypasses approval. The premise of a per-repository setting in this question, and the
+  `:277` pointer, are therefore superseded. See `migratieontwerp.md` §7.7 and delta R18. The PR-head
+  half stays open.
 * **Q5.** What is the instance's maximum API page size (SEC-8.4)? **Measured by the lead on 2026-09-30, read-only: `max_response_items` = 50**, equal to the scanner's page size; pagination is complete today and SEC-8.4 is latent.
 * **Q6.** Who owns `/opt/forgejo-runner/` on the hosts? If a non-root deploy account can write there,
   it controls scripts that root executes. **Measured by the lead on 2026-09-30, read-only:** on max2 the directory, `scripts/` and all bundle files are owned by `janpeter`; `credentials/` is `root:root 700`; on scrum4me-server the directory does not exist (bundle not yet deployed). See findings.json AUDIT-033.
