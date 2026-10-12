@@ -14,16 +14,23 @@ approved_at: "2026-08-31T21:56:04Z"
 # workflow_run) waarvan JP de kruising met een gedeeld runnerlabel expliciet
 # aanvaardt. classify() merkt zo'n bevestigde kruising aan als 'accepted' i.p.v.
 # 'hard' (§7.7). Dit is een BEWUSTE RISICO-ACCEPTATIE door JP, geen gevolgtrekking
-# uit een setting. Twee gemeten feiten begrenzen de blootstelling maar bewijzen
-# het besluit niet: [service] DISABLE_REGISTRATION = true (geen NIEUWE
+# uit een setting. Twee feiten begrenzen de blootstelling maar bewijzen het
+# besluit niet: [service] DISABLE_REGISTRATION = true (geen NIEUWE
 # zelfregistratie; de roster is gesloten, maar niet elk bestaand account is
-# daarmee een bij naam goedgekeurde schrijver) en de per-repo fork-PR-approvalgate
-# RequireApprovalForForkPRWorkflows (effectieve staat per repo hier niet
-# vastgelegd). Aanvaard restrisico: een bestaand account kan na een goedgekeurde
-# eerste fork-PR automatisch nieuwe workflows op de privileged DinD draaien
-# (container-escape raakt host/productie; fork-PR's krijgen geen repo-secrets,
-# wat de escape niet dekt). Alleen een lijst van bekende triggers telt; iedere
-# andere vorm is fail-closed geen bevestiging. Een roster-/policywijziging vraagt
+# daarmee een bij naam goedgekeurde schrijver) en de fork-PR-goedkeuring van
+# Forgejo. Die goedkeuring is vast productgedrag, geen per-repo-instelling
+# (https://forgejo.org/docs/v15.0/user/actions/security-pull-request/): een
+# PR-auteur met alleen leesrecht heeft haar nodig; schrijvers, eigenaars en
+# instance-admins nooit, ook niet vanuit een fork. Afspraak (besluit JP
+# 2026-10-12): zolang de runners privileged DinD naast productie draaien, alleen
+# 'Approve once' (iedere push opnieuw), nooit 'Approve always'. Daarmee vervalt
+# het oude restrisico dat een account na een goedgekeurde eerste fork-PR
+# automatisch workflows op de privileged DinD draait. Resterend risico:
+# schrijfrecht omzeilt de goedkeuring, dus schrijfrecht = runnertoegang (zie de
+# writers-lijsten hieronder). Een container-escape raakt host/productie;
+# fork-PR's krijgen geen repo-secrets, wat de escape niet dekt. Alleen een lijst
+# van bekende triggers telt; iedere andere vorm is fail-closed geen bevestiging.
+# Een roster- of schrijfrechtwijziging, of een 'Approve always', vraagt
 # herbeoordeling; per repo intrekbaar door de regel te verwijderen.
 
 # deploy_keys_acknowledged (AUDIT-012, T-173): een per-repo lijst van
