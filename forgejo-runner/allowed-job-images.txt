@@ -5,3 +5,18 @@
 # conservatief voor de schijfgate. preflight.sh telt deze groottes op bij de
 # vereiste vrije schijfruimte. Regels die met # beginnen tellen niet mee.
 catthehacker/ubuntu@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43	1729048576
+# M52-H2 (T-193): jobimages van de Scrum4Me-CI. Index-digests via
+# scripts/resolve-digests.sh (registry) op 2026-10-12; postgres staat op de door JP
+# vastgelegde pin (D4): de tags 17 en 17.9 resolveren inmiddels naar andere digests.
+# In Scrum4Me-ci.yml staat de service-image postgres:17.9 al op deze pin; de
+# sentinel postgres:17 moet op DEZELFDE pin komen (dan is dit één regel), en node en
+# pgvector moeten daar op digest staan (nu tags). Een latere digestwijziging in
+# Scrum4Me-ci.yml vraagt een nieuwe bundelwijziging op max2.
+# Groottes: gemeten op max2 (host-Docker, 2026-10-12T11:57Z) als het hoogste van de
+# layersom (docker image history --human=false) en docker image inspect .Size. De
+# rootfs-meting (du -sbx /) is niet uitgevoerd: de veiligheidscheck op max2
+# blokkeerde `docker run`. Beide maten liggen boven de layersom; de gate heeft
+# ruime marge (26,1 GB nodig bij N=1 tegen 626 GB vrij).
+node@sha256:3d27e5c11e5786e309ec3e03f93ae536eb36e6e5eb3714d5eb3300a36157add0	1641409267
+pgvector/pgvector@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d	636900560
+postgres@sha256:347bc4e64006d47bb255b0e28652d08590260a5e97f6b55f6ba1c0b31aef58b3	639281351
