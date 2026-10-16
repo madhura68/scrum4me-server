@@ -120,3 +120,61 @@ Tijdlijn uit de journals van `forgejo-runner-trust.service` en beide controllers
 | 17 okt 00:37:32 | beide loggen `cyclus: runner gestart` en melden zich bij Forgejo |
 
 Hetzelfde patroon deed zich op 5 oktober voor met `janpeter/my-mods`, opgelost met commit `15947a1`. Het incident staat als ISS-18 bij product `max2`, fingerprint `max2:forgejo-runner-trust:new-repo-not-in-allowlist`.
+
+## 6. De `hiderefs`-controle (D12, #14866)
+
+**Mechanisme in de bron**, gelezen op Codeberg in `modules/git/git.go`:
+- **v15.0.9:** `configSet("receive.hideRefs", "refs/pull/")`, op regel 308.
+- **v17.0.0:** `configSet("receive.hideRefs", "")`, op regel 309.
+- **Fix #14869 op `forgejo`:** `configUnsetAll("receive.hideRefs", "refs/pull/")` en daarna `configUnsetAll("receive.hideRefs", "")`, waarbij exit 5 wordt getolereerd. De v17-backport #14870 stond op 17 oktober nog open.
+
+`configSet` schrijft met `git config --global` naar `$HOME/.gitconfig`, met `HOME` = `[git] HOME_PATH` (standaard `%(APP_DATA_PATH)s/home`).
+
+**Productie, 17 oktober.** De exacte commando's uit 0.19, waarbij de functie uit het plan via `bash -s` op `scrum4me-server` is gedefinieerd:
+
+```text
+APP_DATA_PATH = /data/gitea
+grep-exit=0
+[refs/pull/]
+exit=0
+```
+
+`/data/gitea/home/.gitconfig` is van `git:git` en heeft mode 644. `git config --file /bestaat-niet --get-all …` geeft exit 1. Daarom toetst de functie eerst of het bestand leesbaar is, anders zou een ontbrekend bestand als `GEEN` doorgaan. In de container zit git 2.52.0 en busybox `sh`.
+
+**Proef op de dev-engine van `max2`.** Dit zijn wegwerpcontainers met label `dev.owner=mac`. De functie is letterlijk die uit het plan; alleen `docker` is `docker --context max2-dev`. Elke container draait sqlite met `INSTALL_LOCK=true`, en beide gebruiken hetzelfde benoemde volume, eerst 15.0.9 en daarna 17.0.0.
+
+Images:
+- `forgejo:15.0.9` met digest `sha256:91a5310c86934339e16bd06b6078aada836e3d8935b2d70f6598108cbfaed5d1`
+- `forgejo:17.0.0` met digest `sha256:06d38310de496a10186d952bdad5ca764c153c8023ede8dfa0944c79a1dc5412`
+
+```text
+===== 1. Forgejo 15.0.9, vers volume
+{"version":"15.0.9+gitea-1.22.0"}
+[refs/pull/]
+exit=0
+===== 2. Forgejo 17.0.0 op hetzelfde volume (negatieve controle: #14866)
+{"version":"17.0.0+gitea-1.22.0"}
+[]
+exit=0
+===== 3. Toestand na de fix nagebootst: de twee unset-all-stappen van #14869
+unset refs/pull/ exit=5
+unset leeg exit=0
+GEEN
+exit=0
+===== 4. Foutgeval: twee waarden (refs/pull/ en leeg)
+[refs/pull/]
+[]
+exit=0
+===== 5. Foutgeval: gitconfig onleesbaar (weggezet)
+HIDEREFS ROOD: /data/gitea/home/.gitconfig onleesbaar
+exit=2
+===== 6. Foutgeval: container bestaat niet
+Error response from daemon: No such container: fj17-hiderefs-bestaat-niet
+exit=1
+===== opruimen
+einde
+```
+
+Na de proef waren er geen containers of volumes met label `dev.task=fj17-hiderefs` meer.
+
+Wat de proef niet dekt: er was geen image met de echte fix. De experimentele 18.0-images zijn gebouwd op 16 oktober om 03:05, en #14869 is pas om 23:42 gemerged. Stap 3 voert daarom de twee commando's van de fix met de hand uit. R.4 draait de controle op het echte `V17`.
