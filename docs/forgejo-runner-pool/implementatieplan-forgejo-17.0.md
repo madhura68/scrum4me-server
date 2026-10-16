@@ -1,6 +1,6 @@
 # Implementatieplan — Forgejo 15.0.9 → 17.0 op `scrum4me-server`
 
-> **Status (17 oktober 2026): plan-review dubbel GO na drie rondes (`scrum4me-server:claude` en `mac:codex`, 30 september, tekst van commit `e650382`); daarna een post-GO-delta met vijf lessen uit het 15.0.9-venster (D1–D5, zie "Delta 30 september 2026" in het Review record), delta-review GO na drie rondes (`mac:codex`, 1 oktober, beoordeelde commit `616795a`). Op 17 oktober droeg JP de uitvoering op; daarbij bleek de runnerpool sinds de GO veranderd. Een tweede post-GO-delta (D6–D12, zie "Delta 17 oktober 2026" in het Review record) wacht op zijn delta-review; Fase R en het venster pas na delta-GO. `V17` is niet 17.0.0: upstream raadt de upgrade naar 17.0.0 af en twee regressies op ons pad zijn daar nog niet opgelost (0.0, D11), dus Fase R en het venster wachten ook op een 17.0.N die ze oplost.** Het 15.0.9-venster is op 30 september uitgevoerd met uitkomst `upgraded`. Forgejo 17.0.0 is op 15 oktober uitgebracht.
+> **Status (17 oktober 2026): plan-review dubbel GO na drie rondes (`scrum4me-server:claude` en `mac:codex`, 30 september, tekst van commit `e650382`); daarna een post-GO-delta met vijf lessen uit het 15.0.9-venster (D1–D5, zie "Delta 30 september 2026" in het Review record), delta-review GO na drie rondes (`mac:codex`, 1 oktober, beoordeelde commit `616795a`). Op 17 oktober droeg JP de uitvoering op; daarbij bleek de runnerpool sinds de GO veranderd. Een tweede post-GO-delta (D6–D12, zie "Delta 17 oktober 2026" in het Review record) kreeg delta-review GO in ronde 2 (`mac:codex`, 17 oktober, beoordeelde commit `6dd6e16`). `V17` is niet 17.0.0: upstream raadt de upgrade naar 17.0.0 af en twee regressies op ons pad zijn daar nog niet opgelost (0.0, D11), dus Fase R en het venster wachten op een 17.0.N die ze oplost.** Het 15.0.9-venster is op 30 september uitgevoerd met uitkomst `upgraded`. Forgejo 17.0.0 is op 15 oktober uitgebracht.
 
 > **Voor uitvoerders:** dit is een **operator-gedreven onderhoudsactie** op een productiehost, geen code-implementatie. Voer fase voor fase uit met de gate ná elke fase; bij een rode gate: **STOP** (stoppen, uitvoer vastleggen, JP melden — niet forceren, niet de gate versoepelen). Commando's zonder host-label draaien **op `scrum4me-server`** als `janpeter` (docker-groep, `sudo` waar aangegeven); `[max2]`-stappen op `max2`; `[mac]`-stappen op de mac met persoonlijk `FORGEJO_TOKEN`; `[JP]`-stappen zijn JP-only (beheerinterface, besluiten). Alle shellblokken zijn bash.
 
@@ -568,7 +568,7 @@ Elke terugweg herstelt naar het laatst groene gate. Vóór 4.3 is er geen point 
 
 ## Uitvoerhandoff
 
-Volgorde: (1) **plan-review** (review-loop, twee cross-model reviewers: `scrum4me-server:claude` ops-routed — Docker/Postgres/compose op de host zelf — en `mac:codex`) tot dubbel GO — gehaald op 30 sep; (2) **delta-review** van de post-GO-delta van 30 sep (review-loop, delta-variant: één cross-model reviewer, `mac:codex`, door JP gearmd) tot GO; (3) **JP-gate**; (4) het **15.0.9-venster** (eigen plan) afgerond met uitkomst `upgraded` — gebeurd op 30 sep; (4b) **tweede delta-review** van de post-GO-delta van 17 oktober (D6–D12; review-loop, delta-variant, `mac:codex`, door JP gearmd) tot GO; (5) **Scrum4Me-ceremonie** op product `cmsx8zbdh0002hk7rcgxxr00k` (sprint → PBI → story → taken per fase, commando's en gates uit dit plan gekopieerd) → hardstop; (6) Fase 0.0 en Fase R ná 15 oktober, daarna het venster — JP droeg de uitvoering op 17 oktober op, het venster zelf legt hij vast in 1.4; niet gelijktijdig met stap F/G, een bundeluitrol op `max2` of de compose-opruiming van ISS-5.
+Volgorde: (1) **plan-review** (review-loop, twee cross-model reviewers: `scrum4me-server:claude` ops-routed — Docker/Postgres/compose op de host zelf — en `mac:codex`) tot dubbel GO — gehaald op 30 sep; (2) **delta-review** van de post-GO-delta van 30 sep (review-loop, delta-variant: één cross-model reviewer, `mac:codex`, door JP gearmd) tot GO; (3) **JP-gate**; (4) het **15.0.9-venster** (eigen plan) afgerond met uitkomst `upgraded` — gebeurd op 30 sep; (4b) **tweede delta-review** van de post-GO-delta van 17 oktober (D6–D12; review-loop, delta-variant, `mac:codex`, door JP gearmd) tot GO — gehaald op 17 oktober in ronde 2; (5) **Scrum4Me-ceremonie** op product `cmsx8zbdh0002hk7rcgxxr00k` (sprint → PBI → story → taken per fase, commando's en gates uit dit plan gekopieerd) → hardstop; (6) Fase 0.0 en Fase R ná 15 oktober, daarna het venster — JP droeg de uitvoering op 17 oktober op, het venster zelf legt hij vast in 1.4; niet gelijktijdig met stap F/G, een bundeluitrol op `max2` of de compose-opruiming van ISS-5.
 
 ## Review record
 
@@ -739,3 +739,25 @@ Alleen de stop zelf en het offline-bewijs ná een stop zijn niet beproefd. Dat z
 - **F3 — MINOR (D12): `hiderefs` maskeerde een fout in de tweede `git config`-aanroep.** De pipeline gaf de exitcode van `sed`. **Verwerkt** met de remedie van de reviewer: één read met `--get-regexp`, met statuscontrole vóór het formatteren; de dubbele read is weg.
   - **Beproefd:** de volumeproef opnieuw met dezelfde uitkomsten; 0.19 op productie opnieuw `[refs/pull/]`; een ongeldige config geeft nu `HIDEREFS ROOD: git config exit 128` met exit 2 (metingen §6a).
 - **Verdict:** `mac:codex` NO-GO.
+
+### Delta-ronde 2 (tweede delta) — 2026-10-17 — **GO** ✅
+- **Reviewer:** `mac:codex` op commit `6dd6e16`; vier pins gecontroleerd. **0 BLOCKER · 0 MAJOR · 0 MINOR.** F1–F3 *houden*; D6–D12 *houden*. Geen nieuwe bevindingen en geen schrappingskandidaten.
+- **Eigen verificatie van de reviewer:**
+  - de pins en beide diffs (`432b263..6dd6e16` en `e8a676e..6dd6e16`); sinds ronde 1 is van de negentien shellblokken alleen het blok met `hiderefs` veranderd;
+  - de bron van F1 op `v15.0.9`: `GetActionRunJobs` met eigenaar en repository op nul, `waiting` en `running` zonder labelfilter, en `CreateTaskForRunner` dat een toegewezen job op `running` zet;
+  - acht `hiderefs`-gevallen met het exacte functieblok, waaronder een sleutel zonder waarde en een geïnjecteerde git-leesfout (`HIDEREFS ROOD`, exit 2);
+  - acht gevallen van de controle vooraf met de exacte `Q`, parser en `&&`-vorm tegen een curl-stub (leeg en `null` groen; `running`, `waiting`, zonder status, een onverwacht object, ongeldige JSON en HTTP 401 rood);
+  - de release-API van 17.0.0 (het negatieve advies staat er nog) en #14870 (nog open).
+  Op aangeleverde uitvoer beoordeeld: de productiemetingen van §6a en §7 en de bestaande hostinventaris.
+- **Verdict:** `mac:codex` GO. De reviewer noteert: dit verdict heft de releasegate niet op en geeft geen toestemming voor uitvoering of merge.
+
+## Delta-conclusie (tweede delta)
+
+De delta van 17 oktober (D6–D12) is na **twee rondes** GO (beoordeelde commit `6dd6e16`). Ronde 1 vond één MAJOR: de Forgejo-controle stond pas na de stop, terwijl een al toegewezen job dan wordt afgebroken. Er waren ook twee MINORs: het aantal records in Gate 0, en een gemaskeerde git-fout in `hiderefs`. Alle drie zijn verwerkt met de kleinste remedie die de reviewer voorstelde, en beproefd. Ronde 2 vond niets. Na het GO zijn alleen dit record, de statusregel en de Uitvoerhandoff bijgewerkt.
+
+Volgende stap: wachten op een 17.0.N met de fixes voor #14866 (#14870) en #14843 (#14855). Daarna, op opdracht van JP:
+1. de PR mergen;
+2. de ceremonie;
+3. Fase 0, met 0.0 opnieuw op `V17`;
+4. Fase R;
+5. het venster, op zijn vroegst 22 oktober.
