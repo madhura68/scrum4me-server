@@ -1,0 +1,122 @@
+# Metingen voor de delta van 17 oktober 2026 (D6–D10)
+
+Dit zijn read-only metingen op `max2` en via de Forgejo-API. Ze zijn gedaan op 17 oktober 2026 tussen 00:30 en 01:00 CEST (16 oktober 22:30–23:00 UTC), voor de tweede post-GO-delta van [implementatieplan-forgejo-17.0.md](../../implementatieplan-forgejo-17.0.md).
+
+Op `max2` is niets gewijzigd, op twee handelingen na. JP droeg die op voor het trustincident van §5: Actions uit op `janpeter/MacSearch`, en de trust-unit herstarten.
+
+Dit document bevat geen tokens en geen runner-UUID's. De runnerrecords staan er alleen met hun numerieke ID in.
+
+## 1. Vorm van de pool (D6)
+
+Runnerrecords, gelezen met `capture-forgejo-records.sh --scope global`. Hier staan alleen de kolommen zonder `uuid`:
+
+```text
+scope	id	name	status	version	ephemeral	labels
+global	3	scrum4me-srv-runner	idle	v12.10.1	False	ubuntu-latest
+global	6	max2-forgejo-runner-03	idle	v12.10.1	False	ubuntu-latest
+global	5	max2-forgejo-runner-02	idle	v12.10.1	False	ubuntu-latest
+```
+
+Units op `max2` (`systemctl list-units 'forgejo-runner*'`), en de bundel die er draait:
+
+```text
+forgejo-runner-cycle.service active running
+forgejo-runner-cycle@03.service active running
+forgejo-runner-dind-guard.service active exited
+forgejo-runner-trust.timer active waiting
+BUNDLE_COMMIT cbc7c26d4061bc0438d59475ad00b1b4a057e428
+```
+
+Projectnaam en marker per stack (`grep` op beide `controller.toml`'s):
+
+```text
+/opt/forgejo-runner/controller.toml:16:project      = "forgejo-runner"
+/opt/forgejo-runner/controller.toml:17:marker_path  = "/opt/forgejo-runner/state/cycle-op.marker"
+/opt/forgejo-runner-stacks/03/controller.toml:16:project      = "forgejo-runner-03"
+/opt/forgejo-runner-stacks/03/controller.toml:17:marker_path  = "/opt/forgejo-runner-stacks/03/state/cycle-op.marker"
+/opt/forgejo-runner-stacks/03/controller.toml:18:env_file     = "/opt/forgejo-runner-stacks/03/.env"
+```
+
+Versies op `max2`: Docker 29.9.0, Compose 5.6.0. Op `scrum4me-server` staat ook Compose 5.6.0; het plan noemt 5.5.1 van 30 september, en stap 0.6 meet het opnieuw.
+
+## 2. De offline-controle van de runnerstop (D8)
+
+Gemeten terwijl op beide stacks een runner draaide en wachtte (eerste regel van §5):
+
+```text
++ cd /opt/forgejo-runner
++ docker compose ps --profile cycle runner --format '{{.Name}} {{.State}}'
+unknown flag: --profile
++ docker compose -p forgejo-runner-03 -f /opt/forgejo-runner/compose.yaml --env-file /opt/forgejo-runner-stacks/03/.env ps --profile cycle runner --format '{{.Name}} {{.State}}'
+unknown flag: --profile
+[1] docker compose --profile cycle ps runner --format "{{.Name}} {{.State}}"
+rc=0                                   (geen uitvoer, terwijl de runner draait)
+[2] docker compose --profile cycle ps -a --format "{{.Name}} {{.Service}} {{.State}}"
+forgejo-runner-dind-1 dind running
+forgejo-runner-runner-run-02db944a4465 runner running
+rc=0
+[3] docker ps -a --filter label=com.docker.compose.project=forgejo-runner --filter label=com.docker.compose.service=runner --format "{{.Names}} {{.State}} {{.Label "com.docker.compose.oneoff"}}"
+forgejo-runner-runner-run-02db944a4465 running True
+rc=0
+[4] docker ps -a --filter label=com.docker.compose.project=forgejo-runner-03 --filter label=com.docker.compose.service=runner --format "{{.Names}} {{.State}}"
+forgejo-runner-03-runner-run-ddd5716c96da running
+rc=0
+[neg] docker ps -a --filter label=com.docker.compose.project=forgejo-runner-99 --filter label=com.docker.compose.service=runner --format "{{.Names}} {{.State}}"
+rc=0                                   (geen uitvoer: geen container met dat project)
+```
+
+Conclusie:
+- De vorm uit het plan (`ps --profile cycle runner`) faalt.
+- De vorm `--profile cycle ps runner` toont een draaiende runcontainer niet. De controller start de runner met `compose --profile cycle run --rm runner` (`cycle_adapters.py`), en zo'n eenmalige container valt buiten de servicefilter van `compose ps`.
+- Een lege uitvoer van beide vormen bewijst dus niet dat er geen runner is.
+- De labelfilter toont de draaiende runner van elke stack, en niets voor een project zonder container.
+- Het 15.0.9-venster legde onder "compose ps runner (verwacht leeg)" een lege uitvoer vast (`evidence/forgejo-15.0.9/venster/f2-max2.txt`).
+
+De vorm van de explicietere compose-aanroep voor stack `02` die 2.2 gebruikt:
+
+```text
+docker compose -p forgejo-runner -f /opt/forgejo-runner/compose.yaml --env-file /opt/forgejo-runner/.env ps --format "{{.Name}} {{.State}}"
+forgejo-runner-dind-1 running
+rc=0
+```
+
+## 3. Controle 1 en 2 uit "Een lopende job niet onderbreken" per stack (D7)
+
+Beide runners waren idle. De laatste journalregels van beide units (`journalctl -u <unit> -n 4 -o cat`):
+
+```text
+time="2026-10-16T22:39:05Z" level=info msg="single task poller received no task from https://git.jp-visser.nl, trying again"
+```
+
+Aantal containers in DinD per stack: `docker compose -p <project> -f /opt/forgejo-runner/compose.yaml --env-file <env> exec -T dind docker -H tcp://127.0.0.1:2375 ps -q | wc -l`. Uitkomst: `0` voor `forgejo-runner` en `0` voor `forgejo-runner-03`.
+
+## 4. R.4 met `NREC` (D6)
+
+Het contractblok van R.4 is buiten de repo gedraaid tegen een lokale stub die drie runnerrecords teruggeeft. Alleen de basis-URL en het tokenpad zijn naar de stub omgezet; de controles zijn letterlijk die uit het plan.
+
+```text
+NREC='3' CONTRACT OK: 3 runners, 0 jobs
+NREC='2' AssertionError: verwacht 2 runnerrecords, kreeg {'runners': [ …drie records… ]}
+NREC='4' AssertionError: verwacht 4 runnerrecords, kreeg {'runners': [ …drie records… ]}
+NREC=''  ValueError: invalid literal for int() with base 10: ''
+NREC unset KeyError: 'NREC'
+```
+
+Ook gecontroleerd: `docker run -i -e NREC=…` brengt de waarde in de container, samen met een heredoc op stdin. Dat is gedraaid op de dev-engine van `max2` met `python:3.13-slim`, en de uitvoer was `NREC in container: 3`.
+
+## 5. Trustincident van 16–17 oktober (D10)
+
+Tijdlijn uit de journals van `forgejo-runner-trust.service` en beide controllers op `max2`, in CEST:
+
+| Tijd | Gebeurtenis |
+|---|---|
+| 16 okt 06:02 en 12:01 | trustmeting groen met zachte afwijkingen |
+| 16 okt 14:44 | `janpeter/MacSearch` aangemaakt: privé, alleen `main`, geen workflowmap, Actions aan (standaard) |
+| 16 okt 18:02 | `HARD: janpeter/MacSearch: Actions staat aan maar de repository staat niet in de allowlist`, CLI-exit 20, verdict geïnvalideerd. Beide controllers loggen `trustgate ROOD: ok is niet true → geen nieuwe runners` |
+| 16 okt 21:08 en 22:24 | `-03` en `-02` ronden hun laatste job af. Daarna start geen runner meer |
+| 17 okt 00:08 | de unit staat op `failed` (start-limit) |
+| 17 okt 00:36 | Actions uit op MacSearch (API, besluit JP). Daarna `reset-failed` en `start` van de trust-unit: `Result=success`, groen met zachte afwijkingen, `ok=True` |
+| 17 okt 00:37:01 | beide controllers loggen `trustgate groen` |
+| 17 okt 00:37:32 | beide loggen `cyclus: runner gestart` en melden zich bij Forgejo |
+
+Hetzelfde patroon deed zich op 5 oktober voor met `janpeter/my-mods`, opgelost met commit `15947a1`. Het incident staat als ISS-18 bij product `max2`, fingerprint `max2:forgejo-runner-trust:new-repo-not-in-allowlist`.
