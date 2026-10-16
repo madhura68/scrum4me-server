@@ -178,3 +178,40 @@ einde
 Na de proef waren er geen containers of volumes met label `dev.task=fj17-hiderefs` meer.
 
 Wat de proef niet dekt: er was geen image met de echte fix. De experimentele 18.0-images zijn gebouwd op 16 oktober om 03:05, en #14869 is pas om 23:42 gemerged. Stap 3 voert daarom de twee commando's van de fix met de hand uit. R.4 draait de controle op het echte `V17`.
+
+### 6a. `hiderefs` na delta-ronde 1 (F3)
+
+De reviewer liet zien dat de eerste versie van de functie een fout in haar tweede `git config`-aanroep maskeerde: die aanroep stond in een pipeline, dus de exitcode van `sed` telde. De functie leest nu één keer met `--get-regexp`, controleert de exitcode van die aanroep, en formatteert pas daarna.
+
+Wat daarna is gedraaid:
+- de volumeproef hierboven (stap 1–6), opnieuw met de nieuwe functie: dezelfde uitkomsten als in de tabel hierboven;
+- de exacte commando's van 0.19 op productie, opnieuw: `APP_DATA_PATH = /data/gitea`, `grep-exit=0`, `[refs/pull/]`, `exit=0`;
+- de functietekst in de busybox-`sh` van de 17.0.0-image, met een opgezet bestand per geval (`docker run --rm` op de dev-engine van `max2`):
+
+```text
+refs/pull/ (15.0.9):               [refs/pull/] exit=0
+leeg (17.0.0, #14866):             [] exit=0
+afwezig (na fix #14869):           GEEN exit=0
+twee waarden:                      [refs/pull/] [] exit=0
+ongeldige config (git-fout):       fatal: bad config line 1 in file /data/gitea/home/.gitconfig HIDEREFS ROOD: git config exit 128 exit=2
+bestand ontbreekt:                 HIDEREFS ROOD: /data/gitea/home/.gitconfig onleesbaar exit=2
+```
+
+## 7. De Forgejo-kant vóór de stop (D7, na delta-ronde 1, F1)
+
+De bron van 15.0.9 voor `GET /admin/actions/runners/jobs` is `routers/api/v1/admin/runners.go`, `GetActionRunJobs`, dat `shared.GetActionRunJobs(ctx, 0, 0)` aanroept. Die functie (`routers/api/v1/shared/runners.go`) zoekt `ActionRunJob`'s met status `StatusWaiting` of `StatusRunning`, zonder filter op eigenaar of repository. Het antwoord bevat dus elke wachtende of lopende job in de hele forge. Een job die al aan een runner is toegewezen, telt als lopend.
+
+Gedraaid vanaf de mac: de regels van het blok in 2.3 tot vóór `( set -e`, letterlijk, met alleen `/tmp/fj-17.0` vervangen door een scratchmap. Daarna stap 1 van 2.2 voor beide stacks, tegen productie, plus drie foutgevallen:
+
+```text
+0 []
+stack 02 precheck exit=0
+0 []
+stack 03 precheck exit=0
+1 ['running']                         (fixture: één job met status running)
+fixture running exit=1
+1 ['waiting']                         (fixture: één job met status waiting)
+fixture waiting exit=1
+curl: (22) The requested URL returned error: 401
+ongeldig token exit=22
+```
