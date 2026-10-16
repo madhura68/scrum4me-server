@@ -718,4 +718,4 @@ Alleen de stop zelf en het offline-bewijs ná een stop zijn niet beproefd. Dat z
 
 **D12 op keuze van JP (17 oktober).** Fase R testte geen push of merge naar een bestaande branch, terwijl #14866 precies dat breekt. JP koos de kleinste controle: het mechanisme read-only lezen in plaats van een functionele push- en mergeproef in R.5.
 
-**Delta-review:** één reviewer, `mac:codex`, cross-model tegenover de claude-auteur en door JP gearmd. Nog niet gestart.
+**Delta-review:** één reviewer, `mac:codex`, cross-model tegenover de claude-auteur en door JP gearmd; gestart op verzoek van JP op 17 oktober.
