@@ -74,6 +74,13 @@ repositories:
     actions_enabled: true
     workflow_source: null
     writers: [janpeter, s4m-codex-reviewer]
+  # MacSearch: nieuwe repo (2026-10-16), privé, Actions uit, geen collaborators.
+  # Opgenomen op verzoek van JP (2026-10-18) zodat de dagelijkse trustscan geen
+  # ZACHT meer geeft. Zet je Actions aan, dan is actions_enabled: true nodig.
+  - full_name: janpeter/MacSearch
+    actions_enabled: false
+    workflow_source: null
+    writers: [janpeter]
   - full_name: janpeter/Media-Organizer
     actions_enabled: true
     workflow_source: .forgejo/workflows
