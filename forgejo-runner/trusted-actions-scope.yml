@@ -56,8 +56,9 @@ identities:
   # model (M3). Pusht alleen taakbranches; per repo goedgekeurd voor uitsluitend
   # scrum4me-mcp en agent-harness. main is op beide repo's beschermd met een
   # push- en merge-whitelist van alleen janpeter, dus modelcode landt alleen via
-  # een branch en een merge door JP. Leesrecht (scrum4me-shared, Scrum4Me) telt
-  # niet als schrijver.
+  # een branch en een merge door JP. Leesrecht (scrum4me-shared) telt niet als
+  # schrijver. Uitgebreid op 2026-10-18 (besluit JP): agent-harness heeft ook
+  # schrijfrecht op Scrum4Me en staat daar nu in writers.
   - name: agent-harness
 
 repositories:
@@ -90,7 +91,7 @@ repositories:
   - full_name: janpeter/Scrum4Me
     actions_enabled: true
     workflow_source: .github/workflows
-    writers: [janpeter, s4m-codex-reviewer]
+    writers: [agent-harness, janpeter, s4m-codex-reviewer]
     risky_triggers_acknowledged: [pull_request]
   - full_name: janpeter/Scrum4Us
     actions_enabled: true
